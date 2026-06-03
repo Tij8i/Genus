@@ -31,10 +31,11 @@ Genus sits **above** the technical runtime — n8n, LangGraph, CrewAI, OpenAI Ag
 
 **Genus v0.3** — public specification. Phase B retrofitted three reference agents (a Stewart instance, a Virgil instance, a Designer Mason) and folded the findings into the spec.
 
-Companion open-source agents:
+Companion open-source agents (sister repos — each independently forkable, composable together):
 
 - [Tij8i/virgil](https://github.com/Tij8i/virgil) — reference Virgil agent (personal-OS, runs in Claude Code)
-- [Tij8i/Stewart](https://github.com/Tij8i/Stewart) — Stewart starter (planned migration into `agent-families/stewart/` inside this repo)
+- [Tij8i/Stewart](https://github.com/Tij8i/Stewart) — reference Stewart agent (business-unit operator, daily heartbeat)
+- Mason reference implementation — coming soon
 
 ## Runtime support (v0.3)
 
