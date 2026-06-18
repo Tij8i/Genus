@@ -3,31 +3,133 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Genus dashboard — v0.6 skeleton</title>
+  <title>Genus dashboard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <style>
-    *{box-sizing:border-box;margin:0;padding:0}
-    html,body{height:100%}
-    body{font-family:'Hanken Grotesk',system-ui,sans-serif;background:#f4f5f7;color:#16181d;-webkit-font-smoothing:antialiased;display:flex;align-items:center;justify-content:center;padding:24px}
-    main{max-width:560px;text-align:center}
-    h1{font-size:28px;font-weight:800;letter-spacing:-.02em;margin-bottom:14px}
-    p{font-size:15px;color:#6b7280;line-height:1.6;margin-bottom:10px}
-    code{font-family:'JetBrains Mono',monospace;font-size:13px;background:#eceef1;padding:2px 6px;border-radius:4px}
-    .meta{margin-top:28px;font-family:'JetBrains Mono',monospace;font-size:11px;color:#9aa1ae;letter-spacing:.06em;text-transform:uppercase}
-    .accent{color:#2f6bff;font-weight:600}
-  </style>
+  <link rel="stylesheet" href="/assets/app.css">
 </head>
 <body>
-  <main>
-    <h1>Genus dashboard — v0.6 build</h1>
-    <p>Skeleton deploy from <code>Tij8i/Genus</code>. If you can read this, Cloudflare Pages is serving the new repo.</p>
-    <p>Substrate reads still target <code>Tij8i/Orchestrator</code> via Pages Functions (per the migration plan, path A).</p>
-    <p class="meta"><span class="accent">v0.6.0-skeleton</span> · <span id="now"></span></p>
-  </main>
-  <script>
-    document.getElementById('now').textContent = new Date().toISOString().slice(0, 19) + 'Z';
-  </script>
+  <div id="app-shell" class="app-shell">
+    <!-- ============ SIDEBAR ============ -->
+    <aside class="sidebar">
+      <button type="button" class="bu-switcher" id="bu-switcher" aria-label="Switch BU">
+        <span class="bu-avatar" id="bu-avatar">T</span>
+        <span class="bu-label">
+          <span class="bu-name" id="bu-name">…</span>
+          <span class="bu-meta" id="bu-meta">v0.6 · loading</span>
+        </span>
+        <svg class="bu-chevron" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 9 5-5 5 5"/><path d="m7 15 5 5 5-5"/></svg>
+      </button>
+
+      <div class="sidebar-divider"></div>
+      <span class="sidebar-label">Workspace</span>
+      <nav class="sidebar-nav">
+        <a href="#dashboard" class="nav-link" data-route="dashboard">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.6"/><rect x="14" y="3" width="7" height="7" rx="1.6"/><rect x="3" y="14" width="7" height="7" rx="1.6"/><rect x="14" y="14" width="7" height="7" rx="1.6"/></svg>
+          Dashboard
+        </a>
+        <a href="#planning" class="nav-link" data-route="planning">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="0.6" fill="currentColor"/></svg>
+          Planning
+        </a>
+        <a href="#kpis" class="nav-link" data-route="kpis">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="20" x2="4" y2="12"/><line x1="10" y1="20" x2="10" y2="4"/><line x1="16" y1="20" x2="16" y2="14"/><line x1="20" y1="20" x2="20" y2="8"/></svg>
+          KPIs
+        </a>
+        <a href="#inputs" class="nav-link" data-route="inputs">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 13h4l1.5 3h5L16 13h4"/><path d="M5.5 5.5h13l2 7.5v4a2 2 0 0 1-2 2H5.5a2 2 0 0 1-2-2v-4z"/></svg>
+          Inputs
+          <span class="nav-badge" id="nav-inputs-badge" hidden></span>
+        </a>
+        <a href="#outputs" class="nav-link" data-route="outputs">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v10"/><path d="m8 7 4-4 4 4"/><path d="M4 14v5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/></svg>
+          Outputs
+        </a>
+      </nav>
+
+      <div class="sidebar-bottom">
+        <a href="#settings" class="nav-link" data-route="settings">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 21v-7"/><path d="M5 10V3"/><path d="M12 21v-9"/><path d="M12 8V3"/><path d="M19 21v-5"/><path d="M19 12V3"/><circle cx="5" cy="12" r="2"/><circle cx="12" cy="10" r="2"/><circle cx="19" cy="14" r="2"/></svg>
+          Settings
+        </a>
+        <div class="sidebar-divider"></div>
+        <div class="operator-chip">
+          <span class="operator-avatar">A</span>
+          <span class="operator-label">
+            <span class="operator-name">Alessio Tixi</span>
+            <span class="operator-role">Founder · Operator</span>
+          </span>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="main-inner">
+        <section class="route" data-route="dashboard" hidden>
+          <header class="page-header">
+            <div>
+              <h1 class="page-title" id="dash-greeting">Loading…</h1>
+              <p class="page-sub" id="dash-subtitle">Substrate fetching…</p>
+            </div>
+            <div class="page-header-right" id="dash-cycle-meta"></div>
+          </header>
+          <div class="route-body" id="route-dashboard"></div>
+        </section>
+
+        <section class="route" data-route="planning" hidden>
+          <header class="page-header">
+            <div>
+              <h1 class="page-title">Planning</h1>
+              <p class="page-sub">Your locked-in plan, its initiatives, and the commands you run on it.</p>
+            </div>
+          </header>
+          <div class="route-body" id="route-planning"></div>
+        </section>
+
+        <section class="route" data-route="kpis" hidden>
+          <header class="page-header">
+            <div>
+              <h1 class="page-title">KPIs</h1>
+              <p class="page-sub">The board view of how the venture is performing, by area.</p>
+            </div>
+          </header>
+          <div class="route-body" id="route-kpis"></div>
+        </section>
+
+        <section class="route" data-route="inputs" hidden>
+          <header class="page-header">
+            <div>
+              <h1 class="page-title">Inputs</h1>
+              <p class="page-sub">Everything you feed the venture — memos, meetings, and agent suggestions.</p>
+            </div>
+          </header>
+          <div class="route-body" id="route-inputs"></div>
+        </section>
+
+        <section class="route" data-route="outputs" hidden>
+          <header class="page-header">
+            <div>
+              <h1 class="page-title">Outputs</h1>
+              <p class="page-sub">What the venture has put into the world — the work, the direction, the milestones behind you.</p>
+            </div>
+          </header>
+          <div class="route-body" id="route-outputs"></div>
+        </section>
+
+        <section class="route" data-route="settings" hidden>
+          <header class="page-header">
+            <div>
+              <h1 class="page-title">Settings</h1>
+              <p class="page-sub">Identity, governance, wiring, and how Genus looks.</p>
+            </div>
+          </header>
+          <div class="route-body" id="route-settings"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script type="module" src="/assets/app.js"></script>
 </body>
 </html>
