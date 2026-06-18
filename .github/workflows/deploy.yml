@@ -2,16 +2,18 @@
 #
 # Why this exists instead of Cloudflare's built-in Git auto-deploy:
 # The Cloudflare Pages GitHub App is authorized for Tij8i/Orchestrator only.
-# Auto-deploys to Tij8i/Genus don't fire from the Cloudflare side. Rather
-# than fix the App permission once and hope it persists, this workflow uses
-# the Cloudflare API directly — works as long as the API token secret is set.
+# Auto-deploys to Tij8i/Genus don't fire from the Cloudflare side.
 #
-# Required GitHub Actions secret on this repo (Settings → Secrets and
-# variables → Actions → New repository secret):
-#   CLOUDFLARE_API_TOKEN — token with "Edit Cloudflare Workers" template
-#                          (covers Workers + Pages + Workers Builds)
+# Why curl instead of cloudflare/wrangler-action: wrangler requires
+# `User Details: Read` on the API token to introspect. Operator's token
+# only has Edit-Workers scopes, no User Details. The Pages deployment
+# endpoint accepts plain HTTP POST without that scope — Cloudflare
+# pulls the latest commit from the connected Git repo on its own.
 #
-# Account ID is public-equivalent (not a secret); kept in the workflow file.
+# Required GitHub Actions secret on this repo:
+#   CLOUDFLARE_API_TOKEN — already set via gh CLI
+#
+# Account ID + project name are public-equivalent (identifiers, not credentials).
 
 name: Deploy to Cloudflare Pages
 
@@ -25,13 +27,30 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      deployments: write
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Deploy to Cloudflare Pages (genus-v06)
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: b7463ec5b56da2353ea9002736247be1
-          command: pages deploy --project-name=genus-v06 --branch=main .
+      - name: Trigger Cloudflare Pages deployment
+        env:
+          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT_ID: b7463ec5b56da2353ea9002736247be1
+          CF_PROJECT: genus-v06
+        run: |
+          set -e
+          echo "Triggering Pages deploy for project=$CF_PROJECT, commit=$GITHUB_SHA"
+          resp=$(curl -sS -m 60 -X POST \
+            -H "Authorization: Bearer $CF_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/pages/projects/$CF_PROJECT/deployments")
+          echo "$resp" | python3 -c "
+          import json, sys
+          d = json.load(sys.stdin)
+          if not d.get('success'):
+              print('FAIL:', json.dumps(d.get('errors', []), indent=2))
+              sys.exit(1)
+          r = d['result']
+          print(f'  deployment id: {r[\"id\"]}')
+          print(f'  url:           {r.get(\"url\", \"-\")}')
+          print(f'  branch:        {r.get(\"deployment_trigger\", {}).get(\"metadata\", {}).get(\"branch\", \"-\")}')
+          print(f'  commit (cf):   {r.get(\"deployment_trigger\", {}).get(\"metadata\", {}).get(\"commit_hash\", \"-\")[:7]}')
+          "
+          echo ""
+          echo "Trigger returned success. Cloudflare will build + deploy from main branch HEAD."
+          echo "(Note: trigger success ≠ build success. Check the Cloudflare dashboard if anything looks off.)"
