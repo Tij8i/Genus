@@ -1,0 +1,37 @@
+# Auto-deploy the genus-v06 Cloudflare Pages project on every push to main.
+#
+# Why this exists instead of Cloudflare's built-in Git auto-deploy:
+# The Cloudflare Pages GitHub App is authorized for Tij8i/Orchestrator only.
+# Auto-deploys to Tij8i/Genus don't fire from the Cloudflare side. Rather
+# than fix the App permission once and hope it persists, this workflow uses
+# the Cloudflare API directly — works as long as the API token secret is set.
+#
+# Required GitHub Actions secret on this repo (Settings → Secrets and
+# variables → Actions → New repository secret):
+#   CLOUDFLARE_API_TOKEN — token with "Edit Cloudflare Workers" template
+#                          (covers Workers + Pages + Workers Builds)
+#
+# Account ID is public-equivalent (not a secret); kept in the workflow file.
+
+name: Deploy to Cloudflare Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:  # manual trigger from the Actions tab
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to Cloudflare Pages (genus-v06)
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: b7463ec5b56da2353ea9002736247be1
+          command: pages deploy --project-name=genus-v06 --branch=main .
