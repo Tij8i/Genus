@@ -21,6 +21,7 @@ import {
 } from './substrate-client.js';
 import { initRouter, onRouteChange } from './router.js';
 import { renderDashboard as renderDashboardView } from './views/dashboard.js';
+import { renderInputs as renderInputsView } from './views/inputs.js';
 
 // v1: hardcoded BU. Multi-BU switcher slot exists in the sidebar but only
 // one BU is wired today (Tuto on Genus-native substrate). Per [[v06-mockup-interpretation]]
@@ -156,12 +157,32 @@ function renderKpis() {
 }
 
 function renderInputs() {
-  const unprocessedMemos = memos.filter(m => m.status !== 'processed' && m.status !== 'dismissed').length;
-  const pendingMeetings = meetings.filter(m => m.status === 'requested_by_agent').length;
-  const pendingSuggestions = tasks.filter(t => t.status === 'awaiting_approval' || t.status === 'proposed').length;
-  document.getElementById('route-inputs').innerHTML =
-    TODO_PLACEHOLDER('Inputs — Memos / Meetings / Suggestions (3-column)',
-      `${unprocessedMemos} unprocessed memos · ${pendingMeetings} pending meetings · ${pendingSuggestions} pending suggestions`);
+  renderInputsView(
+    { identity, plans, initiatives, tasks, meetings, memos, kpis, governance },
+    { onChange: rehydrateAndRerender },
+  );
+}
+
+// After an action (approve a task, dismiss a memo, etc.) re-fetch the affected
+// substrate files and re-render the current route. Bypasses the per-Pages
+// CDN cache by adding a cache-bust param.
+async function rehydrateAndRerender() {
+  try {
+    const baseRel = (file) => `${substrateBase(BU)}/${file}`;
+    const [t, m, mm, mt, i] = await Promise.all([
+      fetchSubstrateJson(baseRel('tasks.json'), tasks),
+      fetchSubstrateJson(baseRel('meetings.json'), meetings),
+      fetchSubstrateJsonl(baseRel('memos.jsonl')),
+      fetchSubstrateJson(baseRel('plans.json'), plans),
+      fetchSubstrateJson(baseRel('initiatives.json'), initiatives),
+    ]);
+    tasks = t; meetings = m; memos = mm; plans = mt; initiatives = i;
+    // Re-render current route
+    const route = (window.location.hash || '#dashboard').replace(/^#/, '');
+    renderRoute(route);
+  } catch (e) {
+    console.error('[genus] rehydrate failed:', e);
+  }
 }
 
 function renderOutputs() {
