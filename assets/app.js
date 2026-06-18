@@ -23,6 +23,9 @@ import { initRouter, onRouteChange } from './router.js';
 import { renderDashboard as renderDashboardView } from './views/dashboard.js';
 import { renderInputs as renderInputsView } from './views/inputs.js';
 import { renderPlanning as renderPlanningView } from './views/planning.js';
+import { renderKpis as renderKpisView } from './views/kpis.js';
+import { renderOutputs as renderOutputsView } from './views/outputs.js';
+import { renderSettings as renderSettingsView } from './views/settings.js';
 
 // v1: hardcoded BU. Multi-BU switcher slot exists in the sidebar but only
 // one BU is wired today (Tuto on Genus-native substrate). Per [[v06-mockup-interpretation]]
@@ -39,6 +42,8 @@ let meetings = [];
 let memos = [];
 let kpis = [];
 let governance = {};
+let connectors = [];
+let documentation = [];
 
 // ============ Boot ============
 
@@ -70,12 +75,14 @@ async function boot() {
       fetchSubstrateJsonl(baseRel('memos.jsonl')),
       fetchSubstrateJson(baseRel('kpis.json'), []),
       fetchSubstrateJson(baseRel('governance.json'), {}),
+      fetchSubstrateJson(baseRel('connectors.json'), []),
+      fetchSubstrateJson(baseRel('documentation.json'), []),
     ]);
   } catch (e) {
     bootError(e.message || String(e));
     return;
   }
-  [identity, goals, initiatives, plans, tasks, meetings, memos, kpis, governance] = results;
+  [identity, goals, initiatives, plans, tasks, meetings, memos, kpis, governance, connectors, documentation] = results;
 
   // Sidebar BU name from identity
   const buName = document.getElementById('bu-name');
@@ -150,9 +157,7 @@ function renderPlanning() {
 }
 
 function renderKpis() {
-  document.getElementById('route-kpis').innerHTML =
-    TODO_PLACEHOLDER('KPIs — Scope dropdown / Sources row / 4-up KPI grid',
-      `${kpis.length} KPIs in registry`);
+  renderKpisView({ identity, plans, initiatives, tasks, meetings, memos, kpis, governance, connectors, documentation });
 }
 
 function renderInputs() {
@@ -186,18 +191,11 @@ async function rehydrateAndRerender() {
 }
 
 function renderOutputs() {
-  const doneTasksRecent = tasks.filter(t => t.status === 'done').length;
-  const closedInits = initiatives.filter(i => i.status === 'completed').length;
-  document.getElementById('route-outputs').innerHTML =
-    TODO_PLACEHOLDER('Outputs — Trajectory / Work shipped / Milestones reached',
-      `${doneTasksRecent} tasks done · ${closedInits} initiatives completed`);
+  renderOutputsView({ identity, plans, initiatives, tasks, meetings, memos, kpis, governance, connectors, documentation });
 }
 
 function renderSettings() {
-  const g = governance?.gauges || {};
-  document.getElementById('route-settings').innerHTML =
-    TODO_PLACEHOLDER('Settings — Identity / Governance / Wiring',
-      `delegation: <strong>${g.delegation?.current || '?'}</strong> · trust: <strong>${g.trust?.current || '?'}</strong> · speed: <strong>${g.speed?.current || '?'}</strong>`);
+  renderSettingsView({ identity, plans, initiatives, tasks, meetings, memos, kpis, governance, connectors, documentation });
 }
 
 // ============ Go ============
