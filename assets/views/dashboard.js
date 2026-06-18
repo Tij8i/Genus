@@ -1,0 +1,504 @@
+// Dashboard view — the operator's landing page.
+//
+// Four sections (per v0.6 mockup IA):
+//   01 · Progress — cycle progress vs. plan + velocity (tasks/day, 7d sparkline)
+//   02 · Activity — Waiting on you + Recently shipped
+//   03 · Historical — Upcoming milestones + Decisions made
+//   04 · Snapshot — health chips (Execution / Approvals / Budget) + narrative + what would help
+//
+// Per [[v06-mockup-interpretation]]: visual style + IA from mockup, data
+// from real substrate. "Points" in the mockup → tasks completed (we don't
+// have story points). "Snapshot narrative" deferred to v2 (needs LLM call).
+//
+// Per decisions locked in the migration plan:
+//   - Meeting requests on Dashboard "Waiting on you" (not Inputs page)
+//   - Cycle health = Snapshot chips (replaces dedicated cycle-health tab)
+
+import { escapeHtml, ago, dateLabel, icon, isoDay, daysBetween, cycleTimeProgress } from '../utils.js';
+
+export function renderDashboard(ctx) {
+  const { identity, plans, initiatives, tasks, meetings, memos } = ctx;
+
+  // ============ HEADER ============
+  const now = new Date();
+  const hour = now.getHours();
+  const greet = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+  const greeting = document.getElementById('dash-greeting');
+  const subtitle = document.getElementById('dash-subtitle');
+  const cycleMeta = document.getElementById('dash-cycle-meta');
+  greeting.textContent = `${greet}, Alessio`;
+  subtitle.innerHTML = `${icon('spark', {color: 'var(--accent)', size: 17, stroke: 1.8})} Here's what's on autopilot today for ${escapeHtml(identity?.name || 'this venture')}.`;
+
+  // Active plan + time progress
+  const activePlan = plans.find(p => p.status === 'active');
+  const timeProg = cycleTimeProgress(activePlan);
+  const monthNames = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  const planLabel = activePlan
+    ? `CYCLE · ${escapeHtml((activePlan.title || '').toUpperCase().slice(0, 28))}`
+    : 'NO ACTIVE CYCLE';
+  const daysLeftLabel = timeProg
+    ? `${timeProg.remainingDays} day${timeProg.remainingDays === 1 ? '' : 's'} left`
+    : '—';
+  cycleMeta.innerHTML = `
+    <div class="page-cycle-meta">
+      <span class="mono" style="font-size:12px;color:var(--text-faint);letter-spacing:.02em">${planLabel}</span>
+      <span style="font-size:13.5px;color:var(--text);font-weight:600">${escapeHtml(daysLeftLabel)}</span>
+    </div>
+    <div class="date-chip">
+      <span class="mono" style="font-size:9px;color:var(--red);font-weight:600;letter-spacing:.06em">${monthNames[now.getMonth()]}</span>
+      <span style="font-weight:800;font-size:16px;margin-top:1px">${now.getDate()}</span>
+    </div>
+  `;
+
+  // ============ BODY ============
+  const root = document.getElementById('route-dashboard');
+  root.innerHTML = `
+    ${renderProgressSection(activePlan, initiatives, tasks, timeProg)}
+    ${renderActivitySection(tasks, meetings, initiatives)}
+    ${renderHistoricalSection(initiatives, memos)}
+    ${renderSnapshotSection(activePlan, tasks, meetings, timeProg)}
+  `;
+}
+
+// ============ Section 1 — Progress ============
+
+function renderProgressSection(activePlan, initiatives, tasks, timeProg) {
+  // Cycle-progress percent = done tasks / total tasks in active cycle.
+  // (Story points in the mockup → task counts here.)
+  const cycleTasks = (tasks || []).filter(t =>
+    !['rejected', 'cancelled'].includes((t.status || '').toLowerCase())
+  );
+  const doneCount = cycleTasks.filter(t => (t.status || '').toLowerCase() === 'done').length;
+  const totalCount = cycleTasks.length;
+  const percentDone = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
+
+  const expectedPercent = timeProg ? timeProg.percentElapsed : null;
+  const gap = expectedPercent != null ? percentDone - expectedPercent : null;
+  const onPace = gap == null ? null : gap >= 0;
+  const paceChip = onPace == null
+    ? ''
+    : onPace
+      ? `<span class="pace-chip pace-chip-good"><span class="pace-dot pace-dot-good"></span>On pace</span>`
+      : `<span class="pace-chip pace-chip-warn"><span class="pace-dot pace-dot-warn"></span>Behind pace</span>`;
+
+  const periodEndLabel = activePlan?.period_target_end
+    ? dateLabel(activePlan.period_target_end).replace(' · ', ' · ').toUpperCase()
+    : '—';
+
+  // Velocity: tasks completed in last 24h + 7-day sparkline
+  const velocity = computeVelocity(tasks);
+
+  return `
+    <section>
+      <div class="section-rule">
+        <span class="card-section-label">01 · Progress</span>
+        <div class="rule-line"></div>
+      </div>
+      <div class="progress-grid">
+
+        <!-- Pace card -->
+        <div class="card pace-card">
+          <div class="pace-header">
+            <div>
+              <div class="kpi-label">Cycle progress vs. plan</div>
+              <div class="kpi-big-row">
+                <span class="kpi-big">${percentDone}<span class="kpi-big-unit">%</span></span>
+                <span class="kpi-big-sub">${doneCount} of ${totalCount} tasks done</span>
+              </div>
+            </div>
+            ${paceChip}
+          </div>
+          <div class="pace-track">
+            <div class="pace-fill" style="width:${percentDone}%"></div>
+            ${expectedPercent != null ? `
+              <div class="pace-marker" style="left:${expectedPercent}%"></div>
+              <div class="pace-marker-label" style="left:${expectedPercent}%">PLAN ${expectedPercent}%</div>
+            ` : ''}
+          </div>
+          <div class="pace-track-foot">
+            <span>CYCLE START</span><span>${escapeHtml(periodEndLabel)}</span>
+          </div>
+          <div class="pace-divider"></div>
+          <div class="pace-stats">
+            <div class="pace-stat">
+              <div class="pace-stat-label">DAYS LEFT</div>
+              <div class="pace-stat-value">${timeProg ? timeProg.remainingDays : '—'} <span class="pace-stat-unit">of ${timeProg ? timeProg.totalDays : '—'}</span></div>
+            </div>
+            <div class="pace-stat">
+              <div class="pace-stat-label">SHIPPED</div>
+              <div class="pace-stat-value">${doneCount} <span class="pace-stat-unit">/ ${totalCount} tasks</span></div>
+            </div>
+            <div class="pace-stat">
+              <div class="pace-stat-label">GAP TO PLAN</div>
+              <div class="pace-stat-value ${gap != null && gap < 0 ? 'gap-warn' : ''}">${gap == null ? '—' : (gap >= 0 ? '+' : '') + gap + '%'} <span class="pace-stat-unit">vs today</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Velocity card -->
+        <div class="card velocity-card">
+          <div class="kpi-label">Velocity</div>
+          <div class="kpi-big-row">
+            <span class="kpi-big" style="font-size:40px">${velocity.last24h}</span>
+            <span class="kpi-big-sub">task${velocity.last24h === 1 ? '' : 's'} last 24h</span>
+          </div>
+          <div class="sparkline">
+            ${velocity.spark.map((v, i) => {
+              const max = Math.max(1, ...velocity.spark);
+              const pct = Math.round((v / max) * 100);
+              const isToday = i === velocity.spark.length - 1;
+              return `<div class="spark-bar${isToday ? ' spark-bar-today' : ''}" style="height:${Math.max(8, pct)}%" title="${v} task${v === 1 ? '' : 's'} ${isToday ? 'today' : (velocity.spark.length - 1 - i) + 'd ago'}"></div>`;
+            }).join('')}
+          </div>
+          <div class="kpi-label" style="font-size:10px;letter-spacing:.04em">LAST 7 DAYS</div>
+          <div class="pace-divider"></div>
+          <div class="vel-stat-row"><span class="vel-stat-label">Cycle average</span><span class="vel-stat-value">${velocity.avgCycle.toFixed(1)}<span class="vel-stat-unit"> /day</span></span></div>
+          <div class="vel-stat-row"><span class="vel-stat-label">All-time average</span><span class="vel-stat-value">${velocity.avgAll.toFixed(1)}<span class="vel-stat-unit"> /day</span></span></div>
+        </div>
+
+      </div>
+    </section>
+  `;
+}
+
+function computeVelocity(tasks) {
+  // Buckets: tasks where execution.completed_at falls in each of the last 7 days.
+  // Today is bucket index 6, oldest day is index 0.
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const spark = new Array(7).fill(0);
+  const allDoneDates = [];
+  for (const t of tasks) {
+    const completed = (t.execution || {}).completed_at;
+    if (!completed) continue;
+    allDoneDates.push(completed);
+    const d = new Date(completed);
+    d.setHours(0, 0, 0, 0);
+    const dayDiff = Math.round((now - d) / 86400000);
+    if (dayDiff >= 0 && dayDiff < 7) {
+      spark[6 - dayDiff] += 1;
+    }
+  }
+  // last24h = how many tasks completed in the rolling 24h window (more precise than today bucket)
+  const cutoff24h = Date.now() - 86400000;
+  const last24h = allDoneDates.filter(iso => new Date(iso).getTime() >= cutoff24h).length;
+  const totalLast7 = spark.reduce((a, b) => a + b, 0);
+  const avgCycle = totalLast7 / 7;
+  // All-time: total done / span days
+  let avgAll = 0;
+  if (allDoneDates.length > 0) {
+    const oldest = allDoneDates.sort()[0];
+    const spanDays = Math.max(1, Math.round((Date.now() - new Date(oldest).getTime()) / 86400000));
+    avgAll = allDoneDates.length / spanDays;
+  }
+  return { last24h, spark, avgCycle, avgAll };
+}
+
+// ============ Section 2 — Activity ============
+
+function renderActivitySection(tasks, meetings, initiatives) {
+  // "Waiting on you" = meeting requests (status=requested_by_agent) + tasks awaiting_approval.
+  // Both block downstream work. Sorted by oldest first (most urgent).
+  const pendingMeetings = (meetings || [])
+    .filter(m => m.status === 'requested_by_agent')
+    .map(m => ({
+      kind: 'meeting',
+      id: m.id,
+      title: m.title || 'Untitled meeting request',
+      from: ((m.related_item || {}).type === 'initiative_milestone'
+        ? `Milestone · ${(m.related_item || {}).milestone_name || ''}`
+        : `Tuto Stewart`),
+      at: m.requested_at || m.started_at || m.created_at,
+    }));
+  const pendingTasks = (tasks || [])
+    .filter(t => (t.status || '').toLowerCase() === 'awaiting_approval')
+    .map(t => ({
+      kind: 'task',
+      id: t.id,
+      title: t.title || 'Untitled task',
+      from: `Tuto Stewart · ${t.category || 'task'}`,
+      at: t.proposed_at || t.created_at,
+      risk: t.risk_level,
+    }));
+  const waiting = [...pendingMeetings, ...pendingTasks].sort((a, b) =>
+    (a.at || '').localeCompare(b.at || '')
+  );
+
+  // Recently shipped = tasks done in last 7 days, newest first.
+  const cutoff7d = Date.now() - 7 * 86400000;
+  const recentlyShipped = (tasks || [])
+    .filter(t => (t.status || '').toLowerCase() === 'done')
+    .map(t => ({
+      id: t.id,
+      title: t.title || 'Untitled task',
+      from: `Tuto Stewart · ${t.category || 'task'}`,
+      at: (t.execution || {}).completed_at || (t.approval || {}).decided_at,
+    }))
+    .filter(x => x.at && new Date(x.at).getTime() >= cutoff7d)
+    .sort((a, b) => (b.at || '').localeCompare(a.at || ''));
+
+  return `
+    <section>
+      <div class="section-rule">
+        <span class="card-section-label">02 · Activity</span>
+        <div class="rule-line"></div>
+      </div>
+      <div class="activity-grid">
+
+        <!-- Waiting on you -->
+        <div class="card">
+          <div class="card-header-row">
+            <div class="card-header-left">
+              <span class="card-title">Waiting on you</span>
+              ${waiting.length > 0
+                ? `<span class="count-pill count-pill-red">${waiting.length}</span>`
+                : `<span class="count-pill count-pill-muted">0</span>`}
+            </div>
+            ${waiting.length > 0
+              ? `<span class="muted-emph">blocking forward work</span>`
+              : `<span class="muted-emph-good">inbox zero</span>`}
+          </div>
+          <p class="card-sub">Things paused until you approve, decide, or join a meeting.</p>
+          <div class="waiting-list">
+            ${waiting.length === 0
+              ? `<div class="empty-state">Nothing's waiting on you. The cycle is yours to advance.</div>`
+              : waiting.slice(0, 8).map(w => renderWaitingRow(w)).join('')}
+            ${waiting.length > 8 ? `<div class="see-more">+ ${waiting.length - 8} more — see <a href="#inputs">Inputs</a></div>` : ''}
+          </div>
+        </div>
+
+        <!-- Recently shipped -->
+        <div class="card">
+          <div class="card-header-row">
+            <div class="card-header-left"><span class="card-title">Recently shipped</span></div>
+            <span class="muted-emph-good">${recentlyShipped.length} closed last 7d</span>
+          </div>
+          <p class="card-sub">Latest work completed by your agents.</p>
+          <div class="shipped-list">
+            ${recentlyShipped.length === 0
+              ? `<div class="empty-state">No tasks completed in the last 7 days.</div>`
+              : recentlyShipped.slice(0, 6).map(s => `
+                <div class="shipped-row">
+                  ${icon('check-circle', {color: 'var(--green)', size: 17, stroke: 2.4})}
+                  <div class="shipped-body">
+                    <div class="shipped-title">${escapeHtml(s.title)}</div>
+                    <div class="shipped-from">${escapeHtml(s.from)}</div>
+                  </div>
+                  <span class="shipped-when mono">${escapeHtml(ago(s.at))}</span>
+                </div>
+              `).join('')}
+          </div>
+        </div>
+
+      </div>
+    </section>
+  `;
+}
+
+function renderWaitingRow(w) {
+  const ageHours = w.at ? Math.floor((Date.now() - new Date(w.at).getTime()) / 3600000) : null;
+  const ageClass = ageHours == null ? 'age-fresh'
+    : ageHours >= 24 ? 'age-old'
+    : ageHours >= 6 ? 'age-aging'
+    : 'age-fresh';
+  const ageLabel = w.at ? ago(w.at) : '';
+  const dotClass = w.kind === 'meeting' ? 'wait-dot-meeting' : (w.risk === 'high' ? 'wait-dot-high' : 'wait-dot-med');
+  const reviewHref = w.kind === 'meeting' ? '#inputs' : '#inputs';
+  return `
+    <div class="waiting-row">
+      <span class="wait-dot ${dotClass}"></span>
+      <div class="wait-body">
+        <div class="wait-title">${escapeHtml(w.title)}</div>
+        <div class="wait-from">${escapeHtml(w.from)}</div>
+      </div>
+      <span class="wait-age mono ${ageClass}">${escapeHtml(ageLabel)}</span>
+      <a href="${reviewHref}" class="wait-review">Review</a>
+    </div>
+  `;
+}
+
+// ============ Section 3 — Historical ============
+
+function renderHistoricalSection(initiatives, memos) {
+  // Upcoming milestones = next pending critical milestone per active Initiative,
+  // sorted by Initiative target_close_date. Includes meeting state if any.
+  const upcoming = [];
+  for (const init of (initiatives || [])) {
+    const status = (init.status || '').toLowerCase();
+    if (['completed', 'abandoned', 'discarded'].includes(status)) continue;
+    const ms = (init.milestones || []).find(m => (m.status || 'pending').toLowerCase() !== 'done');
+    if (ms) {
+      upcoming.push({
+        date: init.target_close_date,
+        title: ms.name,
+        initId: init.id,
+        initTitle: init.title,
+      });
+    } else if (init.target_close_date) {
+      upcoming.push({
+        date: init.target_close_date,
+        title: `${init.title} — final delivery`,
+        initId: init.id,
+        initTitle: init.title,
+      });
+    }
+  }
+  upcoming.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  const upcomingTop = upcoming.slice(0, 5);
+
+  // Decisions made = recent memos with level=strategic OR level=initiative.
+  // These are "we decided X" records vs operational tasks.
+  const decisions = (memos || [])
+    .filter(m => ['strategic', 'initiative', 'decision', 'deliverable'].includes((m.level || '').toLowerCase()))
+    .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+    .slice(0, 5);
+
+  return `
+    <section>
+      <div class="section-rule">
+        <span class="card-section-label">03 · Historical</span>
+        <div class="rule-line"></div>
+      </div>
+      <div class="activity-grid">
+
+        <!-- Upcoming milestones -->
+        <div class="card">
+          <div class="card-header-row">
+            <div class="card-header-left"><span class="card-title">Upcoming milestones</span></div>
+            <a href="#planning" class="see-link">Planning →</a>
+          </div>
+          <div class="timeline-mini">
+            ${upcomingTop.length === 0
+              ? `<div class="empty-state">No upcoming milestones. Add an active plan to see them here.</div>`
+              : upcomingTop.map((m, idx) => `
+                <div class="tl-mini-row">
+                  <span class="tl-mini-dot ${idx === 0 ? 'tl-mini-dot-active' : ''}"></span>
+                  <div class="tl-mini-body">
+                    <div class="tl-mini-date mono">${escapeHtml(dateLabel(m.date))}</div>
+                    <div class="tl-mini-title">${escapeHtml(m.title)}</div>
+                    <div class="tl-mini-owner">Initiative · ${escapeHtml(m.initTitle)}</div>
+                  </div>
+                </div>
+              `).join('')}
+          </div>
+        </div>
+
+        <!-- Decisions made -->
+        <div class="card">
+          <div class="card-header-row">
+            <div class="card-header-left"><span class="card-title">Decisions made</span></div>
+            <a href="#inputs" class="see-link">All →</a>
+          </div>
+          <div class="decisions-list">
+            ${decisions.length === 0
+              ? `<div class="empty-state">No strategic decisions recorded yet. Strategic memos surface here.</div>`
+              : decisions.map((d, idx) => `
+                <div class="decision-row ${idx === 0 ? 'decision-row-fresh' : ''}">
+                  <div class="decision-title">${escapeHtml(d.title)}</div>
+                  <div class="decision-body">${escapeHtml((d.body || '').slice(0, 160))}${(d.body || '').length > 160 ? '…' : ''}</div>
+                  <div class="decision-meta mono">${escapeHtml((d.created_by || 'unknown').toUpperCase())} · ${escapeHtml(d.level || 'strategic')} · ${escapeHtml(ago(d.created_at))}</div>
+                </div>
+              `).join('')}
+          </div>
+        </div>
+
+      </div>
+    </section>
+  `;
+}
+
+// ============ Section 4 — Snapshot ============
+
+function renderSnapshotSection(activePlan, tasks, meetings, timeProg) {
+  // Health chips computed from real substrate:
+  //   Execution: fast (avg tasks/day above all-time avg) / steady / slow
+  //   Approvals: healthy (0-2 waiting) / aging (3-5 OR oldest > 24h) / slow (5+ OR oldest > 48h)
+  //   Budget: ok (no telemetry today — placeholder)
+  const executionHealth = computeExecutionHealth(tasks);
+  const approvalsHealth = computeApprovalsHealth(tasks, meetings);
+  const budgetHealth = { label: 'Healthy', tone: 'good', why: 'No budget signals wired yet' };
+
+  return `
+    <section>
+      <div class="section-rule">
+        <span class="card-section-label">04 · Snapshot</span>
+        <div class="rule-line"></div>
+      </div>
+      <div class="card snapshot-card">
+        <div class="snapshot-header">
+          <span class="snapshot-icon">${icon('spark', {color: '#fff', size: 22, stroke: 1.9})}</span>
+          <div class="snapshot-header-text">
+            <span class="snapshot-title">Snapshot</span>
+            <span class="mono" style="font-size:11px;color:var(--text-faint)">from Tuto Stewart · ${escapeHtml(ago(activePlan?.last_edited_at || activePlan?.activated_at || activePlan?.created_at))}</span>
+            <span class="snapshot-tag">CYCLE HEALTH</span>
+          </div>
+        </div>
+        <div class="snapshot-chips">
+          ${renderHealthChip('Execution', executionHealth)}
+          ${renderHealthChip('Approvals', approvalsHealth)}
+          ${renderHealthChip('Budget', budgetHealth)}
+        </div>
+        <p class="snapshot-narrative">
+          ${renderSnapshotNarrative(executionHealth, approvalsHealth, timeProg)}
+        </p>
+      </div>
+    </section>
+  `;
+}
+
+function renderHealthChip(label, h) {
+  return `
+    <span class="health-chip health-chip-${h.tone}" title="${escapeHtml(h.why)}">
+      <span class="health-chip-dot health-chip-dot-${h.tone}"></span>
+      <strong>${escapeHtml(label)}</strong> · ${escapeHtml(h.label)}
+    </span>
+  `;
+}
+
+function computeExecutionHealth(tasks) {
+  const cutoff7d = Date.now() - 7 * 86400000;
+  const recent = (tasks || []).filter(t => {
+    const c = (t.execution || {}).completed_at;
+    return c && new Date(c).getTime() >= cutoff7d;
+  }).length;
+  if (recent >= 7) return { tone: 'good', label: 'Fast', why: `${recent} tasks shipped in last 7 days` };
+  if (recent >= 3) return { tone: 'good', label: 'Steady', why: `${recent} tasks shipped in last 7 days` };
+  if (recent >= 1) return { tone: 'warn', label: 'Slow', why: `Only ${recent} task${recent === 1 ? '' : 's'} shipped in last 7 days` };
+  return { tone: 'bad', label: 'Stalled', why: 'No tasks completed in the last 7 days' };
+}
+
+function computeApprovalsHealth(tasks, meetings) {
+  const waitingTasks = (tasks || []).filter(t => (t.status || '').toLowerCase() === 'awaiting_approval');
+  const waitingMeetings = (meetings || []).filter(m => m.status === 'requested_by_agent');
+  const total = waitingTasks.length + waitingMeetings.length;
+  if (total === 0) return { tone: 'good', label: 'Healthy', why: 'Nothing waiting on you' };
+  // Oldest age across both
+  const allWaiting = [...waitingTasks.map(t => t.proposed_at), ...waitingMeetings.map(m => m.requested_at)];
+  const oldest = allWaiting.filter(Boolean).sort()[0];
+  const oldestHours = oldest ? Math.floor((Date.now() - new Date(oldest).getTime()) / 3600000) : 0;
+  if (total >= 5 || oldestHours > 48) {
+    return { tone: 'bad', label: 'Slow', why: `${total} item${total === 1 ? '' : 's'} waiting · oldest ${oldestHours}h` };
+  }
+  if (total >= 3 || oldestHours > 24) {
+    return { tone: 'warn', label: 'Aging', why: `${total} item${total === 1 ? '' : 's'} waiting · oldest ${oldestHours}h` };
+  }
+  return { tone: 'good', label: 'Healthy', why: `${total} item${total === 1 ? '' : 's'} waiting · oldest ${oldestHours}h` };
+}
+
+function renderSnapshotNarrative(exec, approvals, timeProg) {
+  // Composed from health states, not LLM-generated (deferred to v2).
+  const bits = [];
+  if (approvals.tone === 'bad') {
+    bits.push(`<strong>The approval queue is the constraint right now.</strong> ${escapeHtml(approvals.why)}.`);
+  } else if (approvals.tone === 'warn') {
+    bits.push(`Approvals are aging — ${escapeHtml(approvals.why.toLowerCase())}.`);
+  } else if (exec.tone === 'good') {
+    bits.push(`Execution is ${escapeHtml(exec.label.toLowerCase())} and the approval queue is clear.`);
+  } else {
+    bits.push(`${escapeHtml(exec.why)}. ${escapeHtml(approvals.why)}.`);
+  }
+  if (timeProg && timeProg.percentElapsed > 50 && timeProg.remainingDays < 7) {
+    bits.push(`<strong>Cycle nearing its target end</strong> — ${timeProg.remainingDays} days left of ${timeProg.totalDays}.`);
+  }
+  return bits.join(' ');
+}

@@ -20,6 +20,7 @@ import {
   substrateBase,
 } from './substrate-client.js';
 import { initRouter, onRouteChange } from './router.js';
+import { renderDashboard as renderDashboardView } from './views/dashboard.js';
 
 // v1: hardcoded BU. Multi-BU switcher slot exists in the sidebar but only
 // one BU is wired today (Tuto on Genus-native substrate). Per [[v06-mockup-interpretation]]
@@ -132,31 +133,11 @@ function renderRoute(route) {
 }
 
 function renderDashboard() {
-  // Header: greeting + date + cycle context
-  const greeting = document.getElementById('dash-greeting');
-  const subtitle = document.getElementById('dash-subtitle');
-  const cycleMeta = document.getElementById('dash-cycle-meta');
-  const now = new Date();
-  const hour = now.getHours();
-  const greet = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
-  // For v1, use "Operator" as the address (we'll wire to identity in step 2b)
-  greeting.textContent = `${greet}, Alessio`;
-  subtitle.textContent = `Here's what's on autopilot today for ${identity?.name || 'this venture'}.`;
-  const dayName = ['SUN','MON','TUE','WED','THU','FRI','SAT'][now.getDay()];
-  const monthName = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][now.getMonth()];
-  cycleMeta.innerHTML = `
-    <div class="page-cycle-meta">
-      <span class="mono" style="font-size:12px;color:var(--text-faint);letter-spacing:.02em">${(identity?.current_stage || '').toUpperCase()}</span>
-      <span style="font-size:13.5px;color:var(--text);font-weight:600">${initiatives.filter(i => i.status === 'in_progress').length} initiatives in progress</span>
-    </div>
-    <div class="date-chip">
-      <span class="mono" style="font-size:9px;color:var(--red);font-weight:600;letter-spacing:.06em">${monthName}</span>
-      <span style="font-weight:800;font-size:16px;margin-top:1px">${now.getDate()}</span>
-    </div>
-  `;
-  document.getElementById('route-dashboard').innerHTML =
-    TODO_PLACEHOLDER('Dashboard — Waiting on you / Recently shipped / Upcoming milestones / Decisions / Snapshot',
-      `substrate loaded: ${initiatives.length} initiatives, ${tasks.length} tasks, ${meetings.length} meetings, ${memos.length} memos, ${plans.length} plans, ${kpis.length} kpis`);
+  // Delegate to the view module (step 2b). It reads from the substrate state
+  // we hydrated at boot. ctx is a snapshot — if substrate updates we re-render.
+  renderDashboardView({
+    identity, plans, initiatives, tasks, meetings, memos, kpis, governance,
+  });
 }
 
 function renderPlanning() {
