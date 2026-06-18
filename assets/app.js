@@ -22,6 +22,7 @@ import {
 import { initRouter, onRouteChange } from './router.js';
 import { renderDashboard as renderDashboardView } from './views/dashboard.js';
 import { renderInputs as renderInputsView } from './views/inputs.js';
+import { renderPlanning as renderPlanningView } from './views/planning.js';
 
 // v1: hardcoded BU. Multi-BU switcher slot exists in the sidebar but only
 // one BU is wired today (Tuto on Genus-native substrate). Per [[v06-mockup-interpretation]]
@@ -142,12 +143,10 @@ function renderDashboard() {
 }
 
 function renderPlanning() {
-  const activePlan = plans.find(p => p.status === 'active');
-  document.getElementById('route-planning').innerHTML =
-    TODO_PLACEHOLDER('Planning — Roadmap timeline / Active plan / Initiatives / Backlog / Retrospective',
-      activePlan
-        ? `active plan: <strong>${activePlan.title}</strong> · ${(activePlan.initiative_ids || []).length} initiatives`
-        : 'no active plan');
+  renderPlanningView(
+    { identity, plans, initiatives, tasks, meetings, memos, kpis, governance, goals },
+    { onChange: rehydrateAndRerender },
+  );
 }
 
 function renderKpis() {
@@ -169,14 +168,15 @@ function renderInputs() {
 async function rehydrateAndRerender() {
   try {
     const baseRel = (file) => `${substrateBase(BU)}/${file}`;
-    const [t, m, mm, mt, i] = await Promise.all([
+    const [t, m, mm, mt, i, g] = await Promise.all([
       fetchSubstrateJson(baseRel('tasks.json'), tasks),
       fetchSubstrateJson(baseRel('meetings.json'), meetings),
       fetchSubstrateJsonl(baseRel('memos.jsonl')),
       fetchSubstrateJson(baseRel('plans.json'), plans),
       fetchSubstrateJson(baseRel('initiatives.json'), initiatives),
+      fetchSubstrateJson(baseRel('goals.json'), goals),
     ]);
-    tasks = t; meetings = m; memos = mm; plans = mt; initiatives = i;
+    tasks = t; meetings = m; memos = mm; plans = mt; initiatives = i; goals = g;
     // Re-render current route
     const route = (window.location.hash || '#dashboard').replace(/^#/, '');
     renderRoute(route);
