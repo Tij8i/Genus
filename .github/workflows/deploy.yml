@@ -35,6 +35,9 @@ jobs:
           CF_PROJECT: genus-v06
         run: |
           set -e
+          # Diagnostic: confirm secret arrived intact (length + prefix only; full value is masked by GH)
+          echo "secret length: ${#CF_API_TOKEN}"
+          echo "secret first 5 chars: ${CF_API_TOKEN:0:5}"
           echo "Triggering Pages deploy for project=$CF_PROJECT, commit=$GITHUB_SHA"
           resp=$(curl -sS -m 60 -X POST \
             -H "Authorization: Bearer $CF_API_TOKEN" \
