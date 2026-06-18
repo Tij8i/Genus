@@ -1,0 +1,21 @@
+# Files in repo root that should NOT be served as static assets by Cloudflare
+# Workers (env.ASSETS.fetch). The Workers runtime code + config goes here so it
+# stays available to the build but isn't publicly reachable as a URL.
+
+# Worker entry + config
+worker.js
+wrangler.jsonc
+wrangler.toml
+
+# Pages Functions source (loaded by worker.js via import, not served directly)
+functions/
+
+# Generic non-deployed Python utilities
+scripts/
+
+# Repo metadata + docs that don't need to be web-served
+README.md
+LICENSE
+DEPLOY.md
+.gitignore
+.git/
