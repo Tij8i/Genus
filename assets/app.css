@@ -1709,6 +1709,173 @@ body {
   color: var(--text-faint);
 }
 
+/* ============ Wiring (mockup-faithful) ============ */
+.wiring-header-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap; margin-bottom: var(--gap);
+}
+.wiring-header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap;
+}
+.status-chip-card {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 11px; padding: 8px 13px;
+  box-shadow: 0 1px 2px rgba(16, 18, 28, .04);
+  flex: none;
+}
+.status-chip-card-label { font-size: 13.5px; font-weight: 600; }
+.status-chip-card-sub { font-size: 13px; color: var(--text-faint); }
+.status-dot { width: 8px; height: 8px; border-radius: 99px; flex: none; }
+.status-dot-good { background: var(--green); }
+.status-dot-warn { background: var(--yellow); }
+.status-dot-bad  { background: var(--red); }
+.status-dot-gray { background: var(--text-faint); }
+.status-chip-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 12px; font-weight: 600;
+  border-radius: 99px; padding: 3px 10px;
+  white-space: nowrap;
+}
+.status-chip-pill-good { color: var(--green-fg); background: var(--green-bg); border: 1px solid var(--green-border); }
+.status-chip-pill-warn { color: var(--yellow-fg); background: var(--yellow-bg); border: 1px solid #f0e0ab; }
+.status-chip-pill-bad  { color: var(--red-fg); background: var(--red-bg); border: 1px solid var(--red-border); }
+
+/* Primary surface card */
+.primary-surface-card {
+  display: flex; gap: 24px;
+  align-items: center; flex-wrap: wrap;
+  padding: var(--pad);
+}
+.primary-surface-body { flex: 1; min-width: 240px; }
+.primary-surface-title-row {
+  display: flex; align-items: center; gap: 11px;
+  margin-top: 9px; flex-wrap: wrap;
+}
+.primary-surface-name {
+  font-size: 24px; font-weight: 800; letter-spacing: -.02em;
+}
+.primary-surface-url {
+  display: inline-flex; align-items: center; gap: 8px;
+  margin-top: 14px;
+  background: #f6f7f9; border: 1px solid var(--border);
+  border-radius: 9px; padding: 7px 11px;
+  width: fit-content; max-width: 100%;
+  font-size: 12px; color: var(--text-dim);
+  text-decoration: none;
+  font-family: 'JetBrains Mono', monospace;
+}
+.primary-surface-url:hover { border-color: var(--accent); color: var(--accent); }
+.primary-surface-stats {
+  display: flex; gap: 22px;
+  margin-top: 16px; flex-wrap: wrap;
+}
+.primary-stat-label {
+  font-size: 10px; letter-spacing: .06em; color: var(--text-veryfaint);
+}
+.primary-stat-value {
+  font-size: 13.5px; font-weight: 600; margin-top: 3px;
+}
+
+.primary-surface-thumb {
+  flex: none; width: 248px; height: 150px;
+  border-radius: 11px;
+  border: 1px solid var(--border-strong);
+  overflow: hidden;
+  background-image: repeating-linear-gradient(135deg, #f1f2f5 0 11px, #e9ebef 11px 22px);
+  display: flex; align-items: flex-end; justify-content: center;
+  position: relative;
+}
+.thumb-chrome {
+  position: absolute; top: 0; left: 0; right: 0; height: 26px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 5px; padding: 0 10px;
+}
+.thumb-dot { width: 7px; height: 7px; border-radius: 99px; }
+.thumb-dot-red { background: var(--red); }
+.thumb-dot-yellow { background: var(--yellow); }
+.thumb-dot-green { background: var(--green); }
+.thumb-label {
+  font-size: 11px; color: #8b92a0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px; padding: 3px 9px;
+  margin-bottom: 14px;
+}
+
+/* Wiring 2-col grid (Infrastructure + Operating stack) */
+.wiring-grid {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--gap);
+}
+@media (max-width: 880px) { .wiring-grid { grid-template-columns: 1fr; } }
+
+/* Generic row-with-icon (used in Wiring + Modules) */
+.row-list { display: flex; flex-direction: column; margin-top: 8px; }
+.row-with-icon {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(20, 22, 28, .05);
+}
+.row-with-icon:last-child { border-bottom: 0; }
+.row-icon-letter {
+  width: 28px; height: 28px; flex: none;
+  border-radius: 7px;
+  background: var(--surface2);
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px; font-weight: 700;
+  color: var(--text-dim);
+}
+.row-icon-letter-accent {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+.row-icon-letter-dark {
+  background: var(--text);
+  color: #fff;
+}
+.row-body { flex: 1; min-width: 0; }
+.row-title { font-size: 13.5px; font-weight: 600; }
+.row-sub { font-size: 11.5px; color: var(--text-faint); margin-top: 1px; }
+.row-tag-mono, .row-tag-accent {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px; font-weight: 600;
+  border-radius: 5px; padding: 2px 7px;
+  white-space: nowrap;
+  flex: none;
+}
+.row-tag-mono { background: var(--surface2); color: var(--text-faint); }
+.row-tag-accent { background: var(--accent-bg); color: var(--accent); }
+
+/* Appearance sub-tab */
+.appearance-name-preview {
+  display: flex; align-items: center; gap: 10px;
+}
+.appearance-logo {
+  width: 34px; height: 34px; border-radius: 9px;
+  background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800; font-size: 16px;
+}
+.appearance-name {
+  font-size: 14px; font-weight: 600;
+  background: var(--bg);
+  border-radius: 8px; padding: 8px 14px;
+  border: 1px solid var(--border);
+}
+.appearance-color-row { display: flex; gap: 9px; }
+.appearance-color {
+  width: 26px; height: 26px; border-radius: 99px;
+  cursor: pointer;
+}
+.appearance-color-current {
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent);
+}
+
 /* Boot error banner */
 .boot-error {
   position: fixed;
