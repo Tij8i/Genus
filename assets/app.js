@@ -27,6 +27,9 @@ import { renderKpis as renderKpisView } from './views/kpis.js';
 import { renderOutputs as renderOutputsView } from './views/outputs.js';
 import { renderSettings as renderSettingsView } from './views/settings.js';
 import { renderLearning as renderLearningView } from './views/learning.js';
+import { renderModules as renderModulesView } from './views/modules.js';
+import { renderPeople as renderPeopleView } from './views/people.js';
+import { openOnboarding } from './overlay.js';
 
 // v1: hardcoded BU. Multi-BU switcher slot exists in the sidebar but only
 // one BU is wired today (Tuto on Genus-native substrate). Per [[v06-mockup-interpretation]]
@@ -91,7 +94,37 @@ async function boot() {
   const buMeta = document.getElementById('bu-meta');
   if (buName) buName.textContent = identity?.name || BU;
   if (buAvatar) buAvatar.textContent = (identity?.name || BU).charAt(0).toUpperCase();
-  if (buMeta) buMeta.textContent = `${identity?.category || 'BU'} · v0.6`;
+  if (buMeta) buMeta.textContent = `${identity?.category || 'BU'} · v0.7`;
+
+  // Workspace switcher dropdown
+  const wsBtn = document.getElementById('bu-switcher');
+  const wsMenu = document.getElementById('ws-menu');
+  if (wsBtn && wsMenu) {
+    wsBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = !wsMenu.hidden;
+      if (isOpen) {
+        wsMenu.hidden = true;
+        wsBtn.setAttribute('aria-expanded', 'false');
+        return;
+      }
+      wsMenu.innerHTML = renderWsMenu(identity);
+      wsMenu.hidden = false;
+      wsBtn.setAttribute('aria-expanded', 'true');
+      wsMenu.querySelector('[data-action="add-human"]')?.addEventListener('click', () => { wsMenu.hidden = true; openOnboarding('human'); });
+      wsMenu.querySelector('[data-action="add-venture"]')?.addEventListener('click', () => { wsMenu.hidden = true; openOnboarding('venture'); });
+      wsMenu.querySelector('[data-action="add-agent"]')?.addEventListener('click', () => { wsMenu.hidden = true; openOnboarding('agent'); });
+      wsMenu.querySelector('[data-action="manage-people"]')?.addEventListener('click', () => { wsMenu.hidden = true; window.location.hash = '#people'; });
+      // Click outside to close
+      setTimeout(() => {
+        document.addEventListener('click', function closeOnce() {
+          wsMenu.hidden = true;
+          wsBtn.setAttribute('aria-expanded', 'false');
+          document.removeEventListener('click', closeOnce);
+        });
+      }, 0);
+    });
+  }
 
   // Inputs badge: how many things need operator attention?
   // For v1, count pending meeting requests + awaiting_approval tasks.
@@ -140,11 +173,24 @@ function renderRoute(route) {
   else if (route === 'inputs') safeRender('inputs', renderInputs);
   else if (route === 'outputs') safeRender('outputs', renderOutputs);
   else if (route === 'learning') safeRender('learning', renderLearning);
+  else if (route === 'modules') safeRender('modules', renderModules);
+  else if (route === 'people') safeRender('people', renderPeople);
   else if (route === 'settings') safeRender('settings', renderSettings);
 }
 
 function renderLearning() {
   renderLearningView({ identity, plans, initiatives, tasks, meetings, memos, kpis, governance, connectors, documentation });
+}
+
+function renderModules() {
+  renderModulesView({ identity, plans, initiatives, tasks, meetings, memos, kpis, governance, connectors, documentation });
+}
+
+function renderPeople() {
+  renderPeopleView({ identity, plans, initiatives, tasks, meetings, memos, kpis, governance, connectors, documentation });
+  // Wire header Invite button (rendered as part of route shell, not view)
+  const invite = document.getElementById('invite-person-btn');
+  if (invite) invite.addEventListener('click', () => openOnboarding('human'));
 }
 
 function renderDashboard() {
@@ -202,6 +248,37 @@ function renderOutputs() {
 
 function renderSettings() {
   renderSettingsView({ identity, plans, initiatives, tasks, meetings, memos, kpis, governance, connectors, documentation });
+}
+
+function renderWsMenu(identity) {
+  const name = identity?.name || 'Tuto';
+  const letter = name.charAt(0).toUpperCase();
+  return `
+    <div class="ws-menu-section-label mono">Ventures</div>
+    <div class="ws-menu-venture ws-menu-venture-current">
+      <span class="ws-menu-venture-avatar" style="background:var(--accent)">${letter}</span>
+      <span class="ws-menu-venture-name">${name} BU</span>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4.5 4.5L19 7"/></svg>
+    </div>
+    <div class="ws-menu-divider"></div>
+    <button type="button" class="ws-menu-action" data-action="add-human">
+      <span class="ws-menu-action-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg></span>
+      Add a person
+    </button>
+    <button type="button" class="ws-menu-action" data-action="add-venture">
+      <span class="ws-menu-action-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/></svg></span>
+      Add a venture
+    </button>
+    <button type="button" class="ws-menu-action" data-action="add-agent">
+      <span class="ws-menu-action-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8.5" width="16" height="11" rx="3.2"/><path d="M12 4.8v3.7"/><circle cx="12" cy="3.6" r="1.4"/></svg></span>
+      Add an expert agent
+    </button>
+    <div class="ws-menu-divider"></div>
+    <button type="button" class="ws-menu-action" data-action="manage-people">
+      <span class="ws-menu-action-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9"/><path d="M16 3.1a4 4 0 0 1 0 7.8"/></svg></span>
+      People &amp; permissions
+    </button>
+  `;
 }
 
 // ============ Go ============

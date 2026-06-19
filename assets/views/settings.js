@@ -15,14 +15,15 @@ let activeSubTab = 'profile';
 export function renderSettings(ctx) {
   const queryStr = (window.location.hash || '').split('?')[1] || '';
   const tab = new URLSearchParams(queryStr).get('tab');
-  if (['profile', 'governance', 'modules', 'wiring', 'appearance'].includes(tab)) activeSubTab = tab;
+  // Modules moved out of Settings — it's a top-level nav route now per v0.7 IA.
+  if (['profile', 'governance', 'wiring', 'appearance'].includes(tab)) activeSubTab = tab;
+  if (activeSubTab === 'modules') activeSubTab = 'profile';  // legacy URL → profile
 
   const root = document.getElementById('route-settings');
   root.innerHTML = `
     <nav class="subtab-nav">
       ${renderSubTab('profile', 'BU profile')}
       ${renderSubTab('governance', 'Governance')}
-      ${renderSubTab('modules', 'Modules')}
       ${renderSubTab('wiring', 'Wiring')}
       ${renderSubTab('appearance', 'Appearance')}
     </nav>
@@ -40,7 +41,6 @@ export function renderSettings(ctx) {
   const body = document.getElementById('settings-subtab-body');
   if (activeSubTab === 'profile') body.innerHTML = renderProfileSubTab(ctx);
   else if (activeSubTab === 'governance') body.innerHTML = renderGovernanceSubTab(ctx);
-  else if (activeSubTab === 'modules') body.innerHTML = renderModulesSubTab(ctx);
   else if (activeSubTab === 'wiring') body.innerHTML = renderWiringSubTab(ctx);
   else if (activeSubTab === 'appearance') body.innerHTML = renderAppearanceSubTab(ctx);
 }
