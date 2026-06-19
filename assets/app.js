@@ -115,9 +115,8 @@ async function boot() {
       wsMenu.innerHTML = renderWsMenu(identity);
       wsMenu.hidden = false;
       wsBtn.setAttribute('aria-expanded', 'true');
-      wsMenu.querySelector('[data-action="add-human"]')?.addEventListener('click', () => { wsMenu.hidden = true; openOnboarding('human'); });
-      wsMenu.querySelector('[data-action="add-venture"]')?.addEventListener('click', () => { wsMenu.hidden = true; openOnboarding('venture'); });
-      wsMenu.querySelector('[data-action="add-agent"]')?.addEventListener('click', () => { wsMenu.hidden = true; openOnboarding('agent'); });
+      // Add-a-* actions are disabled (v0.8) — their disabled attribute
+      // blocks clicks. Manage-people still navigates.
       wsMenu.querySelector('[data-action="manage-people"]')?.addEventListener('click', () => { wsMenu.hidden = true; window.location.hash = '#people'; });
       // Click outside to close
       setTimeout(() => {
@@ -192,9 +191,8 @@ function renderModules() {
 
 function renderPeople() {
   renderPeopleView({ identity, plans, initiatives, tasks, meetings, memos, kpis, governance, connectors, documentation });
-  // Wire header Invite button (rendered as part of route shell, not view)
-  const invite = document.getElementById('invite-person-btn');
-  if (invite) invite.addEventListener('click', () => openOnboarding('human'));
+  // Header Invite button is disabled (v0.8). No click handler — disabled
+  // attribute + .btn-soon class handle visual + interaction lockout.
 }
 
 function renderDashboard() {
@@ -265,17 +263,17 @@ function renderWsMenu(identity) {
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4.5 4.5L19 7"/></svg>
     </div>
     <div class="ws-menu-divider"></div>
-    <button type="button" class="ws-menu-action" data-action="add-human">
+    <button type="button" class="ws-menu-action btn-soon" data-action="add-human" disabled title="Add-a-person flow ships in v0.8">
       <span class="ws-menu-action-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg></span>
-      Add a person
+      Add a person<span class="soon-tag">soon</span>
     </button>
-    <button type="button" class="ws-menu-action" data-action="add-venture">
+    <button type="button" class="ws-menu-action btn-soon" data-action="add-venture" disabled title="Add-a-venture flow ships in v0.8">
       <span class="ws-menu-action-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/></svg></span>
-      Add a venture
+      Add a venture<span class="soon-tag">soon</span>
     </button>
-    <button type="button" class="ws-menu-action" data-action="add-agent">
+    <button type="button" class="ws-menu-action btn-soon" data-action="add-agent" disabled title="Add-an-agent flow ships in v0.8">
       <span class="ws-menu-action-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8.5" width="16" height="11" rx="3.2"/><path d="M12 4.8v3.7"/><circle cx="12" cy="3.6" r="1.4"/></svg></span>
-      Add an expert agent
+      Add an expert agent<span class="soon-tag">soon</span>
     </button>
     <div class="ws-menu-divider"></div>
     <button type="button" class="ws-menu-action" data-action="manage-people">

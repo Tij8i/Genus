@@ -87,7 +87,7 @@ function renderProfileSubTab(ctx) {
         ${row('Live surface', i.live_surface, 'link')}
         ${i.health ? row('Health', `${(i.health.verdict || 'gray').toUpperCase()} — ${i.health.summary || ''}`, 'prose') : ''}
       </div>
-      <div class="settings-foot mono">Inline editing ships in v0.7. Edit via <code>identity.json</code> in the substrate repo for now.</div>
+      <div class="settings-foot mono">📖 Read-only · inline editing ships in v0.8 · edit via <code>identity.json</code> in the substrate repo for now</div>
     </div>
   `;
 }
@@ -105,7 +105,7 @@ function renderGovernanceSubTab(ctx) {
         ${gauge('Trust level', g.trust, 'How much auto-approval Stewart can apply to its own emissions.')}
         ${gauge('Speed level', g.speed, 'How aggressively stale items get surfaced as meeting requests.')}
       </div>
-      <div class="settings-foot mono">Inline sliders ship in v0.7. Edit via <code>governance.json</code> for now.</div>
+      <div class="settings-foot mono">📖 Read-only · inline sliders ship in v0.8 · edit via <code>governance.json</code> for now</div>
     </div>
   `;
 }

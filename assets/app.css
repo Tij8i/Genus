@@ -2358,10 +2358,12 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   background: var(--bg);
   border-radius: 4px;
   font-style: italic;
 }
+.kpi-spark-cactus { font-size: 14px; opacity: .7; font-style: normal; }
 
 /* ============ Outputs Tasks sub-tab ============ */
 .task-rows { display: flex; flex-direction: column; gap: 7px; }
@@ -2578,6 +2580,69 @@ body {
 }
 .memo-result-title { flex: 1; font-size: 13px; }
 .memo-result-id { font-size: 10.5px; color: var(--text-faint); }
+
+/* ============ Empty-state with cactus ============ */
+/* Use when there's no real data yet for a section. Honest about the
+   absence + explains what would populate it. */
+.empty-cactus {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 36px 24px;
+  color: var(--text-faint);
+}
+.empty-cactus-icon {
+  font-size: 44px;
+  line-height: 1;
+  margin-bottom: 14px;
+  opacity: .72;
+}
+.empty-cactus-title {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+.empty-cactus-body {
+  font-size: 12.5px;
+  line-height: 1.55;
+  max-width: 380px;
+  color: var(--text-faint);
+}
+
+/* ============ "Coming v0.8" disabled buttons ============ */
+/* UI shape ships but no backend yet. Visually de-emphasized + tooltip + soon-tag. */
+[data-soon="true"],
+.btn-soon {
+  opacity: .55;
+  cursor: not-allowed !important;
+  filter: saturate(.6);
+  position: relative;
+}
+[data-soon="true"]:hover,
+.btn-soon:hover {
+  opacity: .55 !important;
+  filter: saturate(.6);
+  background: inherit !important;
+  border-color: inherit !important;
+  color: inherit !important;
+  transform: none !important;
+}
+.soon-tag {
+  display: inline-block;
+  margin-left: 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  letter-spacing: .06em;
+  background: var(--surface2);
+  color: var(--text-faint);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-weight: 600;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
 
 /* Boot error banner */
 .boot-error {

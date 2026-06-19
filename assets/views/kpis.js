@@ -196,7 +196,7 @@ function renderKpiSparkline(k) {
   // (TODO: read k.recent_values once measurements pipeline ships.)
   const points = k.recent_values || [];
   if (!points.length) {
-    return `<div class="kpi-card-sparkline-placeholder mono">no measurements pipeline yet</div>`;
+    return `<div class="kpi-card-sparkline-placeholder mono"><span class="kpi-spark-cactus">🌵</span>no measurements yet</div>`;
   }
   const max = Math.max(1, ...points);
   return `

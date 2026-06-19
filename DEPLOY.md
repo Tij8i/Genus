@@ -2,6 +2,13 @@
 
 The dashboard ships from this repo's root directory via Cloudflare Pages. No build step.
 
+## URLs (as of 2026-06-19)
+
+- **Daily driver: `genus-v06.pages.dev`** — the v0.7 cockpit. Reads + writes Tuto substrate from `Tij8i/Orchestrator`. Use this as your primary dashboard going forward.
+- **Legacy backup: `genus-dashboard.pages.dev`** — the pre-migration dashboard from `Tij8i/Orchestrator/dashboard/public/`. Kept live in parallel as a fallback during the cutover. Will be retired once you're confident v0.7 covers everything.
+
+Both read the same Tuto substrate, so any task approve / meeting convert / etc. you do on one shows up on the other after refresh.
+
 ## Layout
 
 ```

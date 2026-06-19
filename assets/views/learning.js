@@ -106,8 +106,8 @@ function renderHypothesisCard(init) {
       ` : ''}
       ${verdict.key === 'proposed' ? `
         <div class="hypo-actions">
-          <button type="button" class="hypo-action-btn hypo-action-start">Start test</button>
-          <button type="button" class="hypo-action-btn hypo-action-park">Park</button>
+          <button type="button" class="hypo-action-btn hypo-action-start btn-soon" disabled title="Hypothesis lifecycle controls ship in v0.8">Start test<span class="soon-tag">soon</span></button>
+          <button type="button" class="hypo-action-btn hypo-action-park btn-soon" disabled title="Hypothesis lifecycle controls ship in v0.8">Park<span class="soon-tag">soon</span></button>
         </div>
       ` : ''}
     </div>
@@ -185,7 +185,7 @@ function renderSystemSubTab(ctx) {
       <p class="card-sub">What Tuto noticed about its own work + your patterns. Accept to lock in, Refine to coach, Discuss to explore.</p>
       <div class="reflections-list" style="margin-top:14px">
         ${reflections.length === 0
-          ? `<div class="empty-state">No reflections yet. Closed meetings + heartbeat self-audit produce these.</div>`
+          ? `<div class="empty-cactus"><div class="empty-cactus-icon">🌵</div><div class="empty-cactus-title">No reflections yet</div><div class="empty-cactus-body">Closed meetings + the daily heartbeat self-audit produce these. As soon as Tuto reflects on a meeting or its own work, it shows up here.</div></div>`
           : reflections.map(renderReflectionCard).join('')}
       </div>
     </div>
@@ -196,7 +196,11 @@ function renderSystemSubTab(ctx) {
         <div class="card-header-left"><span class="card-title">How your coaching shows up</span></div>
       </div>
       <p class="card-sub">Operator corrections that became durable behavior changes.</p>
-      <div class="empty-state" style="margin-top:14px">Coaching diff tracking ships in v0.8. For now this lives in <code>LEARNING_LOG.md</code> per Stewart.</div>
+      <div class="empty-cactus" style="margin-top:14px">
+        <div class="empty-cactus-icon">🌵</div>
+        <div class="empty-cactus-title">Coaching diff tracking ships in v0.8</div>
+        <div class="empty-cactus-body">For now this lives in <code>LEARNING_LOG.md</code> per Stewart in the substrate repo.</div>
+      </div>
     </div>
   `;
 }
@@ -211,9 +215,9 @@ function renderReflectionCard(m) {
       <div class="reflection-card-title">${escapeHtml(m.title || (m.body || '').slice(0, 60))}</div>
       <p class="reflection-card-body">${escapeHtml((m.body || '').slice(0, 240))}${(m.body || '').length > 240 ? '…' : ''}</p>
       <div class="reflection-actions">
-        <button type="button" class="reflection-action-btn reflection-accept">Accept</button>
-        <button type="button" class="reflection-action-btn reflection-refine">Refine</button>
-        <button type="button" class="reflection-action-btn reflection-discuss">Discuss</button>
+        <button type="button" class="reflection-action-btn reflection-accept btn-soon" disabled title="Reflection-coaching flow ships in v0.8">Accept<span class="soon-tag">soon</span></button>
+        <button type="button" class="reflection-action-btn reflection-refine btn-soon" disabled title="Reflection-coaching flow ships in v0.8">Refine<span class="soon-tag">soon</span></button>
+        <button type="button" class="reflection-action-btn reflection-discuss btn-soon" disabled title="Reflection-coaching flow ships in v0.8">Discuss<span class="soon-tag">soon</span></button>
       </div>
     </div>
   `;
