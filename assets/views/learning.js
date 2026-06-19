@@ -1,35 +1,28 @@
-// Learning view — sub-tabs by source: Initiative log / Cycle close / Strategic memo.
+// Learning view — 2-part per v0.7:
+//   1. Hypotheses & experiments (learning about the market) — each Initiative
+//      as a bet with a verdict: Validated / Disproven / Testing / Proposed
+//   2. What the system is learning (learning to run itself) — agent
+//      independence meter + agent reflections + coaching before→after
 //
-// Per operator's "submenus as a general rule" (2026-06-19): replace the filter-
-// chip layout with proper sub-tabs.
+// Sub-tabs: Hypotheses · System
 
 import { escapeHtml, ago, dateLabel } from '../utils.js';
 
-let activeSubTab = 'all';
+let activeSubTab = 'hypotheses';
 
 export function renderLearning(ctx) {
   const queryStr = (window.location.hash || '').split('?')[1] || '';
   const tab = new URLSearchParams(queryStr).get('tab');
-  if (['all', 'initiative', 'cycle', 'memo'].includes(tab)) activeSubTab = tab;
-
-  const items = collectLearnings(ctx);
-  const counts = items.reduce((acc, x) => { acc[x.kind] = (acc[x.kind] || 0) + 1; return acc; }, {});
-  const filtered = activeSubTab === 'all' ? items : items.filter(x => x.kind === activeSubTab);
+  if (['hypotheses', 'system'].includes(tab)) activeSubTab = tab;
 
   const root = document.getElementById('route-learning');
   root.innerHTML = `
     <nav class="subtab-nav">
-      ${renderSubTab('all', 'All', items.length)}
-      ${renderSubTab('initiative', 'Initiative log', counts.initiative || 0)}
-      ${renderSubTab('cycle', 'Cycle close', counts.cycle || 0)}
-      ${renderSubTab('memo', 'Strategic memo', counts.memo || 0)}
+      ${renderSubTab('hypotheses', 'Hypotheses & experiments')}
+      ${renderSubTab('system', 'What the system is learning')}
     </nav>
-    ${filtered.length === 0
-      ? `<div class="card"><div class="empty-state">No ${activeSubTab === 'all' ? 'learnings recorded yet' : activeSubTab + ' learnings'}. Initiative <code>learning_log</code> entries, cycle <code>closing_notes</code>, and strategic memos all surface here.</div></div>`
-      : `<div class="learning-list">${filtered.map(renderLearningCard).join('')}</div>`
-    }
+    <div id="learning-subtab-body"></div>
   `;
-
   root.querySelectorAll('.subtab-link').forEach(btn => {
     btn.addEventListener('click', () => {
       activeSubTab = btn.dataset.subtab;
@@ -37,66 +30,191 @@ export function renderLearning(ctx) {
       renderLearning(ctx);
     });
   });
+  const body = document.getElementById('learning-subtab-body');
+  if (activeSubTab === 'hypotheses') body.innerHTML = renderHypothesesSubTab(ctx);
+  else body.innerHTML = renderSystemSubTab(ctx);
 }
 
-function renderSubTab(name, label, count) {
+function renderSubTab(name, label) {
+  return `<button type="button" class="subtab-link ${activeSubTab === name ? 'current' : ''}" data-subtab="${name}">${escapeHtml(label)}</button>`;
+}
+
+// ============ Hypotheses & experiments ============
+
+function renderHypothesesSubTab(ctx) {
+  // Each Initiative with an active_hypothesis is a bet. Verdict derives from
+  // Initiative state:
+  //   - completed + outcome positive → Validated
+  //   - abandoned → Disproven
+  //   - in_progress / review / scoping → Testing
+  //   - not_started → Proposed
+  // (Real outcome polarity needs operator confirmation later — for v1 we
+  //  treat all completed as Validated and abandoned as Disproven.)
+  const inits = (ctx.initiatives || []).filter(i => i.active_hypothesis);
+  if (!inits.length) {
+    return `<div class="card"><div class="empty-state">No initiatives with hypotheses yet. Each Initiative is a bet; add an active_hypothesis to surface it here.</div></div>`;
+  }
+  const sorted = inits.slice().sort((a, b) => {
+    const order = { in_progress: 1, review: 2, scoping: 3, blocked: 4, not_started: 5, completed: 6, abandoned: 7, discarded: 8 };
+    return (order[(a.status || '').toLowerCase()] || 9) - (order[(b.status || '').toLowerCase()] || 9);
+  });
   return `
-    <button type="button" class="subtab-link ${activeSubTab === name ? 'current' : ''}" data-subtab="${name}">
-      ${escapeHtml(label)}
-      ${count > 0 ? `<span class="subtab-badge">${count}</span>` : ''}
-    </button>
+    <div class="hypothesis-list">
+      ${sorted.map(renderHypothesisCard).join('')}
+    </div>
   `;
 }
 
-function collectLearnings(ctx) {
-  const items = [];
-  for (const init of (ctx.initiatives || [])) {
-    for (const entry of (init.learning_log || [])) {
-      items.push({
-        kind: 'initiative', kindLabel: 'Initiative log',
-        at: entry.at || entry.created_at,
-        title: `${init.title} — learning`,
-        source: init.id,
-        body: entry.body || entry.note || '',
-        author: entry.author || 'tuto-stewart',
-      });
-    }
-  }
-  for (const p of (ctx.plans || [])) {
-    if (!['completed', 'superseded'].includes(p.status)) continue;
-    if (!p.closing_notes) continue;
-    items.push({
-      kind: 'cycle', kindLabel: 'Cycle close',
-      at: p.completed_at || p.superseded_at,
-      title: `${p.title} — close note`,
-      source: p.id, body: p.closing_notes, author: 'operator',
-    });
-  }
-  for (const m of (ctx.memos || [])) {
-    const level = (m.level || '').toLowerCase();
-    if (!['strategic', 'decision'].includes(level)) continue;
-    items.push({
-      kind: 'memo', kindLabel: 'Strategic memo',
-      at: m.created_at,
-      title: m.title || (m.body || '').slice(0, 60),
-      source: m.id, body: m.body || '', author: m.created_by || 'unknown',
-    });
-  }
-  items.sort((a, b) => (b.at || '').localeCompare(a.at || ''));
-  return items;
+function renderHypothesisCard(init) {
+  const status = (init.status || 'not_started').toLowerCase();
+  const verdict = verdictFor(status);
+  const daysIn = init.started_at
+    ? Math.floor((Date.now() - new Date(init.started_at).getTime()) / 86400000)
+    : null;
+  // Confidence bar for "Testing" only — proxy as % of milestones done
+  const ms = init.milestones || [];
+  const doneMs = ms.filter(m => (m.status || '').toLowerCase() === 'done').length;
+  const confidence = ms.length > 0 ? Math.round((doneMs / ms.length) * 100) : 0;
+  return `
+    <div class="hypo-card hypo-card-${verdict.key}">
+      <div class="hypo-card-head">
+        <span class="hypo-verdict-chip hypo-verdict-${verdict.key}">
+          ${verdict.iconHtml}
+          ${escapeHtml(verdict.label)}
+        </span>
+        <span class="mono hypo-card-id">${escapeHtml(init.id)}</span>
+      </div>
+      <div class="hypo-card-title">${escapeHtml(init.title)}</div>
+      <div class="hypo-card-hypothesis">
+        <span class="hypo-label mono">HYPOTHESIS</span>
+        <p class="hypo-card-bet">${escapeHtml(init.active_hypothesis)}</p>
+      </div>
+      ${verdict.key === 'testing' && ms.length > 0 ? `
+        <div class="hypo-confidence">
+          <div class="hypo-confidence-label-row">
+            <span class="mono hypo-confidence-label">CONFIDENCE</span>
+            <span class="mono hypo-confidence-pct">${confidence}%${daysIn != null ? ` · ${daysIn}d in` : ''}</span>
+          </div>
+          <div class="hypo-confidence-bar"><div class="hypo-confidence-fill" style="width:${confidence}%"></div></div>
+        </div>
+      ` : ''}
+      ${verdict.key === 'validated' && init.success_criterion ? `
+        <div class="hypo-evidence">
+          <span class="mono hypo-label">EVIDENCE</span>
+          <p>${escapeHtml((init.success_criterion || '').slice(0, 200))}</p>
+        </div>
+      ` : ''}
+      ${verdict.key === 'proposed' ? `
+        <div class="hypo-actions">
+          <button type="button" class="hypo-action-btn hypo-action-start">Start test</button>
+          <button type="button" class="hypo-action-btn hypo-action-park">Park</button>
+        </div>
+      ` : ''}
+    </div>
+  `;
 }
 
-function renderLearningCard(item) {
+function verdictFor(status) {
+  const checkIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4.5 4.5L19 7"/></svg>';
+  const xIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+  const testIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v6M12 17v6M4.2 4.2l4.2 4.2M15.6 15.6l4.2 4.2M1 12h6M17 12h6"/></svg>';
+  const proposeIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>';
+  switch (status) {
+    case 'completed': return { key: 'validated', label: 'Validated', iconHtml: checkIcon };
+    case 'abandoned':
+    case 'discarded': return { key: 'disproven', label: 'Disproven', iconHtml: xIcon };
+    case 'in_progress':
+    case 'review':
+    case 'scoping':
+    case 'blocked': return { key: 'testing', label: 'Testing', iconHtml: testIcon };
+    case 'not_started':
+    default: return { key: 'proposed', label: 'Proposed', iconHtml: proposeIcon };
+  }
+}
+
+// ============ What the system is learning ============
+
+function renderSystemSubTab(ctx) {
+  // Independence meter: % of approved tasks that were auto-approved (via
+  // trust gauge) vs operator-approved. Proxy for "how much does Tuto run
+  // itself".
+  const tasks = ctx.tasks || [];
+  const autoApproved = tasks.filter(t => (t.approval || {}).decided_by === 'tuto-stewart' || (t.approval || {}).decided_by === 'system').length;
+  const operatorApproved = tasks.filter(t => (t.approval || {}).decided_by === 'operator').length;
+  const totalDecided = autoApproved + operatorApproved;
+  const independence = totalDecided > 0 ? Math.round((autoApproved / totalDecided) * 100) : 0;
+
+  // Agent reflections — strategic memos or memos from REFLECTION_LOG
+  // (proxy: memos with from_meeting OR level=system, latest 5)
+  const reflections = (ctx.memos || [])
+    .filter(m => m.from_meeting || (m.level || '').toLowerCase() === 'system')
+    .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+    .slice(0, 5);
+
   return `
-    <div class="learning-card">
-      <div class="learning-card-head">
-        <span class="learning-kind-chip learning-kind-${item.kind}">${escapeHtml(item.kindLabel)}</span>
-        <span class="mono learning-card-source">${escapeHtml(item.source)}</span>
-        <span class="mono learning-card-when">${escapeHtml(ago(item.at))}</span>
+    <!-- Independence meter -->
+    <div class="card">
+      <div class="card-header-row">
+        <div class="card-header-left"><span class="card-title">Agent independence</span></div>
+        <span class="mono" style="font-size:12px;color:var(--text-faint)">${independence}% auto-approved · last cycle</span>
       </div>
-      <div class="learning-card-title">${escapeHtml(item.title)}</div>
-      <p class="learning-card-body">${escapeHtml(item.body)}</p>
-      <div class="mono learning-card-foot">${escapeHtml(item.author.toUpperCase())} · ${escapeHtml(dateLabel(item.at))}</div>
+      <p class="card-sub">How much Tuto runs itself vs needs your sign-off. Higher = more delegation working as intended.</p>
+      <div class="independence-bar-wrap" style="margin-top:18px">
+        <div class="independence-bar">
+          <div class="independence-fill" style="width:${independence}%"></div>
+          <div class="independence-marker" style="left:30%" title="target 30% — Cautious"></div>
+          <div class="independence-marker" style="left:60%" title="target 60% — Balanced"></div>
+          <div class="independence-marker" style="left:85%" title="target 85% — Bold"></div>
+        </div>
+        <div class="independence-axis mono">
+          <span>0% · You decide everything</span>
+          <span>100% · Tuto runs itself</span>
+        </div>
+      </div>
+      <div class="independence-breakdown mono">
+        <div><strong>${autoApproved}</strong> auto-approved · <strong>${operatorApproved}</strong> operator-approved · <strong>${tasks.length - totalDecided}</strong> pending</div>
+      </div>
+    </div>
+
+    <!-- Agent reflections -->
+    <div class="card">
+      <div class="card-header-row">
+        <div class="card-header-left"><span class="card-title">Agent reflections</span></div>
+        <span class="mono" style="font-size:12px;color:var(--text-faint)">${reflections.length} recent</span>
+      </div>
+      <p class="card-sub">What Tuto noticed about its own work + your patterns. Accept to lock in, Refine to coach, Discuss to explore.</p>
+      <div class="reflections-list" style="margin-top:14px">
+        ${reflections.length === 0
+          ? `<div class="empty-state">No reflections yet. Closed meetings + heartbeat self-audit produce these.</div>`
+          : reflections.map(renderReflectionCard).join('')}
+      </div>
+    </div>
+
+    <!-- Coaching before→after -->
+    <div class="card">
+      <div class="card-header-row">
+        <div class="card-header-left"><span class="card-title">How your coaching shows up</span></div>
+      </div>
+      <p class="card-sub">Operator corrections that became durable behavior changes.</p>
+      <div class="empty-state" style="margin-top:14px">Coaching diff tracking ships in v0.8. For now this lives in <code>LEARNING_LOG.md</code> per Stewart.</div>
+    </div>
+  `;
+}
+
+function renderReflectionCard(m) {
+  return `
+    <div class="reflection-card">
+      <div class="reflection-card-head">
+        <span class="mono reflection-card-source">${escapeHtml(m.id)}${m.from_meeting ? ` · from ${escapeHtml(m.from_meeting)}` : ''}</span>
+        <span class="mono reflection-card-when">${escapeHtml(ago(m.created_at))}</span>
+      </div>
+      <div class="reflection-card-title">${escapeHtml(m.title || (m.body || '').slice(0, 60))}</div>
+      <p class="reflection-card-body">${escapeHtml((m.body || '').slice(0, 240))}${(m.body || '').length > 240 ? '…' : ''}</p>
+      <div class="reflection-actions">
+        <button type="button" class="reflection-action-btn reflection-accept">Accept</button>
+        <button type="button" class="reflection-action-btn reflection-refine">Refine</button>
+        <button type="button" class="reflection-action-btn reflection-discuss">Discuss</button>
+      </div>
     </div>
   `;
 }

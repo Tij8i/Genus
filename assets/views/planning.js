@@ -70,8 +70,48 @@ function renderActiveSubTab(ctx) {
     : [];
   return `
     ${renderActivePlanCard(activePlan, planInits)}
+    ${renderCoreKpisStrip(ctx)}
     ${renderGroupedTimeline(ctx, activePlan, planInits)}
   `;
+}
+
+// Compact 4-card KPI strip for the Planning page (per v0.7 mockup line 39).
+// Picks top 4 KPIs by priority (primary > secondary) + category (north_star
+// + lagging first). Shows value, target, color status.
+function renderCoreKpisStrip(ctx) {
+  const kpis = ctx.kpis || [];
+  if (!kpis.length) return '';
+  const priorityOrder = { primary: 1, secondary: 2 };
+  const categoryOrder = { north_star: 1, lagging: 2, leading: 3, milestone: 4, operational: 5 };
+  const top4 = kpis.slice().sort((a, b) => {
+    const pa = priorityOrder[a.priority] || 9;
+    const pb = priorityOrder[b.priority] || 9;
+    if (pa !== pb) return pa - pb;
+    return (categoryOrder[a.category] || 9) - (categoryOrder[b.category] || 9);
+  }).slice(0, 4);
+  return `
+    <div class="core-kpi-strip">
+      ${top4.map(k => {
+        const value = k.last_value != null ? formatKpiValue(k.last_value, k.unit) : '—';
+        const target = k.target != null ? formatKpiValue(k.target, k.unit) : '';
+        return `
+          <div class="core-kpi-card">
+            <div class="core-kpi-label">${escapeHtml(k.name.length > 32 ? k.name.slice(0, 30) + '…' : k.name)}</div>
+            <div class="core-kpi-value mono">${escapeHtml(value)}</div>
+            <div class="core-kpi-sub mono">${target ? `target ${escapeHtml(target)}` : (k.area || '').replace(/_/g, ' ')}</div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+function formatKpiValue(v, unit) {
+  if (typeof v === 'number') {
+    const formatted = Number.isInteger(v) ? v.toString() : v.toFixed(1);
+    return unit ? `${formatted} ${unit}` : formatted;
+  }
+  return String(v);
 }
 
 function renderActivePlanCard(activePlan, planInits) {
@@ -233,10 +273,14 @@ function renderTimelineRow(init, ctx, pct, today) {
   const doneCount = linked.filter(t => (t.status || '').toLowerCase() === 'done').length;
   const dlLabel = init.target_close_date ? dateLabel(init.target_close_date) : '';
 
+  const hypothesisHtml = init.active_hypothesis
+    ? `<div class="tl3-row-hypothesis"><span class="tl3-hypothesis-label mono">HYPOTHESIS</span>${escapeHtml((init.active_hypothesis || '').slice(0, 180))}${(init.active_hypothesis || '').length > 180 ? '…' : ''}</div>`
+    : '';
   return `
     <div class="tl3-row" data-init-id="${escapeHtml(init.id)}" role="button" tabindex="0">
       <div class="tl3-row-label">
         <div class="tl3-row-title">${escapeHtml(init.title)}</div>
+        ${hypothesisHtml}
         <div class="tl3-row-meta mono">
           ${escapeHtml(dlLabel)}
           ${linked.length ? ` · ${doneCount}/${linked.length} tasks` : ''}

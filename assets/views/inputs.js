@@ -5,6 +5,7 @@
 // to reduce horizontal density and let each section breathe.
 
 import { escapeHtml, ago, icon } from '../utils.js';
+import { openOverlay } from '../overlay.js';
 
 const MEETING_SERVER = 'http://localhost:8765';
 const BU = 'tuto';
@@ -53,6 +54,19 @@ export function renderInputs(ctx, { onChange }) {
   wireMemoButtons(memos, onChange);
   wireMeetingButtons(meetings, ctx, onChange);
   wireSuggestionButtons(tasks, onChange);
+  wireMemoRowClick(memos, ctx);
+}
+
+function wireMemoRowClick(memos, ctx) {
+  document.querySelectorAll('.memo-row-clickable').forEach(row => {
+    row.addEventListener('click', (e) => {
+      // Don't open overlay if click was on the Dismiss button
+      if (e.target.closest('.memo-dismiss-btn')) return;
+      const memoId = row.dataset.memoId;
+      const memo = memos.find(m => m.id === memoId);
+      if (memo) openMemoOverlay(memo, ctx);
+    });
+  });
 }
 
 function renderSubTab(name, label, badge) {
@@ -310,7 +324,7 @@ function renderMemoSection(label, items, sectionClass) {
       ${items.length === 0
         ? `<div class="empty-state-sm">none</div>`
         : items.map(m => `
-          <div class="memo-row" data-memo-id="${escapeHtml(m.id)}">
+          <div class="memo-row memo-row-clickable" data-memo-id="${escapeHtml(m.id)}" role="button" tabindex="0">
             <div class="memo-row-head">
               <span class="memo-status-chip memo-status-chip-${sectionClass}">${escapeHtml(m.level || 'misc')}</span>
               <span class="mono memo-when">${escapeHtml(ago(m.created_at))}</span>
@@ -327,6 +341,68 @@ function renderMemoSection(label, items, sectionClass) {
         `).join('')}
     </div>
   `;
+}
+
+function openMemoOverlay(memo, ctx) {
+  // What it resulted in — find tasks + initiatives whose id is in applied_to,
+  // or that reference from_memo back to this memo.
+  const appliedIds = memo.applied_to || [];
+  const linkedTasks = (ctx.tasks || []).filter(t =>
+    appliedIds.includes(t.id) || t.from_memo === memo.id
+  );
+  const linkedInits = (ctx.initiatives || []).filter(i =>
+    appliedIds.includes(i.id) || i.from_memo === memo.id
+  );
+
+  const bodyHtml = `
+    <div class="memo-overlay-meta-row">
+      <span class="memo-status-chip memo-status-chip-${(memo.status || 'unprocessed').toLowerCase()}">${escapeHtml(memo.level || 'misc')}</span>
+      <span class="mono memo-overlay-when">${escapeHtml(memo.id)} · created ${escapeHtml(ago(memo.created_at))}</span>
+    </div>
+    ${memo.target ? `<div class="memo-overlay-to mono">→ ${escapeHtml(memo.target)}</div>` : ''}
+    <div class="memo-overlay-body">${escapeHtml(memo.body || '(no body)')}</div>
+
+    ${memo.processed_at ? `
+      <div class="memo-overlay-section-label mono">PROCESSED</div>
+      <p class="memo-overlay-processed-meta">By ${escapeHtml(memo.processed_by || 'unknown')} on ${escapeHtml((memo.processed_at || '').slice(0, 10))}.</p>
+    ` : ''}
+
+    ${(linkedTasks.length || linkedInits.length) ? `
+      <div class="memo-overlay-section-label mono">WHAT IT RESULTED IN</div>
+      ${linkedInits.length ? `
+        <div class="memo-results-group">
+          <div class="memo-results-group-label mono">Initiatives</div>
+          ${linkedInits.map(i => `
+            <div class="memo-result-row">
+              <span class="memo-result-pill mono">init</span>
+              <span class="memo-result-title">${escapeHtml(i.title)}</span>
+              <span class="mono memo-result-id">${escapeHtml(i.id)}</span>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+      ${linkedTasks.length ? `
+        <div class="memo-results-group">
+          <div class="memo-results-group-label mono">Tasks</div>
+          ${linkedTasks.map(t => `
+            <div class="memo-result-row">
+              <span class="memo-result-pill mono">task</span>
+              <span class="memo-result-title">${escapeHtml(t.title)}</span>
+              <span class="mono memo-result-id">${escapeHtml(t.status || '?')}</span>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+    ` : memo.status === 'processed' ? `
+      <div class="memo-overlay-section-label mono">WHAT IT RESULTED IN</div>
+      <p class="empty-state-sm">Processed without spawning a downstream task or initiative. Tuto absorbed it as context.</p>
+    ` : ''}
+  `;
+  openOverlay({
+    title: memo.title || (memo.body || '').slice(0, 60),
+    iconTint: 'var(--accent)',
+    bodyHtml,
+  });
 }
 
 function wireMemoButtons(memos, onChange) {

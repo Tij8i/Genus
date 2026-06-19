@@ -160,8 +160,6 @@ function renderKpiGrid(kpis) {
 }
 
 function renderKpiCard(k) {
-  // No measurements yet → show target + "not measured yet"
-  // (When measurements flow in: latest value + delta vs previous + trend chip)
   const value = k.last_value != null ? formatValue(k.last_value, k.unit) : '—';
   const valueSub = k.last_measured_at
     ? `as of ${escapeHtml(ago(k.last_measured_at))}`
@@ -171,6 +169,7 @@ function renderKpiCard(k) {
     : '';
   const categoryChip = categoryChipForKpi(k);
   const dot = dotForKpi(k);
+  const sparkline = renderKpiSparkline(k);
 
   return `
     <div class="kpi-card" title="${escapeHtml(k.description || '')}">
@@ -180,10 +179,32 @@ function renderKpiCard(k) {
       </div>
       <div class="kpi-card-value mono">${escapeHtml(value)}</div>
       <div class="kpi-card-sub">${escapeHtml(valueSub)}${target ? ' · ' + escapeHtml(target) : ''}</div>
+      ${sparkline}
       <div class="kpi-card-foot">
         <span class="kpi-card-area mono">${escapeHtml((k.area || '').replace(/_/g, ' '))}</span>
         ${categoryChip}
       </div>
+    </div>
+  `;
+}
+
+function renderKpiSparkline(k) {
+  // No real measurements pipeline yet (kpi measurements files return 404).
+  // For v1 of sparklines, render a flat placeholder track when there's no
+  // data. When measurements/<id>.jsonl exists + has data points, this
+  // would become a real sparkline.
+  // (TODO: read k.recent_values once measurements pipeline ships.)
+  const points = k.recent_values || [];
+  if (!points.length) {
+    return `<div class="kpi-card-sparkline-placeholder mono">no measurements pipeline yet</div>`;
+  }
+  const max = Math.max(1, ...points);
+  return `
+    <div class="kpi-card-sparkline">
+      ${points.map(v => {
+        const h = Math.max(8, Math.round((v / max) * 100));
+        return `<div class="kpi-spark-bar" style="height:${h}%"></div>`;
+      }).join('')}
     </div>
   `;
 }

@@ -11,7 +11,7 @@ let activeRange = 'cycle';
 export function renderOutputs(ctx) {
   const queryStr = (window.location.hash || '').split('?')[1] || '';
   const tab = new URLSearchParams(queryStr).get('tab');
-  if (['trajectory', 'shipped', 'milestones'].includes(tab)) activeSubTab = tab;
+  if (['trajectory', 'shipped', 'tasks', 'milestones'].includes(tab)) activeSubTab = tab;
 
   const tasks = ctx.tasks || [];
   const initiatives = ctx.initiatives || [];
@@ -46,6 +46,7 @@ export function renderOutputs(ctx) {
     <nav class="subtab-nav">
       ${renderSubTab('trajectory', 'Trajectory')}
       ${renderSubTab('shipped', 'Shipped', shipped.length)}
+      ${renderSubTab('tasks', 'Tasks', tasks.filter(t => ['pushed', 'executing', 'in_review', 'blocked'].includes((t.status || '').toLowerCase())).length)}
       ${renderSubTab('milestones', 'Milestones reached', milestonesReached.length)}
     </nav>
     ${renderRangeBar(activePlan)}
@@ -69,7 +70,80 @@ export function renderOutputs(ctx) {
   const body = document.getElementById('outputs-subtab-body');
   if (activeSubTab === 'trajectory') body.innerHTML = renderTrajectoryCard(shipped, milestonesReached, activePlan);
   else if (activeSubTab === 'shipped') body.innerHTML = renderShipped(shipped, deliverables);
+  else if (activeSubTab === 'tasks') body.innerHTML = renderTasks(tasks);
   else if (activeSubTab === 'milestones') body.innerHTML = renderMilestones(milestonesReached);
+}
+
+function renderTasks(tasks) {
+  // Paperclip execution view per v0.7 README: running/awaiting-finalization
+  // (status in pushed/executing/in_review/blocked) + recently closed
+  // (status=done, last 7d). Top 5 of recently closed shown, rest greyed.
+  const inFlight = tasks.filter(t => ['pushed', 'executing', 'in_review', 'blocked'].includes((t.status || '').toLowerCase()))
+    .sort((a, b) => ((b.execution || {}).started_at || '').localeCompare((a.execution || {}).started_at || ''));
+  const cutoff7d = Date.now() - 7 * 86400000;
+  const recentlyClosed = tasks.filter(t => (t.status || '').toLowerCase() === 'done')
+    .filter(t => {
+      const c = (t.execution || {}).completed_at;
+      return c && new Date(c).getTime() >= cutoff7d;
+    })
+    .sort((a, b) => ((b.execution || {}).completed_at || '').localeCompare((a.execution || {}).completed_at || ''));
+
+  return `
+    <div class="card">
+      <div class="card-header-row">
+        <div class="card-header-left"><span class="card-title">In flight</span></div>
+        <span class="mono" style="font-size:12px;color:var(--text-faint)">${inFlight.length} task${inFlight.length === 1 ? '' : 's'} · Paperclip execution</span>
+      </div>
+      <p class="card-sub">Running, awaiting finalization, or blocked. Lives in Paperclip; status syncs every 10 min.</p>
+      <div class="task-rows" style="margin-top:14px">
+        ${inFlight.length === 0
+          ? `<div class="empty-state">Nothing in flight. Approve a suggestion to queue more work.</div>`
+          : inFlight.map(t => renderTaskRow(t, 'in-flight')).join('')}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header-row">
+        <div class="card-header-left"><span class="card-title">Recently closed</span></div>
+        <span class="mono" style="font-size:12px;color:var(--text-faint)">${recentlyClosed.length} in last 7 days</span>
+      </div>
+      <div class="task-rows" style="margin-top:14px">
+        ${recentlyClosed.length === 0
+          ? `<div class="empty-state">No tasks closed in the last 7 days.</div>`
+          : recentlyClosed.slice(0, 5).map(t => renderTaskRow(t, 'closed')).join('') +
+            (recentlyClosed.length > 5
+              ? `<div class="task-rows-extra">${recentlyClosed.slice(5, 20).map(t => renderTaskRow(t, 'closed-faded')).join('')}</div>${recentlyClosed.length > 20 ? `<div class="see-more">+ ${recentlyClosed.length - 20} more</div>` : ''}`
+              : '')}
+      </div>
+    </div>
+  `;
+}
+
+function renderTaskRow(t, kind) {
+  const status = (t.status || '').toLowerCase();
+  const stateColor = taskStateColor(status);
+  const dateField = kind === 'in-flight' ? (t.execution || {}).started_at : (t.execution || {}).completed_at;
+  const executor = (t.target || {}).executor || 'tuto-stewart';
+  return `
+    <div class="task-row task-row-${kind}">
+      <span class="task-row-status-chip task-row-status-${stateColor}">${escapeHtml(status.replace(/_/g, ' '))}</span>
+      <div class="task-row-body">
+        <div class="task-row-title">${escapeHtml(t.title || 'Untitled task')}</div>
+        <div class="task-row-meta mono">${escapeHtml(executor)}${t.category ? ` · ${escapeHtml(t.category)}` : ''}${t.advances_initiative && t.advances_initiative !== 'unrelated' ? ` · → ${escapeHtml(t.advances_initiative)}` : ''}</div>
+      </div>
+      <span class="task-row-when mono">${escapeHtml(ago(dateField))}</span>
+    </div>
+  `;
+}
+
+function taskStateColor(s) {
+  switch (s) {
+    case 'pushed': case 'executing': case 'in_review': return 'blue';
+    case 'done': return 'green';
+    case 'blocked': case 'failed': case 'rejected': return 'red';
+    case 'awaiting_approval': return 'yellow';
+    default: return 'gray';
+  }
 }
 
 function renderSubTab(name, label, count) {
