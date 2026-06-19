@@ -1869,11 +1869,37 @@ body {
 }
 .appearance-color-row { display: flex; gap: 9px; }
 .appearance-color {
-  width: 26px; height: 26px; border-radius: 99px;
+  width: 30px; height: 30px; border-radius: 99px;
   cursor: pointer;
+  border: none;
+  padding: 0;
+  transition: transform .12s;
 }
+.appearance-color:hover { transform: scale(1.08); }
 .appearance-color-current {
-  box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent);
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px currentColor;
+}
+.density-segments {
+  display: inline-flex;
+  background: var(--surface2);
+  border-radius: 9px; padding: 3px;
+  gap: 3px;
+}
+.density-seg {
+  font-size: 12.5px;
+  color: var(--text-dim);
+  font-weight: 500;
+  padding: 6px 14px; border-radius: 6px;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+}
+.density-seg:hover { color: var(--text); }
+.density-seg-current {
+  background: var(--surface);
+  color: var(--text); font-weight: 700;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .06);
 }
 
 /* ============ Workspace switcher dropdown ============ */

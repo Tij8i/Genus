@@ -9,6 +9,7 @@
 //     proto-module dump
 
 import { escapeHtml, ago, icon } from '../utils.js';
+import { ACCENT_OPTIONS, DENSITY_OPTIONS, loadAppearance, saveAppearance } from '../appearance.js';
 
 let activeSubTab = 'profile';
 
@@ -42,7 +43,25 @@ export function renderSettings(ctx) {
   if (activeSubTab === 'profile') body.innerHTML = renderProfileSubTab(ctx);
   else if (activeSubTab === 'governance') body.innerHTML = renderGovernanceSubTab(ctx);
   else if (activeSubTab === 'wiring') body.innerHTML = renderWiringSubTab(ctx);
-  else if (activeSubTab === 'appearance') body.innerHTML = renderAppearanceSubTab(ctx);
+  else if (activeSubTab === 'appearance') {
+    body.innerHTML = renderAppearanceSubTab(ctx);
+    wireAppearanceControls(ctx);
+  }
+}
+
+function wireAppearanceControls(ctx) {
+  document.querySelectorAll('.appearance-color').forEach(btn => {
+    btn.addEventListener('click', () => {
+      saveAppearance({ accent: btn.dataset.accent });
+      renderSettings(ctx);  // re-render to update current selection ring
+    });
+  });
+  document.querySelectorAll('.density-seg').forEach(btn => {
+    btn.addEventListener('click', () => {
+      saveAppearance({ density: btn.dataset.density });
+      renderSettings(ctx);
+    });
+  });
 }
 
 function renderSubTab(name, label) {
@@ -319,10 +338,11 @@ function statusToColor(s) {
 function renderAppearanceSubTab(ctx) {
   const i = ctx.identity || {};
   const buLetter = (i.name || 'T').charAt(0).toUpperCase();
+  const { accent, density } = loadAppearance();
   return `
     <div class="card">
       <div class="card-section-label">Appearance</div>
-      <p class="card-sub" style="margin-bottom:14px">How Genus looks. Applies to this BU's workspace.</p>
+      <p class="card-sub" style="margin-bottom:14px">How Genus looks. Saved per-browser; applies instantly.</p>
 
       <div class="settings-row">
         <div class="settings-row-label">
@@ -340,19 +360,32 @@ function renderAppearanceSubTab(ctx) {
       <div class="settings-row">
         <div class="settings-row-label">
           <div class="settings-row-name">Accent color</div>
-          <div class="settings-row-sub">Used across the dashboard for highlights + active states.</div>
+          <div class="settings-row-sub">Used across the dashboard for highlights + active states. Saved per-browser.</div>
         </div>
         <div class="settings-row-value">
           <div class="appearance-color-row">
-            <span class="appearance-color appearance-color-current" style="background:#2f6bff" title="Genus blue (current)"></span>
-            <span class="appearance-color" style="background:#5b53d6" title="Indigo"></span>
-            <span class="appearance-color" style="background:#0e9f6e" title="Green"></span>
-            <span class="appearance-color" style="background:#e0683a" title="Orange"></span>
+            ${ACCENT_OPTIONS.map(opt => `
+              <button type="button" class="appearance-color ${accent === opt.key ? 'appearance-color-current' : ''}" data-accent="${escapeHtml(opt.key)}" style="background:${opt.color}" title="${escapeHtml(opt.name)}" aria-label="${escapeHtml(opt.name)}"></button>
+            `).join('')}
           </div>
         </div>
       </div>
 
-      <div class="settings-foot mono">Color picker ships in v0.7. Today: stick with Genus blue.</div>
+      <div class="settings-row">
+        <div class="settings-row-label">
+          <div class="settings-row-name">Density</div>
+          <div class="settings-row-sub">Comfortable = roomier padding + gaps. Compact = tighter, more on screen.</div>
+        </div>
+        <div class="settings-row-value">
+          <div class="density-segments">
+            ${DENSITY_OPTIONS.map(opt => `
+              <button type="button" class="density-seg ${density === opt.key ? 'density-seg-current' : ''}" data-density="${escapeHtml(opt.key)}">${escapeHtml(opt.name)}</button>
+            `).join('')}
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-foot mono">Per-browser preference. Cross-device sync ships in v0.8.</div>
     </div>
   `;
 }

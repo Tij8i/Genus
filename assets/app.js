@@ -30,6 +30,7 @@ import { renderLearning as renderLearningView } from './views/learning.js';
 import { renderModules as renderModulesView } from './views/modules.js';
 import { renderPeople as renderPeopleView } from './views/people.js';
 import { openOnboarding } from './overlay.js';
+import { applyAppearance } from './appearance.js';
 
 // v1: hardcoded BU. Multi-BU switcher slot exists in the sidebar but only
 // one BU is wired today (Tuto on Genus-native substrate). Per [[v06-mockup-interpretation]]
@@ -64,6 +65,9 @@ const safeRender = (label, fn) => {
 };
 
 async function boot() {
+  // Apply saved appearance prefs (accent + density) before any render
+  applyAppearance();
+
   // Fire all substrate reads in parallel — Pages Functions handle cross-repo
   // GitHub reads via the GITHUB_PAT env var.
   const baseRel = (file) => `${substrateBase(BU)}/${file}`;
