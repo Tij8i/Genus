@@ -13,6 +13,7 @@
 import { escapeHtml, ago, isoDay } from '../utils.js';
 
 let activeAreaFilter = 'all';
+let scopeDropdownOpen = false;
 
 export function renderKpis(ctx) {
   const root = document.getElementById('route-kpis');
@@ -24,7 +25,6 @@ export function renderKpis(ctx) {
     ? kpis
     : kpis.filter(k => k.area === activeAreaFilter);
 
-  // Sort: primary first, then north_star, then by name
   const priorityOrder = { primary: 1, secondary: 2 };
   const categoryOrder = { north_star: 1, lagging: 2, leading: 3, milestone: 4, operational: 5 };
   const sorted = filteredKpis.slice().sort((a, b) => {
@@ -37,32 +37,85 @@ export function renderKpis(ctx) {
     return (a.name || '').localeCompare(b.name || '');
   });
 
+  // Scope dropdown lives in the page header (per mockup line 491). The KPI
+  // page is unusual — its scope filter sits TOP-RIGHT in the header, not in
+  // a separate filter bar. So we inject directly into the page header.
+  const headerRight = document.querySelector('section[data-route="kpis"] .page-header-right')
+    || createHeaderRight();
+  headerRight.innerHTML = renderScopeDropdown(areas);
+  wireScopeDropdown(ctx, areas);
+
   root.innerHTML = `
-    ${renderScopeBar(areas)}
     ${renderSourcesBar(sources)}
     ${renderKpiGrid(sorted)}
   `;
+}
 
-  // Wire scope buttons
-  root.querySelectorAll('.scope-pill').forEach(btn => {
-    btn.addEventListener('click', () => {
-      activeAreaFilter = btn.dataset.scope;
+function createHeaderRight() {
+  const header = document.querySelector('section[data-route="kpis"] .page-header');
+  const div = document.createElement('div');
+  div.className = 'page-header-right';
+  header.appendChild(div);
+  return div;
+}
+
+function renderScopeDropdown(areas) {
+  const currentLabel = activeAreaFilter === 'all'
+    ? 'All areas'
+    : activeAreaFilter.replace(/_/g, ' ');
+  return `
+    <div class="scope-dropdown">
+      <button type="button" class="scope-dd-trigger" id="scope-dd-trigger" aria-haspopup="listbox" aria-expanded="${scopeDropdownOpen}">
+        <span class="mono scope-dd-label">SCOPE</span>
+        <span class="scope-dd-current">${escapeHtml(currentLabel)}</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      ${scopeDropdownOpen ? `
+        <div class="scope-dd-menu" role="listbox">
+          <button type="button" class="scope-dd-item ${activeAreaFilter === 'all' ? 'current' : ''}" data-scope="all">
+            <span class="scope-dd-dot" style="background:var(--accent)"></span>All areas
+          </button>
+          ${areas.map((a, i) => {
+            const colors = ['#e0683a', '#0e9f6e', '#7a4dff', '#a9790a', '#3aa3c7'];
+            const c = colors[i % colors.length];
+            return `
+              <button type="button" class="scope-dd-item ${activeAreaFilter === a ? 'current' : ''}" data-scope="${escapeHtml(a)}">
+                <span class="scope-dd-dot" style="background:${c}"></span>${escapeHtml(a.replace(/_/g, ' '))}
+              </button>
+            `;
+          }).join('')}
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+function wireScopeDropdown(ctx, areas) {
+  const trigger = document.getElementById('scope-dd-trigger');
+  if (!trigger) return;
+  trigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    scopeDropdownOpen = !scopeDropdownOpen;
+    renderKpis(ctx);
+  });
+  document.querySelectorAll('.scope-dd-item').forEach(item => {
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
+      activeAreaFilter = item.dataset.scope;
+      scopeDropdownOpen = false;
       renderKpis(ctx);
     });
   });
-}
-
-function renderScopeBar(areas) {
-  const all = `<button type="button" class="scope-pill ${activeAreaFilter === 'all' ? 'current' : ''}" data-scope="all">All <span class="scope-pill-count">${areas.length + 1}</span></button>`;
-  const each = areas.map(a => `
-    <button type="button" class="scope-pill ${activeAreaFilter === a ? 'current' : ''}" data-scope="${escapeHtml(a)}">
-      ${escapeHtml(a.replace(/_/g, ' '))}
-    </button>
-  `).join('');
-  return `<div class="scope-bar">
-    <span class="card-section-label" style="margin-right:8px">SCOPE</span>
-    ${all}${each}
-  </div>`;
+  // Click outside to close
+  if (scopeDropdownOpen) {
+    setTimeout(() => {
+      document.addEventListener('click', function closeOnce() {
+        scopeDropdownOpen = false;
+        renderKpis(ctx);
+        document.removeEventListener('click', closeOnce);
+      });
+    }, 0);
+  }
 }
 
 function collectSources(kpis) {

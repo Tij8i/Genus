@@ -1,44 +1,34 @@
-// Planning view — locked-in plan, its initiatives, the commands you run on it.
+// Planning view — locked-in plan, grouped Initiative timeline, sub-tabs for
+// Active / Backlog / Retrospective.
 //
-// Sub-tabs: Active / Backlog / Retrospective (locked in decision 9 of the
-// migration plan: Backlog as a Planning sub-tab).
-//
-// Active sub-tab layout (locked in decision 7 — compact rows + Initiative
-// detail overlay, and decision 8 — Roadmap timeline at top):
-//   1. Roadmap timeline (Gantt-style, cross-Initiative)
-//   2. Active plan summary card
-//   3. Compact Initiative rows (click → opens detail overlay)
-//
-// Initiative detail overlay (per decision 7):
-//   - milestone strip + per-milestone mark-done button
-//   - hypothesis + success criterion
-//   - linked tasks list
-//   - close button
+// Per operator feedback 2026-06-19:
+//   1. Active plan card on TOP
+//   2. Initiative timeline BELOW (one merged view, no separate "rows" list)
+//   3. Timeline bars are CLICKABLE → open detail overlay (same overlay as before)
+//   4. Initiatives GROUPED BY GOAL (one timeline section per goal in active plan)
+//   5. Sub-tab nav must NOT clobber the route hash (fixed in router.js)
 
-import { escapeHtml, ago, dateLabel, daysBetween, cycleTimeProgress, isoDay } from '../utils.js';
+import { escapeHtml, ago, dateLabel, isoDay, cycleTimeProgress } from '../utils.js';
 
 const BU = 'tuto';
 
-// Module-level: which Initiative's detail is currently shown (null = none).
 let openInitiativeId = null;
-// Which sub-tab is active. Persisted in URL hash query param.
 let activeSubTab = 'active';
 
 export function renderPlanning(ctx, { onChange }) {
-  // Read sub-tab from URL: #planning?tab=backlog
-  const hashParts = (window.location.hash || '').split('?');
-  if (hashParts[1]) {
-    const params = new URLSearchParams(hashParts[1]);
-    const tab = params.get('tab');
-    if (['active', 'backlog', 'retrospective'].includes(tab)) activeSubTab = tab;
-  }
+  // Read sub-tab from URL query (#planning?tab=backlog). Router now strips
+  // the query before validating, so this is safe.
+  const queryStr = (window.location.hash || '').split('?')[1] || '';
+  const params = new URLSearchParams(queryStr);
+  const tab = params.get('tab');
+  if (['active', 'backlog', 'retrospective'].includes(tab)) activeSubTab = tab;
 
   const root = document.getElementById('route-planning');
   root.innerHTML = `
     <nav class="subtab-nav">
-      ${['active', 'backlog', 'retrospective'].map(tab => `
-        <button type="button" class="subtab-link ${activeSubTab === tab ? 'current' : ''}" data-subtab="${tab}">
-          ${tab.charAt(0).toUpperCase() + tab.slice(1)}
+      ${['active', 'backlog', 'retrospective'].map(t => `
+        <button type="button" class="subtab-link ${activeSubTab === t ? 'current' : ''}" data-subtab="${t}">
+          ${t.charAt(0).toUpperCase() + t.slice(1)}
         </button>
       `).join('')}
     </nav>
@@ -46,31 +36,28 @@ export function renderPlanning(ctx, { onChange }) {
     <div id="initiative-detail-host"></div>
   `;
 
-  // Wire sub-tab clicks
   root.querySelectorAll('.subtab-link').forEach(btn => {
     btn.addEventListener('click', () => {
       activeSubTab = btn.dataset.subtab;
-      const baseHash = (window.location.hash || '#planning').split('?')[0];
-      window.location.hash = `${baseHash}?tab=${activeSubTab}`;
+      // Set query param (router treats #planning?tab=X as route 'planning')
+      window.location.hash = `#planning?tab=${activeSubTab}`;
       renderPlanning(ctx, { onChange });
     });
   });
 
-  // Render sub-tab body
   const body = document.getElementById('planning-subtab-body');
   if (activeSubTab === 'active') body.innerHTML = renderActiveSubTab(ctx);
   else if (activeSubTab === 'backlog') body.innerHTML = renderBacklogSubTab(ctx);
   else if (activeSubTab === 'retrospective') body.innerHTML = renderRetrospectiveSubTab(ctx);
 
-  // Wire Initiative-row click → open detail overlay
-  body.querySelectorAll('.init-row[data-init-id]').forEach(row => {
-    row.addEventListener('click', () => {
-      openInitiativeId = row.dataset.initId;
+  // Wire clickable Initiative bars in the timeline (replaces the old row click)
+  body.querySelectorAll('[data-init-id]').forEach(el => {
+    el.addEventListener('click', () => {
+      openInitiativeId = el.dataset.initId;
       renderInitiativeDetailOverlay(ctx, onChange);
     });
   });
 
-  // If an initiative was already open (e.g., re-render after action), keep it open
   if (openInitiativeId) renderInitiativeDetailOverlay(ctx, onChange);
 }
 
@@ -81,108 +68,9 @@ function renderActiveSubTab(ctx) {
   const planInits = activePlan
     ? (activePlan.initiative_ids || []).map(iid => ctx.initiatives.find(i => i.id === iid)).filter(Boolean)
     : [];
-
   return `
-    ${renderTimeline(ctx, planInits)}
     ${renderActivePlanCard(activePlan, planInits)}
-    ${renderInitiativeRowsCard(planInits, ctx)}
-  `;
-}
-
-function renderTimeline(ctx, planInits) {
-  // Cross-Initiative Gantt — bars span started_at → target_close_date.
-  // Includes overdue marker + today line. Skipped if no plan + no initiatives.
-  const active = planInits.filter(i =>
-    !['completed', 'discarded', 'abandoned'].includes((i.status || '').toLowerCase())
-  );
-  if (!active.length) return '';
-
-  const todayISO = new Date().toISOString().slice(0, 10);
-  const startsArr = active.map(i => isoDay(i.started_at || i.created_at) || todayISO);
-  const endsArr = active.map(i => isoDay(i.target_close_date || i.closed_at) || todayISO);
-  const rangeStart = startsArr.concat([todayISO]).sort()[0];
-  const rangeEnd = endsArr.concat([todayISO]).sort().slice(-1)[0];
-  const startTs = new Date(rangeStart + 'T00:00:00Z').getTime();
-  const endTs = new Date(rangeEnd + 'T00:00:00Z').getTime();
-  const todayTs = new Date(todayISO + 'T00:00:00Z').getTime();
-  const span = Math.max(1, endTs - startTs);
-  const pct = ts => Math.max(0, Math.min(100, ((ts - startTs) / span) * 100));
-
-  // Weekly axis ticks
-  const weekTicks = [];
-  for (let cur = startTs; cur <= endTs; cur += 7 * 86400000) {
-    weekTicks.push({ date: new Date(cur).toISOString().slice(0, 10), pct: pct(cur) });
-  }
-  if (weekTicks[weekTicks.length - 1]?.date !== rangeEnd) {
-    weekTicks.push({ date: rangeEnd, pct: 100 });
-  }
-  const todayPct = pct(todayTs);
-
-  // Sort initiatives by deadline
-  const sorted = active.slice().sort((a, b) =>
-    ((a.target_close_date || '9999-12-31').slice(0, 10)).localeCompare(
-      (b.target_close_date || '9999-12-31').slice(0, 10),
-    )
-  );
-
-  const rows = sorted.map(init => {
-    const start = isoDay(init.started_at || init.created_at) || todayISO;
-    const end = isoDay(init.target_close_date) || todayISO;
-    const startPct = pct(new Date(start + 'T00:00:00Z').getTime());
-    const endPctVal = pct(new Date(end + 'T00:00:00Z').getTime());
-    const widthPct = Math.max(2, endPctVal - startPct);
-    const status = (init.status || 'not_started').toLowerCase();
-    const stateColor = initStateColor(status);
-    const overdue = end < todayISO && !['completed', 'done'].includes(status);
-
-    // Milestone ticks — evenly spaced (real per-milestone dates is v2)
-    const milestones = init.milestones || [];
-    const firstPendingIdx = milestones.findIndex(m => (m.status || 'pending').toLowerCase() !== 'done');
-    const ticks = milestones.map((ms, idx) => {
-      const tickPos = milestones.length === 1 ? 50 : (idx / (milestones.length - 1)) * 100;
-      const msState = (ms.status || 'pending').toLowerCase();
-      let tickClass = 'tl2-tick-waiting';
-      if (msState === 'done') tickClass = 'tl2-tick-done';
-      else if (firstPendingIdx === idx) tickClass = 'tl2-tick-current';
-      const critClass = (ms.criticality || '').toLowerCase() === 'critical' ? ' tl2-tick-critical' : '';
-      return `<div class="tl2-tick ${tickClass}${critClass}" style="left:${tickPos.toFixed(1)}%" title="${escapeHtml(ms.name)} (${ms.criticality || 'tactical'} · ${msState})"></div>`;
-    }).join('');
-
-    return `
-      <div class="tl2-row">
-        <div class="tl2-label">
-          <div class="tl2-title">${escapeHtml(init.title)}</div>
-          <div class="tl2-meta mono">${escapeHtml(init.id)}${overdue ? ' · <span class="tl2-overdue">OVERDUE</span>' : ''}</div>
-        </div>
-        <div class="tl2-track">
-          <div class="tl2-bar tl2-bar-${stateColor}${overdue ? ' tl2-bar-overdue' : ''}" style="left:${startPct.toFixed(1)}%;width:${widthPct.toFixed(1)}%" title="${escapeHtml(start)} → ${escapeHtml(end)} · ${escapeHtml(status)}">
-            ${ticks}
-          </div>
-        </div>
-      </div>
-    `;
-  }).join('');
-
-  return `
-    <div class="card">
-      <div class="card-header-row">
-        <div class="card-header-left"><span class="card-title">Initiative timeline</span></div>
-        <span class="muted-emph">${sorted.length} active · ${rangeStart} → ${rangeEnd}</span>
-      </div>
-      <p class="card-sub">Bars span start → target close. Ticks inside = milestones (green=done, accent=current, faint=waiting; red ring=critical). Vertical line = today.</p>
-      <div class="tl2-grid">
-        <div class="tl2-axis">
-          ${weekTicks.map(t => `
-            <div class="tl2-axis-tick" style="left:${t.pct.toFixed(1)}%">
-              <div class="tl2-axis-tick-line"></div>
-              <div class="tl2-axis-tick-label mono">${escapeHtml(t.date.slice(5))}</div>
-            </div>
-          `).join('')}
-          <div class="tl2-today-line" style="left:${todayPct.toFixed(1)}%" title="today · ${todayISO}"></div>
-        </div>
-        ${rows}
-      </div>
-    </div>
+    ${renderGroupedTimeline(ctx, activePlan, planInits)}
   `;
 }
 
@@ -222,67 +110,143 @@ function renderActivePlanCard(activePlan, planInits) {
   `;
 }
 
-function renderInitiativeRowsCard(planInits, ctx) {
+function renderGroupedTimeline(ctx, activePlan, planInits) {
+  // Group active Initiatives by goal_id. Each group is its own timeline section.
+  // Initiative bars are clickable (replaces the old separate "Initiatives in this plan" list).
   if (!planInits.length) {
+    return `<div class="card"><div class="card-title">Initiative timeline</div><p class="card-sub">No initiatives in this plan.</p></div>`;
+  }
+  const goals = ctx.goals || [];
+  // Determine timeline date range from ALL active initiatives in plan
+  const today = new Date().toISOString().slice(0, 10);
+  const startsArr = planInits.map(i => isoDay(i.started_at || i.created_at) || today);
+  const endsArr = planInits.map(i => isoDay(i.target_close_date || i.closed_at) || today);
+  const rangeStart = startsArr.concat([today]).sort()[0];
+  const rangeEnd = endsArr.concat([today]).sort().slice(-1)[0];
+  const startTs = new Date(rangeStart + 'T00:00:00Z').getTime();
+  const endTs = new Date(rangeEnd + 'T00:00:00Z').getTime();
+  const todayTs = new Date(today + 'T00:00:00Z').getTime();
+  const span = Math.max(1, endTs - startTs);
+  const pct = ts => Math.max(0, Math.min(100, ((ts - startTs) / span) * 100));
+  const todayPct = pct(todayTs);
+
+  // Weekly axis ticks (shared across all goal groups)
+  const weekTicks = [];
+  for (let cur = startTs; cur <= endTs; cur += 7 * 86400000) {
+    weekTicks.push({ date: new Date(cur).toISOString().slice(0, 10), pct: pct(cur) });
+  }
+  if (weekTicks[weekTicks.length - 1]?.date !== rangeEnd) {
+    weekTicks.push({ date: rangeEnd, pct: 100 });
+  }
+
+  // Group by goal_id
+  const byGoal = {};
+  for (const init of planInits) {
+    const gid = init.goal_id || '__no_goal__';
+    (byGoal[gid] = byGoal[gid] || []).push(init);
+  }
+
+  // Render each group as its own section, in goal order (active plan's goal_ids
+  // first, then any orphan-goal-id last).
+  const orderedGoalIds = (activePlan?.goal_ids || []).filter(gid => byGoal[gid]);
+  Object.keys(byGoal).forEach(gid => {
+    if (gid !== '__no_goal__' && !orderedGoalIds.includes(gid)) orderedGoalIds.push(gid);
+  });
+  if (byGoal['__no_goal__']) orderedGoalIds.push('__no_goal__');
+
+  const sections = orderedGoalIds.map(gid => {
+    const goal = goals.find(g => g.id === gid);
+    const inits = byGoal[gid].slice().sort((a, b) =>
+      ((a.target_close_date || '9999-12-31').slice(0, 10)).localeCompare(
+        (b.target_close_date || '9999-12-31').slice(0, 10),
+      )
+    );
+    const goalLabel = gid === '__no_goal__'
+      ? 'Unaligned initiatives'
+      : (goal?.title || `Goal · ${gid}`);
+    const goalSub = goal?.description ? `<div class="tl3-goal-sub">${escapeHtml(goal.description)}</div>` : '';
     return `
-      <div class="card">
-        <div class="card-title">Initiatives in this plan</div>
-        <p class="card-sub">None yet. Add Initiatives via the planning workflow.</p>
+      <div class="tl3-goal-section">
+        <div class="tl3-goal-header">
+          <span class="tl3-goal-marker"></span>
+          <div>
+            <div class="tl3-goal-title">${escapeHtml(goalLabel)}</div>
+            ${goalSub}
+          </div>
+          <span class="tl3-goal-count mono">${inits.length} initiative${inits.length === 1 ? '' : 's'}</span>
+        </div>
+        <div class="tl3-rows">
+          ${inits.map(init => renderTimelineRow(init, ctx, pct, today)).join('')}
+        </div>
       </div>
     `;
-  }
-  // Sort by status (in_progress first, then scoping, etc.) then by target_close_date
-  const order = { in_progress: 1, review: 2, scoping: 3, blocked: 4, not_started: 5, completed: 6, abandoned: 7, discarded: 8 };
-  const sorted = planInits.slice().sort((a, b) => {
-    const sa = order[(a.status || '').toLowerCase()] || 9;
-    const sb = order[(b.status || '').toLowerCase()] || 9;
-    if (sa !== sb) return sa - sb;
-    return ((a.target_close_date || '9999-12-31')).localeCompare((b.target_close_date || '9999-12-31'));
-  });
+  }).join('');
 
   return `
     <div class="card">
       <div class="card-header-row">
-        <div class="card-header-left"><span class="card-title">Initiatives in this plan</span></div>
-        <span class="mono" style="font-size:12px;color:var(--text-faint)">${planInits.length} locked</span>
+        <div class="card-header-left"><span class="card-title">Initiatives</span></div>
+        <span class="muted-emph">${planInits.length} active · ${rangeStart} → ${rangeEnd}</span>
       </div>
-      <div class="init-row-list">
-        ${sorted.map(init => renderInitiativeRow(init, ctx)).join('')}
+      <p class="card-sub">Grouped by goal. Click any bar to open the initiative detail.</p>
+      <div class="tl3-axis-wrap">
+        <div class="tl3-axis">
+          ${weekTicks.map(t => `
+            <div class="tl3-axis-tick" style="left:${t.pct.toFixed(1)}%">
+              <div class="tl3-axis-tick-line"></div>
+              <div class="tl3-axis-tick-label mono">${escapeHtml(t.date.slice(5))}</div>
+            </div>
+          `).join('')}
+          <div class="tl3-today-line" style="left:${todayPct.toFixed(1)}%" title="today · ${today}"></div>
+        </div>
       </div>
+      ${sections}
     </div>
   `;
 }
 
-function renderInitiativeRow(init, ctx) {
+function renderTimelineRow(init, ctx, pct, today) {
+  const start = isoDay(init.started_at || init.created_at) || today;
+  const end = isoDay(init.target_close_date) || today;
+  const startPct = pct(new Date(start + 'T00:00:00Z').getTime());
+  const endPctVal = pct(new Date(end + 'T00:00:00Z').getTime());
+  const widthPct = Math.max(2, endPctVal - startPct);
   const status = (init.status || 'not_started').toLowerCase();
   const stateColor = initStateColor(status);
-  // Progress: % of milestones done (if milestones exist) else % of linked tasks done
+  const overdue = end < today && !['completed', 'done'].includes(status);
+
+  // Milestone ticks
   const ms = init.milestones || [];
-  let pct = 0;
-  let progressLabel = '—';
-  if (ms.length > 0) {
-    const doneMs = ms.filter(m => (m.status || '').toLowerCase() === 'done').length;
-    pct = Math.round((doneMs / ms.length) * 100);
-    progressLabel = `${doneMs}/${ms.length} ms`;
-  } else {
-    const linked = (ctx.tasks || []).filter(t => t.advances_initiative === init.id);
-    if (linked.length > 0) {
-      const doneT = linked.filter(t => (t.status || '').toLowerCase() === 'done').length;
-      pct = Math.round((doneT / linked.length) * 100);
-      progressLabel = `${doneT}/${linked.length} tasks`;
-    }
-  }
+  const firstPendingIdx = ms.findIndex(m => (m.status || 'pending').toLowerCase() !== 'done');
+  const ticks = ms.map((m, idx) => {
+    const tickPos = ms.length === 1 ? 50 : (idx / (ms.length - 1)) * 100;
+    const msState = (m.status || 'pending').toLowerCase();
+    let tickClass = 'tl3-tick-waiting';
+    if (msState === 'done') tickClass = 'tl3-tick-done';
+    else if (firstPendingIdx === idx) tickClass = 'tl3-tick-current';
+    const critClass = (m.criticality || '').toLowerCase() === 'critical' ? ' tl3-tick-critical' : '';
+    return `<div class="tl3-tick ${tickClass}${critClass}" style="left:${tickPos.toFixed(1)}%" title="${escapeHtml(m.name)} (${m.criticality || 'tactical'} · ${msState})"></div>`;
+  }).join('');
+
+  // Compact stats summary
+  const linked = (ctx.tasks || []).filter(t => t.advances_initiative === init.id);
+  const doneCount = linked.filter(t => (t.status || '').toLowerCase() === 'done').length;
   const dlLabel = init.target_close_date ? dateLabel(init.target_close_date) : '';
 
   return `
-    <div class="init-row" data-init-id="${escapeHtml(init.id)}" role="button" tabindex="0">
-      <span class="init-row-id mono">${escapeHtml(init.id.replace('init-', ''))}</span>
-      <div class="init-row-body">
-        <div class="init-row-title">${escapeHtml(init.title)}</div>
-        <div class="init-row-meta mono">${escapeHtml(dlLabel)}${progressLabel !== '—' ? ` · ${progressLabel}` : ''}</div>
+    <div class="tl3-row" data-init-id="${escapeHtml(init.id)}" role="button" tabindex="0">
+      <div class="tl3-row-label">
+        <div class="tl3-row-title">${escapeHtml(init.title)}</div>
+        <div class="tl3-row-meta mono">
+          ${escapeHtml(dlLabel)}
+          ${linked.length ? ` · ${doneCount}/${linked.length} tasks` : ''}
+          ${overdue ? ' · <span class="tl3-overdue">OVERDUE</span>' : ''}
+        </div>
       </div>
-      <div class="init-row-bar-container">
-        <div class="init-row-bar"><div class="init-row-bar-fill init-row-bar-fill-${stateColor}" style="width:${pct}%"></div></div>
+      <div class="tl3-row-track">
+        <div class="tl3-bar tl3-bar-${stateColor}${overdue ? ' tl3-bar-overdue' : ''}" style="left:${startPct.toFixed(1)}%;width:${widthPct.toFixed(1)}%" title="${escapeHtml(start)} → ${escapeHtml(end)} · ${escapeHtml(status)} · click to open">
+          ${ticks}
+        </div>
       </div>
       <span class="init-state-chip init-state-chip-${stateColor}">${escapeHtml(status.replace(/_/g, ' '))}</span>
     </div>
@@ -292,7 +256,6 @@ function renderInitiativeRow(init, ctx) {
 // ============ Sub-tab: Backlog ============
 
 function renderBacklogSubTab(ctx) {
-  // Backlog = Initiatives NOT in the active plan + Initiatives with backlog_state="untriaged"
   const activePlan = ctx.plans.find(p => p.status === 'active');
   const planInitIds = new Set(activePlan?.initiative_ids || []);
   const backlogInits = (ctx.initiatives || []).filter(i =>
@@ -449,22 +412,13 @@ function renderInitiativeDetailOverlay(ctx, onChange) {
     </div>
   `;
 
-  // Wire close
-  const close = () => {
-    openInitiativeId = null;
-    host.innerHTML = '';
-  };
+  const close = () => { openInitiativeId = null; host.innerHTML = ''; };
   document.getElementById('overlay-backdrop').addEventListener('click', close);
   document.getElementById('overlay-close').addEventListener('click', close);
-  // Esc to close
   document.addEventListener('keydown', function escClose(e) {
-    if (e.key === 'Escape') {
-      close();
-      document.removeEventListener('keydown', escClose);
-    }
+    if (e.key === 'Escape') { close(); document.removeEventListener('keydown', escClose); }
   });
 
-  // Wire mark-done
   const markBtn = host.querySelector('.overlay-mark-done-btn');
   if (markBtn) {
     markBtn.addEventListener('click', async () => {
@@ -477,11 +431,7 @@ function renderInitiativeDetailOverlay(ctx, onChange) {
         const resp = await fetch('/api/update-initiative', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            bu: BU, init_id: initId,
-            action: 'mark_milestone_done',
-            milestone_id: msId, actor: 'operator',
-          }),
+          body: JSON.stringify({ bu: BU, init_id: initId, action: 'mark_milestone_done', milestone_id: msId, actor: 'operator' }),
         });
         const json = await resp.json().catch(() => ({}));
         if (!resp.ok || !json.ok) throw new Error(json.message || `HTTP ${resp.status}`);

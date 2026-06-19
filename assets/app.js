@@ -26,6 +26,7 @@ import { renderPlanning as renderPlanningView } from './views/planning.js';
 import { renderKpis as renderKpisView } from './views/kpis.js';
 import { renderOutputs as renderOutputsView } from './views/outputs.js';
 import { renderSettings as renderSettingsView } from './views/settings.js';
+import { renderLearning as renderLearningView } from './views/learning.js';
 
 // v1: hardcoded BU. Multi-BU switcher slot exists in the sidebar but only
 // one BU is wired today (Tuto on Genus-native substrate). Per [[v06-mockup-interpretation]]
@@ -138,7 +139,12 @@ function renderRoute(route) {
   else if (route === 'kpis') safeRender('kpis', renderKpis);
   else if (route === 'inputs') safeRender('inputs', renderInputs);
   else if (route === 'outputs') safeRender('outputs', renderOutputs);
+  else if (route === 'learning') safeRender('learning', renderLearning);
   else if (route === 'settings') safeRender('settings', renderSettings);
+}
+
+function renderLearning() {
+  renderLearningView({ identity, plans, initiatives, tasks, meetings, memos, kpis, governance, connectors, documentation });
 }
 
 function renderDashboard() {

@@ -1,12 +1,15 @@
 // Tiny hash router. Routes are #dashboard / #planning / #kpis / #inputs /
 // #outputs / #settings. Default route used when hash is missing or invalid.
 
-const VALID_ROUTES = ['dashboard', 'planning', 'kpis', 'inputs', 'outputs', 'settings'];
+const VALID_ROUTES = ['dashboard', 'planning', 'kpis', 'inputs', 'outputs', 'learning', 'settings'];
 let currentRoute = null;
 let onChangeCb = () => {};
 
 function readRoute(defaultRoute) {
-  const raw = (window.location.hash || '').replace(/^#/, '').toLowerCase();
+  // Strip leading # AND any ?query-params (so #planning?tab=backlog is still
+  // recognized as the 'planning' route — pages can use query params for
+  // sub-tab state without breaking the router).
+  const raw = (window.location.hash || '').replace(/^#/, '').split('?')[0].toLowerCase();
   return VALID_ROUTES.includes(raw) ? raw : defaultRoute;
 }
 

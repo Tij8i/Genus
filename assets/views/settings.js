@@ -15,7 +15,62 @@ export function renderSettings(ctx) {
   root.innerHTML = `
     ${renderBuProfileCard(i)}
     ${renderGovernanceCard(g)}
+    ${renderModulesCard(ctx)}
     ${renderWiringCard(ctx)}
+  `;
+}
+
+function renderModulesCard(ctx) {
+  // Per docs/system/MODULES.md (in Orchestrator) — modules are optional
+  // extensions. Today there's no formal module registry; what looks
+  // module-shaped (paperclip adapter, meeting server, Notion connector
+  // for legacy Stewarts) lives as proto-module code. This card shows
+  // the spec contract + a placeholder "no formal modules installed yet".
+  return `
+    <div class="card">
+      <div class="card-section-label">Modules</div>
+      <p class="card-sub" style="margin-bottom:14px">Optional extensions: connectors, alternate substrates, runtime adapters, surfaces, policies, observability, quality. Genus core stays opinionated; modules expand the surface area without touching core.</p>
+      <div class="settings-rows">
+        <div class="settings-row">
+          <div class="settings-row-label">
+            <div class="settings-row-name">Installed modules</div>
+            <div class="settings-row-sub">Modules with a valid <code>module.json</code> manifest registered for this BU.</div>
+          </div>
+          <div class="settings-row-value settings-row-empty">none yet — module loader spec'd in v0.7</div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-label">
+            <div class="settings-row-name">Proto-modules in use</div>
+            <div class="settings-row-sub">Code that's effectively a module but predates the manifest. Tracked here so the formal module loader knows what to retrofit.</div>
+          </div>
+          <div class="settings-row-value">
+            <div class="proto-module-row"><span class="proto-mod-cat mono">RUNTIME</span> Paperclip adapter <span class="mono" style="color:var(--text-faint);font-size:11px">· dashboard/scripts/paperclip_adapter.py</span></div>
+            <div class="proto-module-row"><span class="proto-mod-cat mono">SURFACE</span> Meeting server <span class="mono" style="color:var(--text-faint);font-size:11px">· dashboard/scripts/genus_meeting_server.py</span></div>
+            <div class="proto-module-row"><span class="proto-mod-cat mono">QUALITY</span> Meeting extractor <span class="mono" style="color:var(--text-faint);font-size:11px">· dashboard/scripts/genus_meeting_extract.py</span></div>
+            <div class="proto-module-row"><span class="proto-mod-cat mono">OBSERVABILITY</span> Cycle diagnostic <span class="mono" style="color:var(--text-faint);font-size:11px">· dashboard/scripts/genus_cycle_diagnostic.py</span></div>
+            <div class="proto-module-row"><span class="proto-mod-cat mono">CONNECTOR</span> GitHub substrate <span class="mono" style="color:var(--text-faint);font-size:11px">· functions/api/_gh.js (built-in)</span></div>
+          </div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-label">
+            <div class="settings-row-name">Module categories</div>
+            <div class="settings-row-sub">Seven kinds per MODULES.md. Each module declares one (or two) in its manifest.</div>
+          </div>
+          <div class="settings-row-value">
+            <div class="module-cat-grid">
+              <div class="module-cat-chip">Connector</div>
+              <div class="module-cat-chip">Substrate</div>
+              <div class="module-cat-chip">Runtime</div>
+              <div class="module-cat-chip">Surface</div>
+              <div class="module-cat-chip">Policy</div>
+              <div class="module-cat-chip">Observability</div>
+              <div class="module-cat-chip">Quality</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="settings-foot mono">Spec: <code>docs/system/MODULES.md</code> in the substrate repo. Install + enablement UI ships in v0.7.</div>
+    </div>
   `;
 }
 
