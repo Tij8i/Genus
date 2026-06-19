@@ -46,7 +46,7 @@ export function renderInputs(ctx, { onChange }) {
   });
 
   const body = document.getElementById('inputs-subtab-body');
-  if (activeSubTab === 'suggestions') body.innerHTML = renderSuggestionsSubTab(tasks);
+  if (activeSubTab === 'suggestions') body.innerHTML = renderSuggestionsSubTab(tasks, ctx);
   else if (activeSubTab === 'meetings') body.innerHTML = renderMeetingsSubTab(meetings, ctx);
   else if (activeSubTab === 'memos') body.innerHTML = renderMemosSubTab(memos);
 
@@ -80,7 +80,7 @@ function renderSubTab(name, label, badge) {
 
 // ============ Suggestions sub-tab ============
 
-function renderSuggestionsSubTab(tasks) {
+function renderSuggestionsSubTab(tasks, ctx) {
   const pending = tasks.filter(t => ['awaiting_approval', 'proposed'].includes((t.status || '').toLowerCase())).sort((a, b) => (a.proposed_at || '').localeCompare(b.proposed_at || ''));
   return `
     <div class="card">
@@ -92,20 +92,31 @@ function renderSuggestionsSubTab(tasks) {
       <div class="suggestion-list" style="margin-top:14px">
         ${pending.length === 0
           ? `<div class="empty-state">No suggestions awaiting your review. Stewart files new ones at each heartbeat.</div>`
-          : pending.map(renderSuggestionCard).join('')}
+          : pending.map(t => renderSuggestionCard(t, ctx)).join('')}
       </div>
     </div>
   `;
 }
 
-function renderSuggestionCard(t) {
+function renderSuggestionCard(t, ctx) {
+  const oa = t.operator_action;
+  // If operator_action is present, render the new v1 format.
+  // Otherwise, fall back to the legacy free-text rendering.
+  if (oa && typeof oa === 'object' && Array.isArray(oa.blocks)) {
+    return renderSuggestionCardV1(t, oa, ctx);
+  }
+  return renderSuggestionCardLegacy(t);
+}
+
+function renderSuggestionCardLegacy(t) {
   const meta = [];
   if (t.category) meta.push(t.category);
   if (t.risk_level) meta.push(`risk: ${t.risk_level}`);
   if (t.target?.executor) meta.push(t.target.executor);
   if (t.tier) meta.push(`tier: ${t.tier}`);
   return `
-    <div class="suggestion-card" data-task-id="${escapeHtml(t.id)}">
+    <div class="suggestion-card suggestion-card-legacy" data-task-id="${escapeHtml(t.id)}">
+      <div class="suggestion-legacy-tag mono" title="This task pre-dates the v1 operator-action format. Stewart will re-emit it in the new shape on next heartbeat.">legacy format</div>
       <div class="suggestion-title">${escapeHtml(t.title)}</div>
       ${t.description ? `<div class="suggestion-detail">${escapeHtml((t.description || '').slice(0, 320))}${(t.description || '').length > 320 ? '…' : ''}</div>` : ''}
       <div class="suggestion-meta mono">${escapeHtml(meta.join(' · ') || 'task')}</div>
@@ -117,6 +128,90 @@ function renderSuggestionCard(t) {
       </div>
     </div>
   `;
+}
+
+function renderSuggestionCardV1(t, oa, ctx) {
+  const breadcrumb = computeBreadcrumb(t, ctx);
+  const chips = [];
+  if (oa.nature) chips.push({ label: oa.nature, kind: oa.nature === 'decision' ? 'decision' : 'execution' });
+  if (oa.domain) chips.push({ label: oa.domain, kind: 'domain' });
+  if (oa.exposure) chips.push({ label: oa.exposure, kind: 'exposure' });
+  if (oa.runs_on) chips.push({ label: `runs on: ${oa.runs_on}`, kind: 'runs' });
+  const blocks = oa.blocks || [];
+
+  return `
+    <div class="suggestion-card suggestion-card-v1" data-task-id="${escapeHtml(t.id)}">
+      ${breadcrumb ? `<div class="oa-breadcrumb mono">${breadcrumb}</div>` : ''}
+      <div class="oa-chips">
+        ${chips.map(c => `<span class="oa-chip oa-chip-${c.kind}">${escapeHtml(c.label)}</span>`).join('')}
+      </div>
+      <div class="suggestion-title oa-title">${escapeHtml(t.title)}</div>
+      ${oa.what_you_approve ? `
+        <div class="oa-approve">
+          <div class="oa-approve-label mono">WHAT YOU'RE APPROVING</div>
+          <p class="oa-approve-body">${escapeHtml(oa.what_you_approve)}</p>
+        </div>
+      ` : ''}
+      <div class="oa-blocks">
+        ${blocks.map(b => renderActorBlock(b)).join('')}
+      </div>
+      <div class="suggestion-actions">
+        <button type="button" class="sugg-accept" data-task-id="${escapeHtml(t.id)}">Accept</button>
+        <button type="button" class="sugg-discuss" data-task-id="${escapeHtml(t.id)}">Discuss</button>
+        <button type="button" class="sugg-dismiss" data-task-id="${escapeHtml(t.id)}">Dismiss</button>
+        <span class="sugg-status mono"></span>
+      </div>
+    </div>
+  `;
+}
+
+function renderActorBlock(b) {
+  const actorLabel = b.actor === 'you' ? 'YOU' : (b.actor === 'me' ? 'ME (Stewart)' : escapeHtml(b.actor || ''));
+  const meta = [];
+  if (b.when) meta.push(b.when);
+  if (b.estimate) meta.push(b.estimate);
+  const steps = Array.isArray(b.steps) ? b.steps : [];
+  return `
+    <div class="oa-block oa-block-${escapeHtml(b.actor || 'unknown')}">
+      <div class="oa-block-head">
+        <span class="oa-block-actor mono">▸ ${actorLabel}</span>
+        ${meta.length ? `<span class="oa-block-meta mono">${escapeHtml(meta.join(' · '))}</span>` : ''}
+      </div>
+      <ol class="oa-block-steps">
+        ${steps.map(s => `<li>${escapeHtml(s)}</li>`).join('')}
+      </ol>
+    </div>
+  `;
+}
+
+function computeBreadcrumb(t, ctx) {
+  const initId = t.advances_initiative;
+  if (!initId || initId === 'unrelated') return '';
+  const inits = ctx.initiatives || [];
+  const init = inits.find(i => i.id === initId);
+  if (!init) return '';
+
+  // Task position within the initiative — count tasks by proposed_at order
+  const allTasks = ctx.tasks || [];
+  const initTasks = allTasks.filter(x => x.advances_initiative === initId)
+    .slice()
+    .sort((a, b) => (a.proposed_at || '').localeCompare(b.proposed_at || ''));
+  const idx = initTasks.findIndex(x => x.id === t.id);
+  const total = initTasks.length;
+  const remaining = initTasks.filter(x => !['done', 'closed', 'completed'].includes((x.status || '').toLowerCase())).length;
+  const taskPos = idx >= 0 ? `task ${idx + 1} of ${total} (${remaining} left)` : `task in ${initId}`;
+
+  // Milestone position
+  let msPart = '';
+  const msId = t.advances_milestone;
+  if (msId && Array.isArray(init.milestones)) {
+    const msIdx = init.milestones.findIndex(m => m.id === msId);
+    if (msIdx >= 0) {
+      const ms = init.milestones[msIdx];
+      msPart = ` · milestone ${msIdx + 1} of ${init.milestones.length} «${escapeHtml(ms.title || '')}»`;
+    }
+  }
+  return `${escapeHtml(init.title || init.id)} · ${taskPos}${msPart}`;
 }
 
 function wireSuggestionButtons(tasks, onChange) {

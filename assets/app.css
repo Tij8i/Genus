@@ -936,6 +936,117 @@ body {
 .sugg-dismiss:hover { border-color: var(--red); color: var(--red) !important; }
 .sugg-status { font-size: 10.5px; margin-left: auto; }
 
+/* Suggestion card v1 — operator_action format */
+.suggestion-card-v1 {
+  padding: 14px 14px 12px;
+}
+.suggestion-card-legacy .suggestion-legacy-tag {
+  display: inline-block;
+  font-size: 9px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  background: var(--surface2);
+  border-radius: 4px;
+  padding: 1px 6px;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+.oa-breadcrumb {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+.oa-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 9px;
+}
+.oa-chip {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 9.5px;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--surface2);
+  color: var(--text-dim);
+  font-weight: 600;
+}
+.oa-chip-execution { background: var(--surface2); color: var(--text-dim); }
+.oa-chip-decision { background: var(--yellow-bg); color: var(--yellow-fg); }
+.oa-chip-domain { background: var(--accent-bg); color: var(--accent); }
+.oa-chip-exposure { background: var(--surface2); color: var(--text-dim); }
+.oa-chip-runs { background: var(--surface2); color: var(--text-dim); }
+.oa-title {
+  margin-bottom: 11px;
+}
+.oa-approve {
+  background: var(--surface2);
+  border-radius: 7px;
+  padding: 9px 11px;
+  margin-bottom: 11px;
+}
+.oa-approve-label {
+  font-size: 9.5px;
+  letter-spacing: .06em;
+  color: var(--text-faint);
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+.oa-approve-body {
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  margin: 0;
+}
+.oa-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-bottom: 4px;
+}
+.oa-block {
+  border-left: 2px solid var(--border-strong);
+  padding: 4px 0 4px 11px;
+}
+.oa-block-you {
+  border-left-color: var(--accent);
+}
+.oa-block-me {
+  border-left-color: var(--text-faint);
+}
+.oa-block-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: baseline;
+  margin-bottom: 4px;
+}
+.oa-block-actor {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .03em;
+  color: var(--text);
+}
+.oa-block-you .oa-block-actor { color: var(--accent); }
+.oa-block-meta {
+  font-size: 10px;
+  color: var(--text-faint);
+}
+.oa-block-steps {
+  margin: 2px 0 0;
+  padding-left: 22px;
+  font-size: 12px;
+  color: var(--text);
+  line-height: 1.55;
+}
+.oa-block-steps li {
+  margin-bottom: 2px;
+}
+
 /* ============ PLANNING ============ */
 
 .subtab-nav {
