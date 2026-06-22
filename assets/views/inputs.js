@@ -5,7 +5,7 @@
 // to reduce horizontal density and let each section breathe.
 
 import { escapeHtml, ago, icon } from '../utils.js';
-import { openOverlay } from '../overlay.js';
+import { openOverlay, closeOverlay } from '../overlay.js';
 
 const MEETING_SERVER = 'http://localhost:8765';
 const BU = 'tuto';
@@ -17,6 +17,10 @@ let activeSubTab = 'suggestions';  // default to the most-engaged surface
 // genuinely failed (not a 409 "already not pending"), card is restored, banner shown.
 const stagedDecisions = new Map(); // task_id → 'approved' | 'rejected'
 const failedDecisions = new Map(); // task_id → {decision, message, at}
+
+// Meeting server liveness — set by probeMeetingServerBanner. Used to gate
+// the chat input + Send button + new-meeting button (offline server = no chat).
+let meetingServerUp = false;
 
 export function renderInputs(ctx, { onChange }) {
   const queryStr = (window.location.hash || '').split('?')[1] || '';
@@ -392,11 +396,12 @@ function wireMeetingButtons(meetings, ctx, onChange) {
     newBtn.addEventListener('click', () => {
       const title = window.prompt('Meeting title:', 'Working session');
       if (!title) return;
-      startMeeting({ title, purpose: 'general' });
+      startMeeting({ title, purpose: 'general' }, ctx, onChange);
     });
   }
   document.querySelectorAll('.meeting-convert-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
       const id = btn.dataset.meetingId;
       const req = meetings.find(m => m.id === id);
       if (!req) return;
@@ -406,12 +411,23 @@ function wireMeetingButtons(meetings, ctx, onChange) {
         from_request_id: req.id,
         related_item: req.related_item || null,
         opening_prompt: req.opening_prompt || null,
-      });
+      }, ctx, onChange);
     });
+  });
+  // Click any non-requested meeting row → open its chat overlay.
+  // (Requested rows route through the Start-meeting button above, which
+  // creates the live meeting then opens the chat.)
+  document.querySelectorAll('.meeting-row-active, .meeting-row-past').forEach(row => {
+    row.addEventListener('click', () => {
+      const id = row.dataset.meetingId;
+      const m = meetings.find(x => x.id === id);
+      if (m) openMeetingChat(m, ctx, onChange);
+    });
+    row.style.cursor = 'pointer';
   });
 }
 
-async function startMeeting(payload) {
+async function startMeeting(payload, ctx, onChange) {
   try {
     const r = await fetch(`${MEETING_SERVER}/meeting/new`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -419,23 +435,193 @@ async function startMeeting(payload) {
     });
     const j = await r.json();
     if (!r.ok || !j.ok) throw new Error(j.message || `HTTP ${r.status}`);
-    alert(`Meeting started: ${j.meeting.id}. Open the live chat on the legacy dashboard for now (meeting detail view ships in step 2c-2).`);
+    // Open the chat overlay on the just-created meeting so the operator
+    // can start typing immediately. onChange refreshes the meetings list
+    // in the background; the overlay holds a live reference to j.meeting.
+    if (typeof onChange === 'function') setTimeout(onChange, 0);
+    openMeetingChat(j.meeting, ctx, onChange);
   } catch (e) {
     alert(`Could not start meeting: ${e.message}. The local meeting server might not be running.`);
   }
 }
 
+// ============ Meeting chat overlay ============
+
+function openMeetingChat(meeting, ctx, onChange) {
+  const subtitle = `${meeting.agent_id || 'agent'} · ${meeting.purpose || 'meeting'} · started ${ago(meeting.started_at || meeting.requested_at)}`;
+  // Everything in the body: the overlay footer is right-aligned flex,
+  // which doesn't suit a chat thread + full-width input row.
+  const bodyHtml = `
+    <div class="chat-host">
+      <div class="chat-bar">
+        <span class="chat-status mono">status: ${escapeHtml(meeting.status || 'unknown')}</span>
+        ${meeting.status === 'active'
+          ? `<button type="button" class="chat-close-btn" id="chat-close-meeting-btn">Close meeting</button>`
+          : ''}
+      </div>
+      <div class="chat-thread" id="chat-thread">
+        ${renderChatTurns(meeting.transcript || [])}
+      </div>
+      <div class="chat-input-row">
+        <textarea id="chat-input" placeholder="${chatPlaceholder(meeting)}" rows="2" ${chatInputDisabled(meeting) ? 'disabled' : ''}></textarea>
+        <button type="button" class="chat-send-btn" id="chat-send-btn" ${chatInputDisabled(meeting) ? 'disabled' : ''}>Send</button>
+      </div>
+      <div class="chat-hint mono">Cmd/Ctrl + Enter to send</div>
+    </div>
+  `;
+  openOverlay({
+    title: meeting.title || 'Meeting',
+    subtitle,
+    iconHtml: '💬',
+    iconTint: '#2f6bff',
+    bodyHtml,
+    onClose: () => {
+      // Refresh the parent inputs view so any new turns / status changes appear.
+      if (typeof onChange === 'function') onChange();
+    },
+  });
+  scrollChatToBottom();
+  wireChatHandlers(meeting, ctx, onChange);
+}
+
+function renderChatTurns(turns) {
+  if (!turns || turns.length === 0) {
+    return `<div class="chat-empty">No messages yet. Type below to start the conversation.</div>`;
+  }
+  return turns.map(renderChatTurn).join('');
+}
+
+function renderChatTurn(t) {
+  const isOperator = t.role === 'operator';
+  const roleLabel = isOperator ? 'you' : escapeHtml(t.role || 'agent');
+  return `
+    <div class="chat-turn chat-turn-${isOperator ? 'operator' : 'agent'}">
+      <div class="chat-bubble">${escapeAndLinebreak(t.content || '')}</div>
+      <div class="chat-meta mono">${roleLabel} · ${escapeHtml(ago(t.at))}</div>
+    </div>
+  `;
+}
+
+function escapeAndLinebreak(s) {
+  return escapeHtml(s || '').replace(/\n/g, '<br>');
+}
+
+function scrollChatToBottom() {
+  const t = document.getElementById('chat-thread');
+  if (t) t.scrollTop = t.scrollHeight;
+}
+
+function chatPlaceholder(meeting) {
+  if (meeting.status !== 'active' && meeting.status !== 'requested_by_agent') return 'Meeting closed — no new messages';
+  if (!meetingServerUp) return 'Local meeting server offline — start it to send';
+  return `Message ${meeting.agent_id || 'agent'}… (Cmd/Ctrl+Enter to send)`;
+}
+
+function chatInputDisabled(meeting) {
+  return meeting.status !== 'active' || !meetingServerUp;
+}
+
+function wireChatHandlers(meeting, ctx, onChange) {
+  const input = document.getElementById('chat-input');
+  const sendBtn = document.getElementById('chat-send-btn');
+  const closeBtn = document.getElementById('chat-close-meeting-btn');
+
+  if (closeBtn) {
+    closeBtn.addEventListener('click', async () => {
+      if (!window.confirm('Close this meeting?')) return;
+      closeBtn.disabled = true;
+      closeBtn.textContent = 'closing…';
+      try {
+        const r = await fetch(`${MEETING_SERVER}/meeting/close`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bu: BU, meeting_id: meeting.id }),
+        });
+        const j = await r.json();
+        if (!r.ok || !j.ok) throw new Error(j.message || `HTTP ${r.status}`);
+        // Reflect new status in-overlay, then close after a moment
+        if (j.meeting) Object.assign(meeting, j.meeting);
+        if (typeof onChange === 'function') setTimeout(onChange, 0);
+        closeOverlay();
+      } catch (e) {
+        closeBtn.disabled = false;
+        closeBtn.textContent = 'Close meeting';
+        alert(`Close failed: ${e.message}`);
+      }
+    });
+  }
+
+  if (!input || !sendBtn) return;
+
+  const send = async () => {
+    const text = (input.value || '').trim();
+    if (!text || sendBtn.disabled) return;
+    input.disabled = true;
+    sendBtn.disabled = true;
+    sendBtn.textContent = '…';
+    const thread = document.getElementById('chat-thread');
+    // Strip empty-state placeholder if present
+    if (thread && thread.querySelector('.chat-empty')) thread.innerHTML = '';
+    // Optimistic operator bubble
+    const optimisticTurn = { role: 'operator', content: text, at: new Date().toISOString() };
+    meeting.transcript = meeting.transcript || [];
+    meeting.transcript.push(optimisticTurn);
+    if (thread) {
+      thread.insertAdjacentHTML('beforeend', renderChatTurn(optimisticTurn));
+      thread.insertAdjacentHTML('beforeend', '<div class="chat-thinking" id="chat-thinking">thinking…</div>');
+      scrollChatToBottom();
+    }
+    input.value = '';
+    try {
+      const r = await fetch(`${MEETING_SERVER}/meeting/turn`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bu: BU, meeting_id: meeting.id, message: text }),
+      });
+      const j = await r.json();
+      document.getElementById('chat-thinking')?.remove();
+      if (!r.ok || !j.ok) throw new Error(j.message || `HTTP ${r.status}`);
+      // Server returns the full updated meeting; sync the agent's reply (last turn)
+      const fullTranscript = (j.meeting && j.meeting.transcript) || meeting.transcript;
+      const agentTurn = fullTranscript[fullTranscript.length - 1];
+      meeting.transcript = fullTranscript;
+      if (thread && agentTurn && agentTurn.role !== 'operator') {
+        thread.insertAdjacentHTML('beforeend', renderChatTurn(agentTurn));
+        scrollChatToBottom();
+      }
+    } catch (e) {
+      document.getElementById('chat-thinking')?.remove();
+      if (thread) {
+        thread.insertAdjacentHTML('beforeend', `<div class="chat-error">Error: ${escapeHtml(e.message || 'failed')}</div>`);
+        scrollChatToBottom();
+      }
+    } finally {
+      input.disabled = chatInputDisabled(meeting);
+      sendBtn.disabled = chatInputDisabled(meeting);
+      sendBtn.textContent = 'Send';
+      input.focus();
+    }
+  };
+
+  sendBtn.addEventListener('click', send);
+  input.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      e.preventDefault();
+      send();
+    }
+  });
+  input.focus();
+}
+
 function probeMeetingServerBanner() {
   const host = document.getElementById('meeting-server-banner-host');
-  if (!host) return;
   fetch(`${MEETING_SERVER}/health`, { cache: 'no-store' })
     .then(r => r.ok ? r.json() : Promise.reject())
     .then(j => {
-      if (j.ok) host.innerHTML = '';
-      else host.innerHTML = `<div class="meeting-server-banner banner-down">✗ Meeting server reachable but reports not-OK.</div>`;
+      meetingServerUp = !!j.ok;
+      if (host) host.innerHTML = j.ok ? '' : `<div class="meeting-server-banner banner-down">✗ Meeting server reachable but reports not-OK.</div>`;
     })
     .catch(() => {
-      host.innerHTML = `<div class="meeting-server-banner banner-down">✗ Local meeting server unreachable (<code>${MEETING_SERVER}</code>). Convert + Schedule won't work until it's running.</div>`;
+      meetingServerUp = false;
+      if (host) host.innerHTML = `<div class="meeting-server-banner banner-down">✗ Local meeting server unreachable (<code>${MEETING_SERVER}</code>). Start meeting + Schedule won't work until it's running.</div>`;
     });
 }
 
