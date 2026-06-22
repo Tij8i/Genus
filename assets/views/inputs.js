@@ -22,6 +22,11 @@ const failedDecisions = new Map(); // task_id → {decision, message, at}
 // the chat input + Send button + new-meeting button (offline server = no chat).
 let meetingServerUp = false;
 
+// In-flight /meeting/new POSTs keyed by from_request_id. Prevents a flurry of
+// clicks on the same Start-meeting → button from spawning duplicate meetings
+// before the first POST returns and ctx.meetings is refreshed.
+const inFlightMeetingStarts = new Set();
+
 export function renderInputs(ctx, { onChange }) {
   const queryStr = (window.location.hash || '').split('?')[1] || '';
   const params = new URLSearchParams(queryStr);
@@ -396,7 +401,19 @@ function wireMeetingButtons(meetings, ctx, onChange) {
     newBtn.addEventListener('click', () => {
       const title = window.prompt('Meeting title:', 'Working session');
       if (!title) return;
-      startMeeting({ title, purpose: 'general' }, ctx, onChange);
+      // Per docs/system/MEETING_PROTOCOL.md — every meeting has a one-sentence
+      // expected output. The agent uses it as the success criterion and treats
+      // off-topic drift as new-meeting-request material instead of absorbing it.
+      const expected = window.prompt(
+        'Expected output (one sentence — what success looks like at close):',
+        ''
+      );
+      if (expected === null) return;  // operator cancelled the second prompt
+      const expected_output = (expected || '').trim();
+      startMeeting(
+        { title, purpose: 'general', expected_output: expected_output || undefined },
+        ctx, onChange, newBtn
+      );
     });
   }
   document.querySelectorAll('.meeting-convert-btn').forEach(btn => {
@@ -411,7 +428,7 @@ function wireMeetingButtons(meetings, ctx, onChange) {
         from_request_id: req.id,
         related_item: req.related_item || null,
         opening_prompt: req.opening_prompt || null,
-      }, ctx, onChange);
+      }, ctx, onChange, btn);
     });
   });
   // Click any non-requested meeting row → open its chat overlay.
@@ -427,7 +444,33 @@ function wireMeetingButtons(meetings, ctx, onChange) {
   });
 }
 
-async function startMeeting(payload, ctx, onChange) {
+async function startMeeting(payload, ctx, onChange, btn) {
+  // Idempotency for requests originating from a pending agent request:
+  // 1) if a sibling POST is already in flight for the same from_request_id, no-op
+  // 2) if the substrate already has an active meeting for this request, open it
+  //    instead of POSTing a second time. Cures the double-click duplication
+  //    where the second click fires before ctx.meetings refreshes.
+  const reqId = payload.from_request_id || null;
+  if (reqId && inFlightMeetingStarts.has(reqId)) return;
+  if (reqId && Array.isArray(ctx?.meetings)) {
+    const existing = ctx.meetings.find(m => m.status === 'active' && m.from_request_id === reqId);
+    if (existing) {
+      openMeetingChat(existing, ctx, onChange);
+      return;
+    }
+  }
+  if (reqId) inFlightMeetingStarts.add(reqId);
+
+  // Disable the originating button and show loading state until the overlay
+  // opens or the server returns an error. Also blocks re-entry from rapid clicks
+  // for the generic "+ Schedule" path that has no from_request_id.
+  let originalLabel = null;
+  if (btn) {
+    btn.disabled = true;
+    originalLabel = btn.textContent;
+    btn.textContent = 'starting…';
+  }
+
   try {
     const r = await fetch(`${MEETING_SERVER}/meeting/new`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -442,6 +485,12 @@ async function startMeeting(payload, ctx, onChange) {
     openMeetingChat(j.meeting, ctx, onChange);
   } catch (e) {
     alert(`Could not start meeting: ${e.message}. The local meeting server might not be running.`);
+  } finally {
+    if (reqId) inFlightMeetingStarts.delete(reqId);
+    if (btn) {
+      btn.disabled = false;
+      if (originalLabel !== null) btn.textContent = originalLabel;
+    }
   }
 }
 
@@ -482,6 +531,35 @@ function openMeetingChat(meeting, ctx, onChange) {
   });
   scrollChatToBottom();
   wireChatHandlers(meeting, ctx, onChange);
+  // The `meeting` reference comes from the inputs view's array, which is loaded
+  // from substrate meetings.json at app boot and not refreshed per turn — so on
+  // reopen the transcript can be empty or behind. Hydrate from the local server.
+  hydrateMeetingTranscript(meeting);
+}
+
+async function hydrateMeetingTranscript(meeting) {
+  try {
+    const r = await fetch(`${MEETING_SERVER}/meetings?bu=${encodeURIComponent(BU)}`, { cache: 'no-store' });
+    if (!r.ok) return;
+    const j = await r.json();
+    if (!j || !j.ok || !Array.isArray(j.meetings)) return;
+    const fresh = j.meetings.find(x => x.id === meeting.id);
+    if (!fresh) return;
+    if (fresh.status && fresh.status !== meeting.status) meeting.status = fresh.status;
+    const freshTurns = fresh.transcript || [];
+    const localTurns = meeting.transcript || [];
+    // Only replace when the server has more turns than memory — protects any
+    // optimistic operator turn appended between overlay-open and hydrate-completion.
+    if (freshTurns.length <= localTurns.length) return;
+    meeting.transcript = freshTurns;
+    const thread = document.getElementById('chat-thread');
+    if (thread) {
+      thread.innerHTML = renderChatTurns(freshTurns);
+      scrollChatToBottom();
+    }
+  } catch (_) {
+    // Local server unreachable — keep the in-memory transcript.
+  }
 }
 
 function renderChatTurns(turns) {
