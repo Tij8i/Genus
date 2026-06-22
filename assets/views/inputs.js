@@ -27,6 +27,12 @@ let meetingServerUp = false;
 // before the first POST returns and ctx.meetings is refreshed.
 const inFlightMeetingStarts = new Set();
 
+// Past-section close_reasons that are noise (housekeeping, not operator-driven).
+// Hidden by default so duplicate-cleanup sweeps don't bury the meetings the
+// operator actually closed; toggled via the "Show N hidden" link.
+const HIDDEN_PAST_CLOSE_REASONS = new Set(['duplicate_cleanup', 'system_archive']);
+let showHiddenPastMeetings = false;
+
 export function renderInputs(ctx, { onChange }) {
   const queryStr = (window.location.hash || '').split('?')[1] || '';
   const params = new URLSearchParams(queryStr);
@@ -339,7 +345,11 @@ function renderMeetingsSubTab(meetings, ctx) {
     return (a.requested_at || '').localeCompare(b.requested_at || '');
   });
   const activeMeetings = meetings.filter(m => m.status === 'active').sort((a, b) => (b.started_at || '').localeCompare(a.started_at || ''));
-  const pastMeetings = meetings.filter(m => !['requested_by_agent', 'active'].includes(m.status)).sort((a, b) => (b.closed_at || b.started_at || '').localeCompare(a.closed_at || a.started_at || ''));
+  const pastAll = meetings.filter(m => !['requested_by_agent', 'active'].includes(m.status)).sort((a, b) => (b.closed_at || b.started_at || '').localeCompare(a.closed_at || a.started_at || ''));
+  const pastHiddenCount = pastAll.filter(m => HIDDEN_PAST_CLOSE_REASONS.has(m.close_reason)).length;
+  const pastVisible = showHiddenPastMeetings
+    ? pastAll
+    : pastAll.filter(m => !HIDDEN_PAST_CLOSE_REASONS.has(m.close_reason));
 
   return `
     <div class="card">
@@ -353,8 +363,8 @@ function renderMeetingsSubTab(meetings, ctx) {
       <div class="meeting-list" style="margin-top:14px">
         ${pendingRequests.length ? renderMeetingSection('Pending requests', pendingRequests, 'requested', ctx) : ''}
         ${activeMeetings.length ? renderMeetingSection('Active', activeMeetings, 'active', ctx) : ''}
-        ${pastMeetings.length ? renderMeetingSection('Past', pastMeetings.slice(0, 20), 'past', ctx) : ''}
-        ${pendingRequests.length + activeMeetings.length + pastMeetings.length === 0
+        ${pastAll.length ? renderPastMeetingSection(pastVisible.slice(0, 20), pastHiddenCount, showHiddenPastMeetings, ctx) : ''}
+        ${pendingRequests.length + activeMeetings.length + pastAll.length === 0
           ? `<div class="empty-state">No meetings yet.</div>` : ''}
       </div>
     </div>
@@ -368,6 +378,29 @@ function renderMeetingSection(label, items, sectionClass, ctx) {
       ${items.map(m => renderMeetingRow(m, sectionClass, ctx)).join('')}
     </div>
   `;
+}
+
+function renderPastMeetingSection(items, hiddenCount, expanded, ctx) {
+  const toggle = hiddenCount > 0
+    ? `<button type="button" class="meeting-toggle-hidden-btn" id="meeting-toggle-hidden-btn">
+         ${expanded ? `Hide ${hiddenCount} system-closed` : `Show ${hiddenCount} hidden`}
+       </button>`
+    : '';
+  return `
+    <div class="meeting-section meeting-section-past">
+      <div class="memo-section-label mono">PAST · ${items.length}</div>
+      ${toggle}
+      ${items.map(m => renderMeetingRow(m, 'past', ctx)).join('')}
+    </div>
+  `;
+}
+
+function rerenderMeetingsSubTab(meetings, ctx, onChange) {
+  const body = document.getElementById('inputs-subtab-body');
+  if (!body || activeSubTab !== 'meetings') return;
+  body.innerHTML = renderMeetingsSubTab(meetings, ctx);
+  probeMeetingServerBanner();
+  wireMeetingButtons(meetings, ctx, onChange);
 }
 
 function renderMeetingRow(m, sectionClass, ctx) {
@@ -442,6 +475,14 @@ function wireMeetingButtons(meetings, ctx, onChange) {
     });
     row.style.cursor = 'pointer';
   });
+  const toggleHiddenBtn = document.getElementById('meeting-toggle-hidden-btn');
+  if (toggleHiddenBtn) {
+    toggleHiddenBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      showHiddenPastMeetings = !showHiddenPastMeetings;
+      rerenderMeetingsSubTab(meetings, ctx, onChange);
+    });
+  }
 }
 
 async function startMeeting(payload, ctx, onChange, btn) {

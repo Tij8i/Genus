@@ -860,6 +860,20 @@ body {
 }
 .meeting-server-banner code { background: rgba(255,255,255,.5); padding: 1px 4px; border-radius: 3px; }
 .meeting-section {}
+.meeting-toggle-hidden-btn {
+  display: inline-block;
+  background: none;
+  border: none;
+  padding: 0 0 8px 0;
+  margin: -4px 0 4px 0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.meeting-toggle-hidden-btn:hover { color: var(--accent); }
 .meeting-row {
   display: flex;
   gap: 12px;
