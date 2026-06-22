@@ -144,9 +144,11 @@ async function boot() {
     }
   }
 
-  // Wire router
-  initRouter('dashboard');
+  // Wire router. Register the callback BEFORE initRouter — initRouter fires
+  // the initial handle() synchronously, and if the cb isn't registered yet
+  // that first render is dropped to the default no-op. Bug: GEN-16.
   onRouteChange(route => renderRoute(route));
+  initRouter('dashboard');
 }
 
 // ============ Routes ============
