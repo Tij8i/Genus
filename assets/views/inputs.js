@@ -12,6 +12,12 @@ const BU = 'tuto';
 
 let activeSubTab = 'suggestions';  // default to the most-engaged surface
 
+// Suggestion-decision queue state (module-level so it survives re-renders).
+// stagedDecisions: card is hidden while we're persisting. failedDecisions: persist
+// genuinely failed (not a 409 "already not pending"), card is restored, banner shown.
+const stagedDecisions = new Map(); // task_id → 'approved' | 'rejected'
+const failedDecisions = new Map(); // task_id → {decision, message, at}
+
 export function renderInputs(ctx, { onChange }) {
   const queryStr = (window.location.hash || '').split('?')[1] || '';
   const params = new URLSearchParams(queryStr);
@@ -53,7 +59,7 @@ export function renderInputs(ctx, { onChange }) {
   if (activeSubTab === 'meetings') probeMeetingServerBanner();
   wireMemoButtons(memos, onChange);
   wireMeetingButtons(meetings, ctx, onChange);
-  wireSuggestionButtons(tasks, onChange);
+  wireSuggestionButtons(tasks, onChange, ctx);
   wireMemoRowClick(memos, ctx);
 }
 
@@ -81,7 +87,12 @@ function renderSubTab(name, label, badge) {
 // ============ Suggestions sub-tab ============
 
 function renderSuggestionsSubTab(tasks, ctx) {
-  const pending = tasks.filter(t => ['awaiting_approval', 'proposed'].includes((t.status || '').toLowerCase())).sort((a, b) => (a.proposed_at || '').localeCompare(b.proposed_at || ''));
+  // Hide cards that are mid-persist; they only reappear if persist fails.
+  const pending = tasks
+    .filter(t => ['awaiting_approval', 'proposed'].includes((t.status || '').toLowerCase()))
+    .filter(t => !stagedDecisions.has(t.id))
+    .sort((a, b) => (a.proposed_at || '').localeCompare(b.proposed_at || ''));
+  const banner = renderDecisionFailureBanner(tasks);
   return `
     <div class="card">
       <div class="card-header-row">
@@ -89,11 +100,28 @@ function renderSuggestionsSubTab(tasks, ctx) {
         <span class="card-sub" style="margin-top:0">${pending.length} awaiting your review</span>
       </div>
       <p class="card-sub">From your agents. Accept, talk it through, or dismiss.</p>
+      ${banner}
       <div class="suggestion-list" style="margin-top:14px">
         ${pending.length === 0
           ? `<div class="empty-state">No suggestions awaiting your review. Stewart files new ones at each heartbeat.</div>`
           : pending.map(t => renderSuggestionCard(t, ctx)).join('')}
       </div>
+    </div>
+  `;
+}
+
+function renderDecisionFailureBanner(tasks) {
+  if (failedDecisions.size === 0) return '';
+  const items = [...failedDecisions.entries()].map(([taskId, info]) => {
+    const t = (tasks || []).find(x => x.id === taskId);
+    const title = t ? t.title : taskId;
+    return `<li>✗ <strong>${escapeHtml(info.decision)}</strong> «${escapeHtml(title)}» — ${escapeHtml(info.message)}</li>`;
+  }).join('');
+  const plural = failedDecisions.size === 1 ? '' : 's';
+  return `
+    <div class="suggestion-failures" style="background:rgba(220,80,80,0.08);border:1px solid var(--red,#c33);border-radius:6px;padding:10px 12px;margin-top:14px;color:var(--red,#c33)">
+      <div style="font-weight:600;margin-bottom:4px">${failedDecisions.size} decision${plural} could not be saved — card${plural} restored below. Click Accept/Dismiss again to retry.</div>
+      <ul style="margin:4px 0 0 16px;padding:0">${items}</ul>
     </div>
   `;
 }
@@ -214,12 +242,12 @@ function computeBreadcrumb(t, ctx) {
   return `${escapeHtml(init.title || init.id)} · ${taskPos}${msPart}`;
 }
 
-function wireSuggestionButtons(tasks, onChange) {
+function wireSuggestionButtons(tasks, onChange, ctx) {
   document.querySelectorAll('.sugg-accept').forEach(btn => {
-    btn.addEventListener('click', () => decideTask(btn, 'approved', onChange));
+    btn.addEventListener('click', () => decideTask(btn, 'approved', onChange, tasks, ctx));
   });
   document.querySelectorAll('.sugg-dismiss').forEach(btn => {
-    btn.addEventListener('click', () => decideTask(btn, 'rejected', onChange));
+    btn.addEventListener('click', () => decideTask(btn, 'rejected', onChange, tasks, ctx));
   });
   document.querySelectorAll('.sugg-discuss').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -237,13 +265,14 @@ function wireSuggestionButtons(tasks, onChange) {
   });
 }
 
-async function decideTask(btn, decision, onChange) {
+async function decideTask(btn, decision, onChange, tasks, ctx) {
   const taskId = btn.dataset.taskId;
-  const card = btn.closest('.suggestion-card');
-  const status = card.querySelector('.sugg-status');
-  card.querySelectorAll('button').forEach(b => b.disabled = true);
-  status.textContent = `${decision === 'approved' ? 'accepting' : 'dismissing'}…`;
-  status.style.color = 'var(--text-faint)';
+
+  // Queue the decision — card vanishes from the list immediately.
+  stagedDecisions.set(taskId, decision);
+  failedDecisions.delete(taskId); // this click is the retry; clear any prior failure
+  rerenderSuggestionsSubTab(tasks, ctx, onChange);
+
   try {
     const resp = await fetch('/api/decide-tasks', {
       method: 'POST',
@@ -251,16 +280,41 @@ async function decideTask(btn, decision, onChange) {
       body: JSON.stringify({ bu: BU, decisions: [{ task_id: taskId, decision }], decided_by: 'operator' }),
     });
     const json = await resp.json().catch(() => ({}));
+
+    // 409 = server says task is already not-pending. That's the "ghost card" case
+    // (stale render, prior approve already committed). Keep card gone, no error.
+    if (resp.status === 409) {
+      const task = (tasks || []).find(t => t.id === taskId);
+      if (task) {
+        const reason = (Array.isArray(json.skipped) && json.skipped[0] && json.skipped[0].reason) || '';
+        const m = reason.match(/^status_is_(.+)$/);
+        task.status = m ? m[1] : decision;
+      }
+      stagedDecisions.delete(taskId);
+      if (typeof onChange === 'function') setTimeout(onChange, 0); // refresh from disk
+      return;
+    }
+
     if (!resp.ok || !json.ok) throw new Error(json.message || `HTTP ${resp.status}`);
-    card.classList.add(decision === 'approved' ? 'card-accepted' : 'card-dismissed');
-    status.textContent = `✓ ${decision} · ${(json.commit_sha || '').slice(0, 7)}`;
-    status.style.color = 'var(--green-fg)';
-    setTimeout(onChange, 800);
+
+    // Success — task is now approved/rejected on the server
+    const task = (tasks || []).find(t => t.id === taskId);
+    if (task) task.status = decision;
+    stagedDecisions.delete(taskId);
+    if (typeof onChange === 'function') setTimeout(onChange, 0);
   } catch (e) {
-    card.querySelectorAll('button').forEach(b => b.disabled = false);
-    status.textContent = `✗ ${e.message || 'failed'}`;
-    status.style.color = 'var(--red)';
+    console.error('[inputs] decide-tasks failed:', e);
+    stagedDecisions.delete(taskId);
+    failedDecisions.set(taskId, { decision, message: e.message || 'failed', at: Date.now() });
+    rerenderSuggestionsSubTab(tasks, ctx, onChange);
   }
+}
+
+function rerenderSuggestionsSubTab(tasks, ctx, onChange) {
+  const body = document.getElementById('inputs-subtab-body');
+  if (!body || activeSubTab !== 'suggestions') return;
+  body.innerHTML = renderSuggestionsSubTab(tasks, ctx);
+  wireSuggestionButtons(tasks, onChange, ctx);
 }
 
 // ============ Meetings sub-tab ============
@@ -325,7 +379,7 @@ function renderMeetingRow(m, sectionClass, ctx) {
       </div>
       ${sectionClass === 'requested' ? `
         <div class="meeting-row-actions">
-          <button type="button" class="meeting-convert-btn" data-meeting-id="${escapeHtml(m.id)}">Convert →</button>
+          <button type="button" class="meeting-convert-btn" data-meeting-id="${escapeHtml(m.id)}">Start meeting →</button>
         </div>
       ` : ''}
     </div>

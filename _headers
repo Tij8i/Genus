@@ -1,0 +1,18 @@
+# Cloudflare Pages — HTTP headers per path
+# https://developers.cloudflare.com/pages/configuration/headers/
+
+# Default security headers for all routes
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+
+# Data files — never cache (must show the latest after each agent write)
+/data/*
+  Cache-Control: no-store, must-revalidate
+
+# Assets — always revalidate so a fresh deploy takes effect immediately.
+# Browser still gets 304 Not Modified most of the time (cheap), but never
+# serves stale JS/CSS after a Pages deploy. Switch to hashed filenames
+# later if revalidation roundtrips become a real cost.
+/assets/*
+  Cache-Control: no-cache, must-revalidate
