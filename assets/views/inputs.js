@@ -335,21 +335,31 @@ function rerenderSuggestionsSubTab(tasks, ctx, onChange) {
 // ============ Meetings sub-tab ============
 
 function renderMeetingsSubTab(meetings, ctx) {
-  const pendingRequests = meetings.filter(m => m.status === 'requested_by_agent').slice();
-  pendingRequests.sort((a, b) => {
-    const initA = (ctx.initiatives || []).find(i => i.id === (a.related_item || {}).initiative_id);
-    const initB = (ctx.initiatives || []).find(i => i.id === (b.related_item || {}).initiative_id);
-    const dlA = (initA?.target_close_date || '9999-12-31').slice(0, 10);
-    const dlB = (initB?.target_close_date || '9999-12-31').slice(0, 10);
-    if (dlA !== dlB) return dlA.localeCompare(dlB);
-    return (a.requested_at || '').localeCompare(b.requested_at || '');
+  const all = meetings.slice();
+  const hiddenCount = all.filter(m => HIDDEN_PAST_CLOSE_REASONS.has(m.close_reason)).length;
+  const visible = showHiddenPastMeetings
+    ? all
+    : all.filter(m => !HIDDEN_PAST_CLOSE_REASONS.has(m.close_reason));
+
+  const deadlineKey = (m) => {
+    const init = (ctx.initiatives || []).find(i => i.id === (m.related_item || {}).initiative_id);
+    return (init?.target_close_date || '9999-12-31').slice(0, 10);
+  };
+  visible.sort((a, b) => {
+    const ka = deadlineKey(a);
+    const kb = deadlineKey(b);
+    if (ka !== kb) return ka.localeCompare(kb);
+    // Tie-break: most recent activity first (active beats requested beats closed when same deadline).
+    const tA = a.started_at || a.requested_at || a.closed_at || '';
+    const tB = b.started_at || b.requested_at || b.closed_at || '';
+    return tB.localeCompare(tA);
   });
-  const activeMeetings = meetings.filter(m => m.status === 'active').sort((a, b) => (b.started_at || '').localeCompare(a.started_at || ''));
-  const pastAll = meetings.filter(m => !['requested_by_agent', 'active'].includes(m.status)).sort((a, b) => (b.closed_at || b.started_at || '').localeCompare(a.closed_at || a.started_at || ''));
-  const pastHiddenCount = pastAll.filter(m => HIDDEN_PAST_CLOSE_REASONS.has(m.close_reason)).length;
-  const pastVisible = showHiddenPastMeetings
-    ? pastAll
-    : pastAll.filter(m => !HIDDEN_PAST_CLOSE_REASONS.has(m.close_reason));
+
+  const toggle = hiddenCount > 0
+    ? `<button type="button" class="meeting-toggle-hidden-btn" id="meeting-toggle-hidden-btn">
+         ${showHiddenPastMeetings ? `Hide ${hiddenCount} system-closed` : `Show ${hiddenCount} hidden`}
+       </button>`
+    : '';
 
   return `
     <div class="card">
@@ -357,40 +367,37 @@ function renderMeetingsSubTab(meetings, ctx) {
         <div class="card-header-left"><span class="card-title">Meetings</span></div>
         <button type="button" class="add-btn-secondary" id="new-meeting-btn" title="Schedule a meeting (requires local meeting server)">+ Schedule</button>
       </div>
-      <p class="card-sub">With agents. Pending requests on top; convert one to open a live chat.</p>
+      <p class="card-sub">Sorted by deadline. Color shows status — green active · amber pending · red overdue · gray closed.</p>
       <div id="meeting-server-banner-host"></div>
 
       <div class="meeting-list" style="margin-top:14px">
-        ${pendingRequests.length ? renderMeetingSection('Pending requests', pendingRequests, 'requested', ctx) : ''}
-        ${activeMeetings.length ? renderMeetingSection('Active', activeMeetings, 'active', ctx) : ''}
-        ${pastAll.length ? renderPastMeetingSection(pastVisible.slice(0, 20), pastHiddenCount, showHiddenPastMeetings, ctx) : ''}
-        ${pendingRequests.length + activeMeetings.length + pastAll.length === 0
-          ? `<div class="empty-state">No meetings yet.</div>` : ''}
+        ${toggle}
+        ${visible.length
+          ? visible.map(m => renderMeetingRow(m, ctx)).join('')
+          : `<div class="empty-state">No meetings yet.</div>`}
       </div>
     </div>
   `;
 }
 
-function renderMeetingSection(label, items, sectionClass, ctx) {
-  return `
-    <div class="meeting-section meeting-section-${sectionClass}">
-      <div class="memo-section-label mono">${escapeHtml(label.toUpperCase())} · ${items.length}</div>
-      ${items.map(m => renderMeetingRow(m, sectionClass, ctx)).join('')}
-    </div>
-  `;
-}
+const MONTH_ABBREV = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
 
-function renderPastMeetingSection(items, hiddenCount, expanded, ctx) {
-  const toggle = hiddenCount > 0
-    ? `<button type="button" class="meeting-toggle-hidden-btn" id="meeting-toggle-hidden-btn">
-         ${expanded ? `Hide ${hiddenCount} system-closed` : `Show ${hiddenCount} hidden`}
-       </button>`
-    : '';
+function renderDateBox(iso) {
+  if (!iso) {
+    return `
+      <div class="meeting-date-box meeting-date-box-empty">
+        <div class="meeting-date-day">—</div>
+        <div class="meeting-date-month">no&nbsp;date</div>
+      </div>
+    `;
+  }
+  const parts = iso.split('-');
+  const month = MONTH_ABBREV[(parseInt(parts[1], 10) - 1)] || '';
+  const day = parseInt(parts[2], 10);
   return `
-    <div class="meeting-section meeting-section-past">
-      <div class="memo-section-label mono">PAST · ${items.length}</div>
-      ${toggle}
-      ${items.map(m => renderMeetingRow(m, 'past', ctx)).join('')}
+    <div class="meeting-date-box">
+      <div class="meeting-date-day">${escapeHtml(Number.isFinite(day) ? String(day) : '—')}</div>
+      <div class="meeting-date-month">${escapeHtml(month)}</div>
     </div>
   `;
 }
@@ -403,23 +410,38 @@ function rerenderMeetingsSubTab(meetings, ctx, onChange) {
   wireMeetingButtons(meetings, ctx, onChange);
 }
 
-function renderMeetingRow(m, sectionClass, ctx) {
+function renderMeetingRow(m, ctx) {
   const init = (ctx.initiatives || []).find(i => i.id === (m.related_item || {}).initiative_id);
   const deadline = init?.target_close_date ? init.target_close_date.slice(0, 10) : null;
-  const dateOrAgo = sectionClass === 'requested'
-    ? `requested ${ago(m.requested_at)}`
-    : sectionClass === 'active'
-      ? `started ${ago(m.started_at)}`
-      : `${ago(m.closed_at || m.started_at)}`;
+
+  let statusClass;
+  let initiatedLine;
+  if (m.status === 'requested_by_agent') {
+    statusClass = 'pending';
+    initiatedLine = `requested ${ago(m.requested_at)}`;
+  } else if (m.status === 'active') {
+    statusClass = 'active';
+    initiatedLine = `started ${ago(m.started_at)}`;
+  } else {
+    statusClass = 'past';
+    initiatedLine = `closed ${ago(m.closed_at || m.started_at)}`;
+  }
+  // Overdue = a still-open meeting (pending or active) whose deadline already passed.
+  // Closed meetings keep the gray "past" treatment regardless of deadline.
+  if (statusClass !== 'past' && deadline) {
+    const today = new Date().toISOString().slice(0, 10);
+    if (deadline < today) statusClass = 'overdue';
+  }
+
   return `
-    <div class="meeting-row meeting-row-${sectionClass}" data-meeting-id="${escapeHtml(m.id)}">
+    <div class="meeting-row meeting-row-${statusClass}" data-meeting-id="${escapeHtml(m.id)}" data-meeting-status="${statusClass}">
+      ${renderDateBox(deadline)}
       <div class="meeting-row-body">
         <div class="meeting-row-title">${escapeHtml(m.title || 'Untitled meeting')}</div>
+        <div class="meeting-row-initiated mono">${escapeHtml(initiatedLine)}</div>
         ${m.purpose ? `<div class="meeting-row-purpose">${escapeHtml(m.purpose)}</div>` : ''}
-        ${deadline ? `<div class="meeting-row-meta mono">initiative deadline ${escapeHtml(deadline)}</div>` : ''}
-        <div class="meeting-row-meta mono">${escapeHtml(dateOrAgo)}</div>
       </div>
-      ${sectionClass === 'requested' ? `
+      ${statusClass === 'pending' ? `
         <div class="meeting-row-actions">
           <button type="button" class="meeting-convert-btn" data-meeting-id="${escapeHtml(m.id)}">Start meeting →</button>
         </div>
@@ -464,10 +486,11 @@ function wireMeetingButtons(meetings, ctx, onChange) {
       }, ctx, onChange, btn);
     });
   });
-  // Click any non-requested meeting row → open its chat overlay.
-  // (Requested rows route through the Start-meeting button above, which
+  // Click any non-pending meeting row → open its chat overlay.
+  // (Pending rows route through the Start-meeting button above, which
   // creates the live meeting then opens the chat.)
-  document.querySelectorAll('.meeting-row-active, .meeting-row-past').forEach(row => {
+  document.querySelectorAll('.meeting-row').forEach(row => {
+    if (row.dataset.meetingStatus === 'pending') return;
     row.addEventListener('click', () => {
       const id = row.dataset.meetingId;
       const m = meetings.find(x => x.id === id);
