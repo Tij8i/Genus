@@ -14,6 +14,8 @@ const BU = 'tuto';
 
 let openInitiativeId = null;
 let activeSubTab = 'active';
+let editPlanOpen = false;
+let cycleBusy = false;  // disables buttons while a plan-cycle mutation is in flight
 
 export function renderPlanning(ctx, { onChange }) {
   // Read sub-tab from URL query (#planning?tab=backlog). Router now strips
@@ -58,7 +60,11 @@ export function renderPlanning(ctx, { onChange }) {
     });
   });
 
+  // Wire plan-cycle controls on the active plan card
+  wirePlanCycleControls(body, ctx, onChange);
+
   if (openInitiativeId) renderInitiativeDetailOverlay(ctx, onChange);
+  if (editPlanOpen) renderEditPlanOverlay(ctx, onChange);
 }
 
 // ============ Sub-tab: Active ============
@@ -145,6 +151,11 @@ function renderActivePlanCard(activePlan, planInits) {
           <div class="plan-card-pct-sub">${done} of ${total} done · ${inProgress} active</div>
           ${timeProg ? `<div class="plan-card-time mono">${timeProg.remainingDays} days left / ${timeProg.totalDays}</div>` : ''}
         </div>
+      </div>
+      <div class="plan-card-controls" data-plan-id="${escapeHtml(activePlan.id)}">
+        <button type="button" class="plan-cycle-btn" data-cycle-action="complete">Mark cycle complete</button>
+        <button type="button" class="plan-cycle-btn" data-cycle-action="propose">Ask Stewart for 3 plan proposals</button>
+        <button type="button" class="plan-cycle-btn plan-cycle-btn-primary" data-cycle-action="edit">Edit current plan</button>
       </div>
     </div>
   `;
@@ -538,4 +549,220 @@ function initTaskColor(status) {
     case 'failed': return 'red';
     default: return 'gray';
   }
+}
+
+// ============ Plan-cycle controls (GEN-38) ============
+
+function wirePlanCycleControls(scope, ctx, onChange) {
+  const controls = scope.querySelector('.plan-card-controls');
+  if (!controls) return;
+  const planId = controls.dataset.planId;
+  const buttons = controls.querySelectorAll('.plan-cycle-btn');
+  if (cycleBusy) buttons.forEach(b => { b.disabled = true; });
+
+  buttons.forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const action = btn.dataset.cycleAction;
+      if (action === 'complete') return onCompleteCycle(planId, btn, ctx, onChange);
+      if (action === 'propose') return onRequestProposals(planId, btn, ctx, onChange);
+      if (action === 'edit') { editPlanOpen = true; renderEditPlanOverlay(ctx, onChange); }
+    });
+  });
+}
+
+async function onCompleteCycle(planId, btn, ctx, onChange) {
+  const plan = (ctx.plans || []).find(p => p.id === planId);
+  if (!plan) return;
+  const inits = (plan.initiative_ids || [])
+    .map(iid => (ctx.initiatives || []).find(i => i.id === iid))
+    .filter(Boolean);
+  const stillOpen = inits.filter(i => !['completed', 'abandoned', 'discarded'].includes((i.status || '').toLowerCase())).length;
+  const msg = stillOpen > 0
+    ? `Mark cycle "${plan.title}" complete?\n\n${stillOpen} of ${inits.length} initiatives are still open — they will be auto-archived as completed. A retrospective stub will be written.\n\nThis is reversible only by editing data files directly.`
+    : `Mark cycle "${plan.title}" complete?\n\nA retrospective stub will be written.`;
+  const notes = window.prompt(msg + '\n\nOptional closing note (blank → default stub):', '');
+  if (notes === null) return;  // cancelled
+  await runCycleAction(btn, async () => {
+    const resp = await fetch('/api/update-plan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bu: BU, plan_id: planId, action: 'complete_cycle', closing_notes: notes.trim() || undefined, actor: 'operator' }),
+    });
+    const json = await resp.json().catch(() => ({}));
+    if (!resp.ok || !json.ok) throw new Error(json.message || `HTTP ${resp.status}`);
+    return json;
+  }, onChange);
+}
+
+async function onRequestProposals(planId, btn, ctx, onChange) {
+  const plan = (ctx.plans || []).find(p => p.id === planId);
+  if (!plan) return;
+  if (!window.confirm(`File a task asking the ${BU}-stewart to draft 3 alternative next-cycle plans?\n\nThe Stewart will produce 3 different shapes/priorities at next heartbeat. You pick ONE to activate.`)) return;
+  await runCycleAction(btn, async () => {
+    const body = {
+      bu: BU,
+      title: `Draft 3 alternative next-cycle plans (after ${plan.id})`,
+      description: `Operator requested 3 alternative next-cycle plan proposals from the dashboard. Produce them in dashboard/public/data/bus/${BU}/plan_proposals.json. Each proposal should be a DIFFERENT SHAPE: different goal mix, different priorities, different cadence — not three near-duplicates. Reference the just-closed cycle "${plan.title}" (${plan.id}) when grounding the proposals. After they appear, the operator picks one in the dashboard and it gets activated.`,
+      category: 'plan_proposal',
+      target: { type: 'json_file', scope: `dashboard/public/data/bus/${BU}/plan_proposals.json`, executor: `${BU}-stewart` },
+      estimated_minutes: 90,
+      risk_level: 'low',
+      reversibility: 'high',
+      source: 'planning_view_ask_proposals',
+    };
+    const resp = await fetch('/api/file-stewart-task', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const json = await resp.json().catch(() => ({}));
+    if (!resp.ok || !json.ok) throw new Error(json.message || `HTTP ${resp.status}`);
+    return json;
+  }, onChange);
+}
+
+async function runCycleAction(btn, fn, onChange) {
+  cycleBusy = true;
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'working…';
+  try {
+    await fn();
+    btn.textContent = '✓ done';
+    onChange();  // re-fetches ctx + re-renders
+  } catch (e) {
+    cycleBusy = false;
+    btn.disabled = false;
+    btn.textContent = `✗ ${e.message?.slice(0, 80) || 'failed'}`;
+    setTimeout(() => { btn.textContent = original; }, 4000);
+  }
+}
+
+function renderEditPlanOverlay(ctx, onChange) {
+  const host = document.getElementById('initiative-detail-host');
+  if (!host) return;
+  const plan = (ctx.plans || []).find(p => p.status === 'active');
+  if (!plan) { editPlanOpen = false; host.innerHTML = ''; return; }
+
+  // All Initiatives that are eligible to be IN a plan: anything not closed
+  // (completed/abandoned/discarded). Currently-in-plan ones come pre-checked.
+  const allInits = (ctx.initiatives || []).filter(i =>
+    !['completed', 'abandoned', 'discarded'].includes((i.status || '').toLowerCase())
+  );
+  const currentIds = new Set(plan.initiative_ids || []);
+
+  host.innerHTML = `
+    <div class="overlay-backdrop" id="edit-plan-backdrop"></div>
+    <div class="overlay-panel" role="dialog" aria-labelledby="edit-plan-title">
+      <div class="overlay-head">
+        <div>
+          <div class="mono" style="font-size:10.5px;color:var(--text-faint);letter-spacing:.1em">${escapeHtml(plan.id)}</div>
+          <h2 id="edit-plan-title" class="overlay-title">Edit current plan</h2>
+        </div>
+        <button type="button" class="overlay-close" id="edit-plan-close" aria-label="Close">✕</button>
+      </div>
+
+      <div class="overlay-section">
+        <label class="edit-plan-label">Title</label>
+        <input type="text" id="edit-plan-input-title" class="edit-plan-input" value="${escapeHtml(plan.title || '')}">
+      </div>
+
+      <div class="overlay-section">
+        <label class="edit-plan-label">Rationale</label>
+        <textarea id="edit-plan-input-rationale" class="edit-plan-textarea" rows="5">${escapeHtml(plan.rationale || '')}</textarea>
+      </div>
+
+      <div class="overlay-section">
+        <label class="edit-plan-label">Target end date</label>
+        <input type="date" id="edit-plan-input-end" class="edit-plan-input" value="${escapeHtml((plan.period_target_end || '').slice(0, 10))}">
+      </div>
+
+      <div class="overlay-section">
+        <label class="edit-plan-label">Initiatives in this plan (${currentIds.size} selected)</label>
+        <p class="card-sub" style="margin:4px 0 10px">Toggle initiatives in or out of the active plan. Currently-closed initiatives are not shown.</p>
+        <div class="edit-plan-init-list">
+          ${allInits.length ? allInits.map(i => `
+            <label class="edit-plan-init-row">
+              <input type="checkbox" data-init-id="${escapeHtml(i.id)}" ${currentIds.has(i.id) ? 'checked' : ''}>
+              <div class="edit-plan-init-row-body">
+                <div class="edit-plan-init-row-title">${escapeHtml(i.title)}</div>
+                <div class="mono" style="font-size:10.5px;color:var(--text-faint)">${escapeHtml(i.id)} · ${escapeHtml((i.status || 'not_started').replace(/_/g, ' '))}</div>
+              </div>
+            </label>
+          `).join('') : '<div class="empty-state">No open initiatives. Create one from Backlog first.</div>'}
+        </div>
+      </div>
+
+      <div class="overlay-section edit-plan-actions">
+        <button type="button" class="plan-cycle-btn" id="edit-plan-cancel">Cancel</button>
+        <button type="button" class="plan-cycle-btn plan-cycle-btn-primary" id="edit-plan-save">Save changes</button>
+      </div>
+    </div>
+  `;
+
+  const close = () => { editPlanOpen = false; host.innerHTML = ''; };
+  document.getElementById('edit-plan-backdrop').addEventListener('click', close);
+  document.getElementById('edit-plan-close').addEventListener('click', close);
+  document.getElementById('edit-plan-cancel').addEventListener('click', close);
+  document.addEventListener('keydown', function escClose(e) {
+    if (e.key === 'Escape') { close(); document.removeEventListener('keydown', escClose); }
+  });
+
+  const saveBtn = document.getElementById('edit-plan-save');
+  saveBtn.addEventListener('click', async () => {
+    const titleVal = document.getElementById('edit-plan-input-title').value.trim();
+    const rationaleVal = document.getElementById('edit-plan-input-rationale').value.trim();
+    const endVal = document.getElementById('edit-plan-input-end').value.trim();
+    const newInitIds = Array.from(host.querySelectorAll('[data-init-id]'))
+      .filter(cb => cb.checked).map(cb => cb.dataset.initId);
+
+    const edits = {};
+    if (titleVal && titleVal !== (plan.title || '')) edits.title = titleVal;
+    if (rationaleVal !== (plan.rationale || '')) edits.rationale = rationaleVal;
+    if (endVal && endVal !== (plan.period_target_end || '').slice(0, 10)) edits.period_target_end = endVal;
+    const oldIds = (plan.initiative_ids || []).slice().sort().join(',');
+    const newIds = newInitIds.slice().sort().join(',');
+    if (oldIds !== newIds) edits.initiative_ids = newInitIds;
+
+    if (!Object.keys(edits).length) { close(); return; }
+
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'saving…';
+    try {
+      const resp = await fetch('/api/update-plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bu: BU, plan_id: plan.id, action: 'edit_plan', edits, actor: 'operator' }),
+      });
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok || !json.ok) throw new Error(json.message || `HTTP ${resp.status}`);
+
+      // Structural change → offer Stewart resync
+      const structural = edits.initiative_ids || edits.period_target_end;
+      if (structural && window.confirm('These edits change the plan structure — should the Stewart re-evaluate existing tasks against the new structure?\n\nIf yes, a Stewart task will be filed to re-sync open tasks against the edited plan at the next heartbeat.')) {
+        const resyncResp = await fetch('/api/file-stewart-task', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            bu: BU,
+            title: `Re-sync open tasks against edited plan ${plan.id}`,
+            description: `Operator edited the active plan ${plan.id} structure (${Object.keys(edits).join(', ')}). Re-evaluate all open / awaiting_approval / approved tasks: do any now point at archived initiatives, contradict the new initiative roster, or no longer fit the cycle end date? Reconcile by closing / re-pointing / re-prioritizing as appropriate. Surface anything ambiguous as a memo for operator review.`,
+            category: 'plan_resync',
+            target: { type: 'json_file', scope: `dashboard/public/data/bus/${BU}/tasks.json`, executor: `${BU}-stewart` },
+            estimated_minutes: 45,
+            risk_level: 'low',
+            reversibility: 'high',
+            source: 'planning_view_edit_resync',
+          }),
+        });
+        const rjson = await resyncResp.json().catch(() => ({}));
+        if (!resyncResp.ok || !rjson.ok) throw new Error(`Edit saved, but resync task failed: ${rjson.message || resyncResp.status}`);
+      }
+      close();
+      onChange();
+    } catch (e) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = `✗ ${(e.message || 'failed').slice(0, 80)}`;
+    }
+  });
 }

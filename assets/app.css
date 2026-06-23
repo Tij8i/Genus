@@ -1357,6 +1357,87 @@ body {
 .overlay-mark-done-btn:hover { background: var(--green); color: #fff; }
 .overlay-mark-done-btn:disabled { opacity: .6; cursor: not-allowed; }
 
+/* Plan-cycle controls (GEN-38) */
+.plan-card-controls {
+  display: flex; gap: 8px; flex-wrap: wrap;
+  margin-top: 18px; padding-top: 14px;
+  border-top: 1px solid var(--border-faint, var(--border));
+}
+.plan-cycle-btn {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 7px 12px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  transition: background .12s, border-color .12s;
+}
+.plan-cycle-btn:hover:not(:disabled) {
+  background: var(--surface-emph, var(--surface));
+  border-color: var(--text-faint);
+}
+.plan-cycle-btn:disabled { opacity: .55; cursor: not-allowed; }
+.plan-cycle-btn-primary {
+  border-color: var(--accent, var(--blue, #4d6ef5));
+  color: var(--accent, var(--blue, #4d6ef5));
+}
+.plan-cycle-btn-primary:hover:not(:disabled) {
+  background: var(--accent, var(--blue, #4d6ef5));
+  color: #fff;
+}
+
+/* Edit-plan overlay form */
+.edit-plan-label {
+  display: block;
+  font-size: 10.5px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+.edit-plan-input,
+.edit-plan-textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+.edit-plan-textarea { resize: vertical; min-height: 80px; }
+.edit-plan-input:focus,
+.edit-plan-textarea:focus {
+  outline: none;
+  border-color: var(--accent, var(--blue, #4d6ef5));
+}
+.edit-plan-init-list {
+  display: flex; flex-direction: column; gap: 4px;
+  max-height: 280px; overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px;
+}
+.edit-plan-init-row {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 6px 8px; border-radius: 4px;
+  cursor: pointer;
+}
+.edit-plan-init-row:hover { background: var(--surface-emph, rgba(0,0,0,.03)); }
+.edit-plan-init-row input[type="checkbox"] { margin-top: 2px; flex: none; }
+.edit-plan-init-row-body { flex: 1; min-width: 0; }
+.edit-plan-init-row-title { font-size: 13px; font-weight: 500; }
+.edit-plan-actions {
+  display: flex; justify-content: flex-end; gap: 8px;
+}
+
 /* Milestone strip (in detail overlay) */
 .ms-strip {
   display: flex; align-items: flex-start; gap: 0;
