@@ -414,17 +414,22 @@ function renderMeetingRow(m, ctx) {
   const init = (ctx.initiatives || []).find(i => i.id === (m.related_item || {}).initiative_id);
   const deadline = init?.target_close_date ? init.target_close_date.slice(0, 10) : null;
 
+  const agoPhrase = (iso) => {
+    const a = ago(iso);
+    if (a === '—' || a === 'just now') return a;
+    return `${a} ago`;
+  };
   let statusClass;
   let initiatedLine;
   if (m.status === 'requested_by_agent') {
     statusClass = 'pending';
-    initiatedLine = `requested ${ago(m.requested_at)}`;
+    initiatedLine = `requested ${agoPhrase(m.requested_at)}`;
   } else if (m.status === 'active') {
     statusClass = 'active';
-    initiatedLine = `started ${ago(m.started_at)}`;
+    initiatedLine = `started ${agoPhrase(m.started_at)}`;
   } else {
     statusClass = 'past';
-    initiatedLine = `closed ${ago(m.closed_at || m.started_at)}`;
+    initiatedLine = `closed ${agoPhrase(m.closed_at || m.started_at)}`;
   }
   // Overdue = a still-open meeting (pending or active) whose deadline already passed.
   // Closed meetings keep the gray "past" treatment regardless of deadline.
@@ -441,7 +446,7 @@ function renderMeetingRow(m, ctx) {
         <div class="meeting-row-initiated mono">${escapeHtml(initiatedLine)}</div>
         ${m.purpose ? `<div class="meeting-row-purpose">${escapeHtml(m.purpose)}</div>` : ''}
       </div>
-      ${statusClass === 'pending' ? `
+      ${m.status === 'requested_by_agent' ? `
         <div class="meeting-row-actions">
           <button type="button" class="meeting-convert-btn" data-meeting-id="${escapeHtml(m.id)}">Start meeting →</button>
         </div>
@@ -490,7 +495,10 @@ function wireMeetingButtons(meetings, ctx, onChange) {
   // (Pending rows route through the Start-meeting button above, which
   // creates the live meeting then opens the chat.)
   document.querySelectorAll('.meeting-row').forEach(row => {
-    if (row.dataset.meetingStatus === 'pending') return;
+    // Rows that carry a Start-meeting button (requested_by_agent, including
+    // requested-but-overdue) are not directly clickable — the button starts
+    // the meeting which then opens the chat.
+    if (row.querySelector('.meeting-convert-btn')) return;
     row.addEventListener('click', () => {
       const id = row.dataset.meetingId;
       const m = meetings.find(x => x.id === id);
