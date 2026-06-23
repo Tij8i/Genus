@@ -27,6 +27,12 @@ let meetingServerUp = false;
 // before the first POST returns and ctx.meetings is refreshed.
 const inFlightMeetingStarts = new Set();
 
+// Meeting-dismiss queue state — same vanish-on-action pattern as suggestion
+// decisions above. Row is hidden the instant the operator clicks Dismiss; if
+// the /meeting/close call fails the row is restored and a red banner appears.
+const stagedMeetingDismissals = new Set(); // meeting_id
+const failedMeetingDismissals = new Map(); // meeting_id → {message, at}
+
 // Past-section close_reasons that are noise (housekeeping, not operator-driven).
 // Hidden by default so duplicate-cleanup sweeps don't bury the meetings the
 // operator actually closed; toggled via the "Show N hidden" link.
@@ -335,11 +341,12 @@ function rerenderSuggestionsSubTab(tasks, ctx, onChange) {
 // ============ Meetings sub-tab ============
 
 function renderMeetingsSubTab(meetings, ctx) {
-  const all = meetings.slice();
+  const all = meetings.slice().filter(m => !stagedMeetingDismissals.has(m.id));
   const hiddenCount = all.filter(m => HIDDEN_PAST_CLOSE_REASONS.has(m.close_reason)).length;
   const visible = showHiddenPastMeetings
     ? all
     : all.filter(m => !HIDDEN_PAST_CLOSE_REASONS.has(m.close_reason));
+  const failureBanner = renderMeetingDismissFailureBanner(meetings);
 
   const deadlineKey = (m) => {
     const init = (ctx.initiatives || []).find(i => i.id === (m.related_item || {}).initiative_id);
@@ -369,6 +376,7 @@ function renderMeetingsSubTab(meetings, ctx) {
       </div>
       <p class="card-sub">Sorted by deadline. Color shows status — green active · amber pending · red overdue · gray closed.</p>
       <div id="meeting-server-banner-host"></div>
+      ${failureBanner}
 
       <div class="meeting-list" style="margin-top:14px">
         ${toggle}
@@ -376,6 +384,22 @@ function renderMeetingsSubTab(meetings, ctx) {
           ? visible.map(m => renderMeetingRow(m, ctx)).join('')
           : `<div class="empty-state">No meetings yet.</div>`}
       </div>
+    </div>
+  `;
+}
+
+function renderMeetingDismissFailureBanner(meetings) {
+  if (failedMeetingDismissals.size === 0) return '';
+  const items = [...failedMeetingDismissals.entries()].map(([id, info]) => {
+    const m = (meetings || []).find(x => x.id === id);
+    const title = m ? (m.title || 'Untitled meeting') : id;
+    return `<li>✗ <strong>Dismiss</strong> «${escapeHtml(title)}» — ${escapeHtml(info.message)}</li>`;
+  }).join('');
+  const plural = failedMeetingDismissals.size === 1 ? '' : 's';
+  return `
+    <div class="meeting-dismiss-failures" style="background:rgba(220,80,80,0.08);border:1px solid var(--red,#c33);border-radius:6px;padding:10px 12px;margin-top:14px;color:var(--red,#c33)">
+      <div style="font-weight:600;margin-bottom:4px">${failedMeetingDismissals.size} dismissal${plural} could not be saved — row${plural} restored below. Click Dismiss again to retry.</div>
+      <ul style="margin:4px 0 0 16px;padding:0">${items}</ul>
     </div>
   `;
 }
@@ -449,6 +473,7 @@ function renderMeetingRow(m, ctx) {
       ${m.status === 'requested_by_agent' ? `
         <div class="meeting-row-actions">
           <button type="button" class="meeting-convert-btn" data-meeting-id="${escapeHtml(m.id)}">Start meeting →</button>
+          <button type="button" class="meeting-dismiss-btn" data-meeting-id="${escapeHtml(m.id)}">Dismiss</button>
         </div>
       ` : ''}
     </div>
@@ -491,6 +516,13 @@ function wireMeetingButtons(meetings, ctx, onChange) {
       }, ctx, onChange, btn);
     });
   });
+  document.querySelectorAll('.meeting-dismiss-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.meetingId;
+      dismissMeetingRequest(id, meetings, ctx, onChange);
+    });
+  });
   // Click any non-pending meeting row → open its chat overlay.
   // (Pending rows route through the Start-meeting button above, which
   // creates the live meeting then opens the chat.)
@@ -513,6 +545,45 @@ function wireMeetingButtons(meetings, ctx, onChange) {
       showHiddenPastMeetings = !showHiddenPastMeetings;
       rerenderMeetingsSubTab(meetings, ctx, onChange);
     });
+  }
+}
+
+async function dismissMeetingRequest(meetingId, meetings, ctx, onChange) {
+  if (!meetingId) return;
+  // Optimistic: hide the row immediately so the operator sees the click landed.
+  // This is the GEN-7 vanish-on-action pattern — same UX guarantee for meetings.
+  stagedMeetingDismissals.add(meetingId);
+  failedMeetingDismissals.delete(meetingId);  // this click is the retry; clear prior failure
+  rerenderMeetingsSubTab(meetings, ctx, onChange);
+
+  try {
+    const r = await fetch(`${MEETING_SERVER}/meeting/close`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bu: BU, meeting_id: meetingId }),
+    });
+    const j = await r.json().catch(() => ({}));
+    // 404 = server doesn't know this meeting (already gone, or never persisted).
+    // Treat as a successful dismissal — keep the row hidden, refresh from disk.
+    if (r.status === 404) {
+      stagedMeetingDismissals.delete(meetingId);
+      if (typeof onChange === 'function') setTimeout(onChange, 0);
+      return;
+    }
+    if (!r.ok || !j.ok) throw new Error(j.message || `HTTP ${r.status}`);
+    // Success — mutate the in-memory meeting so until the substrate reload lands
+    // (onChange below), the row stays out of Pending and shows up in Past.
+    const m = (meetings || []).find(x => x.id === meetingId);
+    if (m) {
+      if (j.meeting) Object.assign(m, j.meeting);
+      else { m.status = 'closed'; m.closed_at = new Date().toISOString(); }
+    }
+    stagedMeetingDismissals.delete(meetingId);
+    if (typeof onChange === 'function') setTimeout(onChange, 0);
+  } catch (e) {
+    console.error('[inputs] dismiss-meeting failed:', e);
+    stagedMeetingDismissals.delete(meetingId);
+    failedMeetingDismissals.set(meetingId, { message: e.message || 'failed', at: Date.now() });
+    rerenderMeetingsSubTab(meetings, ctx, onChange);
   }
 }
 
