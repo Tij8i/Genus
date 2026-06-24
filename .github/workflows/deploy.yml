@@ -21,6 +21,12 @@ on:
   push:
     branches: [main]
   workflow_dispatch:  # manual trigger from the Actions tab
+    inputs:
+      branch:
+        description: 'Branch to deploy (leave blank for the project default — main). Pass via -f branch=<name>, e.g. feature/GEN-99-sidebar-reorg.'
+        required: false
+        type: string
+        default: ''
 
 jobs:
   deploy:
@@ -57,11 +63,23 @@ jobs:
           CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CF_ACCOUNT_ID: b7463ec5b56da2353ea9002736247be1
           CF_PROJECT: genus-v06
+          # When triggered by `push` on main, INPUT_BRANCH is empty and we
+          # let Cloudflare deploy the project default. When triggered via
+          # `workflow_dispatch` with `-f branch=…`, we forward that branch
+          # as a multipart form field so Cloudflare builds a preview from
+          # any feature branch — see GEN-101 + the DEPLOY.md note about
+          # the Cloudflare GitHub App not being authorized on Tij8i/Genus.
+          INPUT_BRANCH: ${{ github.event.inputs.branch }}
         run: |
           set -e
-          echo "Triggering Pages deploy for project=$CF_PROJECT, commit=$GITHUB_SHA"
+          if [ -n "$INPUT_BRANCH" ]; then
+            echo "Triggering Pages deploy for project=$CF_PROJECT, branch=$INPUT_BRANCH (on-demand preview)"
+          else
+            echo "Triggering Pages deploy for project=$CF_PROJECT, default production branch"
+          fi
           http_status=$(curl -sS -m 60 -o /tmp/cf_resp -w '%{http_code}' -X POST \
             -H "Authorization: Bearer $CF_API_TOKEN" \
+            ${INPUT_BRANCH:+--form branch="$INPUT_BRANCH"} \
             "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/pages/projects/$CF_PROJECT/deployments" || echo "curl_failed")
           body_bytes=$(wc -c </tmp/cf_resp | tr -d ' ')
           echo "  HTTP status: $http_status"
@@ -83,9 +101,15 @@ jobs:
           r = d['result']
           print(f'  deployment id: {r[\"id\"]}')
           print(f'  url:           {r.get(\"url\", \"-\")}')
+          for a in (r.get('aliases') or []):
+              print(f'  alias:         {a}')
           print(f'  branch:        {r.get(\"deployment_trigger\", {}).get(\"metadata\", {}).get(\"branch\", \"-\")}')
           print(f'  commit (cf):   {r.get(\"deployment_trigger\", {}).get(\"metadata\", {}).get(\"commit_hash\", \"-\")[:7]}')
           "
           echo ""
-          echo "Trigger returned success. Cloudflare will build + deploy from main branch HEAD."
+          if [ -n "$INPUT_BRANCH" ]; then
+            echo "Trigger returned success. Cloudflare will build + deploy from branch '$INPUT_BRANCH'."
+          else
+            echo "Trigger returned success. Cloudflare will build + deploy from main branch HEAD."
+          fi
           echo "(Note: trigger success ≠ build success. Check the Cloudflare dashboard if anything looks off.)"
