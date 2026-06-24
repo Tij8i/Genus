@@ -29,8 +29,53 @@ import { renderSettings as renderSettingsView } from './views/settings.js';
 import { renderLearning as renderLearningView } from './views/learning.js';
 import { renderModules as renderModulesView } from './views/modules.js';
 import { renderPeople as renderPeopleView } from './views/people.js';
+import { renderBudget as renderBudgetView } from './views/budget.js';
+import { renderCosts as renderCostsView } from './views/costs.js';
+import { renderInvoices as renderInvoicesView } from './views/invoices.js';
 import { openOnboarding } from './overlay.js';
 import { applyAppearance } from './appearance.js';
+
+// Sidebar nav groups (FINANCE / STRATEGY / OPERATIONS) collapse state.
+// Three independent booleans, default-open, persisted to localStorage so the
+// operator's choice survives a reload. Per GEN-99.
+const NAV_GROUPS_LS_KEY = 'genus.nav.groups.v1';
+function loadNavGroupsState() {
+  try {
+    const raw = localStorage.getItem(NAV_GROUPS_LS_KEY);
+    if (!raw) return { finance: true, strategy: true, operations: true };
+    const parsed = JSON.parse(raw);
+    return {
+      finance: parsed.finance !== false,
+      strategy: parsed.strategy !== false,
+      operations: parsed.operations !== false,
+    };
+  } catch {
+    return { finance: true, strategy: true, operations: true };
+  }
+}
+function saveNavGroupsState(state) {
+  try { localStorage.setItem(NAV_GROUPS_LS_KEY, JSON.stringify(state)); } catch {}
+}
+function applyNavGroupState(name, open) {
+  const el = document.querySelector(`.nav-group[data-group="${name}"]`);
+  if (!el) return;
+  el.classList.toggle('nav-group--collapsed', !open);
+  const btn = el.querySelector('.nav-group-label');
+  if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+function wireNavGroups() {
+  const state = loadNavGroupsState();
+  for (const k of ['finance', 'strategy', 'operations']) applyNavGroupState(k, state[k]);
+  document.querySelectorAll('.nav-group-label').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const name = btn.dataset.groupToggle;
+      if (!name) return;
+      state[name] = !state[name];
+      applyNavGroupState(name, state[name]);
+      saveNavGroupsState(state);
+    });
+  });
+}
 
 // v1: hardcoded BU. Multi-BU switcher slot exists in the sidebar but only
 // one BU is wired today (Tuto on Genus-native substrate). Per [[v06-mockup-interpretation]]
@@ -68,6 +113,11 @@ const safeRender = (label, fn) => {
 async function boot() {
   // Apply saved appearance prefs (accent + density) before any render
   applyAppearance();
+
+  // Wire sidebar nav-group collapse (GEN-99) BEFORE substrate fetch so the
+  // sidebar still toggles even if substrate is unreachable (e.g. local file
+  // serve without Pages Functions, or auth failure).
+  wireNavGroups();
 
   // Fire all substrate reads in parallel — Pages Functions handle cross-repo
   // GitHub reads via the GITHUB_PAT env var.
@@ -192,6 +242,21 @@ function renderRoute(route) {
   else if (route === 'modules') safeRender('modules', renderModules);
   else if (route === 'people') safeRender('people', renderPeople);
   else if (route === 'settings') safeRender('settings', renderSettings);
+  else if (route === 'budget') safeRender('budget', renderBudget);
+  else if (route === 'costs') safeRender('costs', renderCosts);
+  else if (route === 'invoices') safeRender('invoices', renderInvoices);
+}
+
+function renderBudget() {
+  renderBudgetView({ identity, plans, initiatives, tasks, kpis, governance });
+}
+
+function renderCosts() {
+  renderCostsView({ identity });
+}
+
+function renderInvoices() {
+  renderInvoicesView({ identity });
 }
 
 function renderLearning() {
