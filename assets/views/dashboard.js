@@ -16,6 +16,8 @@
 
 import { escapeHtml, ago, dateLabel, icon, isoDay, daysBetween, cycleTimeProgress } from '../utils.js';
 
+const MEETING_SERVER = 'http://localhost:8765';
+
 export function renderDashboard(ctx) {
   const { identity, plans, initiatives, tasks, meetings, memos } = ctx;
 
@@ -57,7 +59,10 @@ export function renderDashboard(ctx) {
     ${renderActivitySection(tasks, meetings, initiatives)}
     ${renderHistoricalSection(initiatives, memos)}
     ${renderSnapshotSection(activePlan, tasks, meetings, timeProg)}
+    ${renderDoctorNoteSection(identity)}
   `;
+
+  wireAdapterRunButton();
 }
 
 // ============ Section 1 — Progress ============
@@ -154,6 +159,10 @@ function renderProgressSection(activePlan, initiatives, tasks, timeProg) {
           <div class="pace-divider"></div>
           <div class="vel-stat-row"><span class="vel-stat-label">Cycle average</span><span class="vel-stat-value">${velocity.avgCycle.toFixed(1)}<span class="vel-stat-unit"> /day</span></span></div>
           <div class="vel-stat-row"><span class="vel-stat-label">All-time average</span><span class="vel-stat-value">${velocity.avgAll.toFixed(1)}<span class="vel-stat-unit"> /day</span></span></div>
+          <div class="vel-actions">
+            <button type="button" id="run-adapter-btn" class="vel-actions-btn">🔄 Push approved tasks to Paperclip</button>
+            <div id="run-adapter-status" class="vel-actions-status"></div>
+          </div>
         </div>
 
       </div>
@@ -501,4 +510,113 @@ function renderSnapshotNarrative(exec, approvals, timeProg) {
     bits.push(`<strong>Cycle nearing its target end</strong> — ${timeProg.remainingDays} days left of ${timeProg.totalDays}.`);
   }
   return bits.join(' ');
+}
+
+// ============ Velocity card — adapter-run button ============
+//
+// Triggers the local Paperclip adapter (push approved tasks → pull updates →
+// sync) via the meeting server's /adapter/run endpoint. Inline status shows
+// running / success / failure. On success, reloads after a moment so the
+// fresh substrate is visible. Disabled if the meeting server isn't reachable.
+
+function wireAdapterRunButton() {
+  const btn = document.getElementById('run-adapter-btn');
+  const statusEl = document.getElementById('run-adapter-status');
+  if (!btn || !statusEl) return;
+
+  fetch(`${MEETING_SERVER}/health`, { cache: 'no-store' })
+    .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+    .then(j => {
+      if (!j.ok) {
+        btn.disabled = true;
+        btn.title = 'Meeting server reachable but reports not-OK';
+      }
+    })
+    .catch(() => {
+      btn.disabled = true;
+      btn.title = `Local meeting server unreachable (${MEETING_SERVER})`;
+    });
+
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    statusEl.textContent = 'Running adapter (push + pull + sync)…';
+    statusEl.className = 'vel-actions-status vel-actions-running';
+    try {
+      const r = await fetch(`${MEETING_SERVER}/adapter/run`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bu: 'tuto' }),
+      });
+      const j = await r.json();
+      if (j.ok) {
+        const lastLine = (j.stdout_tail || '').trim().split('\n').slice(-1)[0] || 'sync complete';
+        statusEl.textContent = `✓ ${lastLine.slice(0, 200)}`;
+        statusEl.className = 'vel-actions-status vel-actions-ok';
+        setTimeout(() => window.location.reload(), 2200);
+      } else {
+        const errMsg = j.message || (j.stderr_tail || '').trim().split('\n').slice(-1)[0] || `HTTP ${r.status}`;
+        statusEl.textContent = `✗ failed: ${errMsg.slice(0, 200)}`;
+        statusEl.className = 'vel-actions-status vel-actions-fail';
+        btn.disabled = false;
+      }
+    } catch (e) {
+      statusEl.textContent = `✗ ${e.message}`;
+      statusEl.className = 'vel-actions-status vel-actions-fail';
+      btn.disabled = false;
+    }
+  });
+
+
+// ============ Section 5 — Doctor's Note (GEN-52) ============
+//
+// Restored from legacy renderDoctor (tuto.js). Source data is identity.health,
+// an operator/Stewart-authored block in identity.json with shape:
+//   { verdict: 'green'|'yellow'|'red'|'gray', summary, rationale,
+//     last_assessed_at, assessed_by }
+//
+// Distinct from Snapshot's substrate-computed chips: this is the Stewart's
+// own qualitative read on the BU — verdict + why, not derived from task counts.
+function renderDoctorNoteSection(identity) {
+  const h = (identity || {}).health;
+  if (!h) {
+    return `
+      <section>
+        <div class="section-rule">
+          <span class="card-section-label">05 · Doctor's Note</span>
+          <div class="rule-line"></div>
+        </div>
+        <div class="card doctor-card doctor-card-gray">
+          <div class="doctor-empty">
+            No health assessment yet. The Stewart hasn't recorded a verdict for this BU.
+          </div>
+        </div>
+      </section>
+    `;
+  }
+  const rawVerdict = (h.verdict || 'gray').toLowerCase();
+  const verdict = ['green', 'yellow', 'red', 'gray'].includes(rawVerdict) ? rawVerdict : 'gray';
+  const verdictLabel = verdict.charAt(0).toUpperCase() + verdict.slice(1);
+  const assessedBy = h.assessed_by || 'unknown';
+  const assessedAt = h.last_assessed_at;
+  return `
+    <section>
+      <div class="section-rule">
+        <span class="card-section-label">05 · Doctor's Note</span>
+        <div class="rule-line"></div>
+      </div>
+      <div class="card doctor-card doctor-card-${verdict}">
+        <div class="doctor-header">
+          <span class="doctor-verdict doctor-verdict-${verdict}">
+            <span class="doctor-verdict-dot doctor-verdict-dot-${verdict}"></span>
+            ${escapeHtml(verdictLabel)}
+          </span>
+          <span class="doctor-meta mono">
+            ${assessedAt ? `last assessed ${escapeHtml(ago(assessedAt))} · ` : ''}by ${escapeHtml(assessedBy)}
+          </span>
+        </div>
+        <div class="doctor-summary">${escapeHtml(h.summary || '—')}</div>
+        ${h.rationale ? `<div class="doctor-rationale">${escapeHtml(h.rationale)}</div>` : ''}
+      </div>
+    </section>
+  `;
 }
