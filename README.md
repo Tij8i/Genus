@@ -1,6 +1,8 @@
 # Genus
 
 > The non-technical agent operating model. An open protocol for governing AI agents at scale.
+>
+> **Public site:** [genus.work](https://genus.work)
 
 Genus is an **open-source agent operating protocol** — a standard that defines how non-technical operators describe, deploy, and govern AI agents. The protocol specifies the primitives (Goals, KPIs, Workflows, Tasks, Campaigns, Constraints, Approval Gates, Artifacts, Permissions, Memory), the shared operational substrate (Task store, KPI Registry, Workflow Registry, Agent Updates, Approval Log, Artifact index, Campaign store), and the conformance contract (`GENUS_MANIFEST.md`) every Genus-compatible agent declares.
 
