@@ -3081,3 +3081,161 @@ body {
   color: var(--text-faint);
   text-align: right;
 }
+
+/* ============ KPIs › Sources & Health (sub-tab) ============ */
+/* Restored from legacy parity audit (GEN-49). KPI×connector join table:
+   one row per KPI, badge derived from connector status + measurement
+   freshness, action hint per row. */
+
+.kpi-sources-head {
+  display: flex; align-items: flex-start; gap: 18px; flex-wrap: wrap;
+  margin: 6px 0 14px;
+}
+.kpi-sources-tagline {
+  flex: 1; min-width: 260px;
+  font-size: 12.5px; color: var(--text-faint); line-height: 1.55;
+  max-width: 760px;
+}
+.kpi-sources-summary {
+  display: flex; gap: 8px; flex-wrap: wrap;
+}
+
+.kpi-source-badge {
+  display: inline-flex; align-items: center;
+  font-size: 11.5px; font-weight: 600;
+  border-radius: 99px; padding: 3px 10px;
+  white-space: nowrap;
+  border: 1px solid var(--border);
+  background: var(--surface2); color: var(--text-dim);
+}
+.kpi-source-badge-green  { color: var(--green-fg);  background: var(--green-bg);  border-color: var(--green-border); }
+.kpi-source-badge-yellow { color: var(--yellow-fg); background: var(--yellow-bg); border-color: #f0e0ab; }
+.kpi-source-badge-red    { color: var(--red-fg);    background: var(--red-bg);    border-color: var(--red-border); }
+.kpi-source-badge-manual { color: var(--text-dim);  background: var(--surface2);  border-color: var(--border); }
+
+.kpi-sources-table-wrap {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.kpi-sources-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.kpi-sources-table thead th {
+  text-align: left;
+  font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--text-faint); font-weight: 600;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+}
+.kpi-sources-table tbody td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+  line-height: 1.45;
+}
+.kpi-sources-table tbody tr:last-child td { border-bottom: none; }
+.kpi-source-row.kpi-source-red    { background: rgba(253, 235, 233, .35); }
+.kpi-source-row.kpi-source-yellow { background: rgba(250, 240, 210, .25); }
+.kpi-source-row.kpi-source-green  { background: rgba(234, 250, 241, .25); }
+
+.kpi-source-name strong { font-weight: 600; color: var(--text); }
+.kpi-source-id,
+.kpi-source-config,
+.kpi-source-conn-id,
+.kpi-source-lasttime {
+  font-size: 10.5px; color: var(--text-faint);
+  margin-top: 2px; word-break: break-word;
+}
+.kpi-source-conntype { color: var(--text-faint); font-size: 11px; }
+
+.kpi-source-tag {
+  display: inline-flex; align-items: center;
+  font-size: 11px; font-weight: 600;
+  border-radius: 6px; padding: 2px 8px;
+  border: 1px solid var(--border);
+}
+.kpi-source-tag-manual  { color: var(--text-dim);  background: var(--surface2);  border-color: var(--border); }
+.kpi-source-tag-missing { color: var(--red-fg);    background: var(--red-bg);    border-color: var(--red-border); }
+
+.kpi-source-action-text {
+  font-size: 12px; color: var(--text);
+  max-width: 360px;
+}
+.kpi-na { font-size: 11.5px; color: var(--text-faint); }
+
+@media (max-width: 880px) {
+  .kpi-sources-table thead { display: none; }
+  .kpi-sources-table tbody, .kpi-sources-table tr, .kpi-sources-table td { display: block; width: 100%; }
+  .kpi-sources-table tbody tr { padding: 10px 4px; border-bottom: 1px solid var(--border); }
+  .kpi-sources-table tbody td { border: none; padding: 4px 14px; }
+}
+
+/* ============ Doctor's Note (Dashboard § 05, GEN-52) ============ */
+.doctor-card {
+  padding: calc(var(--pad) + 2px);
+  border-left-width: 4px;
+  border-left-style: solid;
+}
+.doctor-card-green  { border-left-color: var(--green); }
+.doctor-card-yellow { border-left-color: var(--yellow); }
+.doctor-card-red    { border-left-color: var(--red); }
+.doctor-card-gray   { border-left-color: var(--text-faint); }
+
+.doctor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.doctor-verdict {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border-radius: 99px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.doctor-verdict-green  { background: var(--green-bg);  color: var(--green-fg);  border: 1px solid var(--green-border); }
+.doctor-verdict-yellow { background: var(--yellow-bg); color: var(--yellow-fg); border: 1px solid #f0e0ab; }
+.doctor-verdict-red    { background: var(--red-bg);    color: var(--red-fg);    border: 1px solid var(--red-border); }
+.doctor-verdict-gray   { background: #f1f2f6;          color: var(--text-dim);  border: 1px solid #e3e5ec; }
+
+.doctor-verdict-dot { width: 7px; height: 7px; border-radius: 99px; }
+.doctor-verdict-dot-green  { background: var(--green); }
+.doctor-verdict-dot-yellow { background: var(--yellow); }
+.doctor-verdict-dot-red    { background: var(--red); }
+.doctor-verdict-dot-gray   { background: var(--text-faint); }
+
+.doctor-meta {
+  font-size: 11px;
+  color: var(--text-faint);
+  letter-spacing: .02em;
+}
+.doctor-summary {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+.doctor-rationale {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-dim);
+  max-width: 760px;
+}
+.doctor-empty {
+  font-size: 14px;
+  color: var(--text-faint);
+  font-style: italic;
+}
