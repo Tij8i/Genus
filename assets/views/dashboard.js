@@ -566,6 +566,7 @@ function wireAdapterRunButton() {
       btn.disabled = false;
     }
   });
+}
 
 
 // ============ Section 5 — Doctor's Note (GEN-52) ============
