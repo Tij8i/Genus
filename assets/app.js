@@ -90,6 +90,53 @@ const BU = 'tuto';
 let viewer = null;
 function viewerIsAdmin() { return viewer && viewer.role === 'admin'; }
 
+// Preview-as override: an admin can append ?viewAs=observer (or unknown /
+// unauthenticated) to the URL to simulate that role end-to-end. We persist
+// the choice in sessionStorage so it survives route navigation, and we
+// monkey-patch window.fetch to add an `x-genus-view-as` header to every
+// request — _identity.js honors the header server-side, so the dashboard,
+// /api/identity, and the write Pages Functions all see the same downgraded
+// role. Only admins can use it (non-admins are ignored server-side); this
+// is one-way de-escalation, never an upgrade.
+const VIEW_AS_STORAGE_KEY = 'genus.viewAs.v1';
+const VALID_PREVIEW_ROLES = new Set(['observer', 'unknown', 'unauthenticated']);
+function readPreviewAsFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const raw = params.get('viewAs');
+  if (raw === null) return undefined; // no preference expressed
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === '' || normalized === 'off' || normalized === 'admin') return null; // explicit clear
+  return VALID_PREVIEW_ROLES.has(normalized) ? normalized : null;
+}
+function currentPreviewAs() {
+  try { return sessionStorage.getItem(VIEW_AS_STORAGE_KEY) || null; }
+  catch { return null; }
+}
+function setPreviewAs(value) {
+  try {
+    if (value) sessionStorage.setItem(VIEW_AS_STORAGE_KEY, value);
+    else sessionStorage.removeItem(VIEW_AS_STORAGE_KEY);
+  } catch { /* sessionStorage unavailable — silently degrade */ }
+}
+function applyUrlPreviewAs() {
+  const fromUrl = readPreviewAsFromUrl();
+  if (fromUrl === undefined) return;          // ?viewAs not present
+  if (fromUrl === null) setPreviewAs(null);   // explicit clear
+  else setPreviewAs(fromUrl);                 // set / replace
+}
+function installFetchViewAsHeader() {
+  const origFetch = window.fetch.bind(window);
+  window.fetch = function(input, init) {
+    const preview = currentPreviewAs();
+    if (!preview) return origFetch(input, init);
+    const opts = init ? { ...init } : {};
+    const headers = new Headers(opts.headers || (typeof input === 'object' && input && input.headers) || {});
+    headers.set('x-genus-view-as', preview);
+    opts.headers = headers;
+    return origFetch(input, opts);
+  };
+}
+
 // Fetch /api/identity. On any failure, fall back to a synthetic anonymous
 // viewer so the dashboard still renders (read-only) rather than white-screening.
 async function fetchViewer() {
@@ -190,19 +237,25 @@ function applyViewerToShell(v) {
   // mode, write attempts will be rejected."
   const existing = document.getElementById('observer-banner');
   if (v.role !== 'admin') {
+    const previewSuffix = v.preview_as
+      ? ` <a href="?viewAs=off" class="observer-banner-exit">Exit preview ←</a>`
+      : '';
+    const previewPrefix = v.preview_as
+      ? `<strong>Preview-as-${v.preview_as}</strong> (you're actually admin · ${v.actual_email || '—'}) — `
+      : '';
     const msg = v.role === 'observer'
-      ? `Observer mode — read-only. Write actions are disabled. (${v.email || '—'})`
+      ? `${previewPrefix}Observer mode — read-only. Write actions are disabled${v.preview_as ? '' : ` (${v.email || '—'})`}.${previewSuffix}`
       : v.role === 'unknown'
-      ? `${v.email || 'You'} are signed in but not in roles.json — contact the operator for access.`
-      : `Not signed in — Cloudflare Access header missing. Local-dev fallback is showing the first admin's view; mutations will fail.`;
+      ? `${previewPrefix}${v.email || 'You'} ${v.preview_as ? 'would be' : 'are'} signed in but not in roles.json — contact the operator for access.${previewSuffix}`
+      : `${previewPrefix}Not signed in — Cloudflare Access header missing. Local-dev fallback is showing the first admin's view; mutations will fail.${previewSuffix}`;
     if (!existing) {
       const banner = document.createElement('div');
       banner.id = 'observer-banner';
       banner.className = 'observer-banner';
-      banner.textContent = msg;
+      banner.innerHTML = msg;
       document.body.insertBefore(banner, document.body.firstChild);
     } else {
-      existing.textContent = msg;
+      existing.innerHTML = msg;
     }
   } else if (existing) {
     existing.remove();
@@ -245,6 +298,12 @@ async function boot() {
   // sidebar still toggles even if substrate is unreachable (e.g. local file
   // serve without Pages Functions, or auth failure).
   wireNavGroups();
+
+  // Wire preview-as override BEFORE the identity fetch so the very first
+  // /api/identity call already carries the x-genus-view-as header. Otherwise
+  // boot would briefly render admin UI then flicker to observer.
+  applyUrlPreviewAs();
+  installFetchViewAsHeader();
 
   // Resolve viewer identity (CF Access email → roles.json lookup) in parallel
   // with the substrate fetch. Done early so the operator chip + observer

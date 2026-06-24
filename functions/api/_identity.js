@@ -20,6 +20,9 @@ import { getFile, jsonResponse } from './_gh.js';
 
 const ROLES_PATH = 'dashboard/public/data/system/roles.json';
 const CF_ACCESS_HEADER = 'cf-access-authenticated-user-email';
+const VIEW_AS_HEADER = 'x-genus-view-as';
+const VIEW_AS_QUERY = 'viewAs';
+const VALID_PREVIEW_ROLES = new Set(['observer', 'unknown', 'unauthenticated']);
 
 // Returns the verified email from the CF Access header, or null if absent.
 // Lowercases so roles.json lookups are case-insensitive.
@@ -27,6 +30,25 @@ export function readCfAccessEmail(request) {
   const raw = request.headers.get(CF_ACCESS_HEADER);
   if (!raw) return null;
   return raw.trim().toLowerCase();
+}
+
+// Read the preview-as override from either the query string or the
+// x-genus-view-as header. Used so an admin can simulate observer/unknown/
+// unauthenticated for end-to-end testing on the preview environment without
+// editing roles.json or adding a second user.
+//
+// Only roles below admin are valid here — you can downgrade yourself, never
+// upgrade. The actual admin check happens in getViewerIdentity() below.
+function readPreviewAs(request) {
+  let candidate = null;
+  try {
+    const url = new URL(request.url);
+    candidate = url.searchParams.get(VIEW_AS_QUERY);
+  } catch { /* request.url not parseable — fall through to header */ }
+  if (!candidate) candidate = request.headers.get(VIEW_AS_HEADER);
+  if (!candidate) return null;
+  const normalized = candidate.trim().toLowerCase();
+  return VALID_PREVIEW_ROLES.has(normalized) ? normalized : null;
 }
 
 // Loads roles.json from Orchestrator. Throws on PAT-missing / network error.
@@ -63,31 +85,57 @@ async function loadRoles(env) {
 export async function getViewerIdentity(request, env) {
   const roles = await loadRoles(env);
   const email = readCfAccessEmail(request);
+  let actual;
   if (!email) {
     const firstAdmin = roles.users.find(u => u.role === 'admin');
     if (!firstAdmin) {
-      return { email: null, role: 'unauthenticated', ventures: [], dev_fallback: true };
+      actual = { email: null, role: 'unauthenticated', ventures: [], dev_fallback: true };
+    } else {
+      actual = {
+        email: firstAdmin.email,
+        role: firstAdmin.role,
+        ventures: firstAdmin.ventures || ['*'],
+        display_name: firstAdmin.display_name || firstAdmin.email,
+        title: firstAdmin.title || 'Admin',
+        dev_fallback: true,
+      };
     }
+  } else {
+    const match = roles.users.find(u => (u.email || '').toLowerCase() === email);
+    if (!match) {
+      actual = { email, role: 'unknown', ventures: [] };
+    } else {
+      actual = {
+        email: match.email,
+        role: match.role,
+        ventures: match.ventures || [],
+        display_name: match.display_name || match.email,
+        title: match.title || (match.role === 'admin' ? 'Admin' : 'Observer'),
+      };
+    }
+  }
+
+  // Preview-as override: an actual admin can downgrade themselves to observer
+  // (or unknown / unauthenticated) for the duration of a request by passing
+  // ?viewAs=observer or x-genus-view-as: observer. Non-admins are ignored —
+  // this is one-way (de-escalation only). Honest end-to-end test path for
+  // preview environments without needing a second test email + CF Access
+  // policy edit.
+  const previewAs = readPreviewAs(request);
+  if (previewAs && actual.role === 'admin') {
     return {
-      email: firstAdmin.email,
-      role: firstAdmin.role,
-      ventures: firstAdmin.ventures || ['*'],
-      display_name: firstAdmin.display_name || firstAdmin.email,
-      title: firstAdmin.title || 'Admin',
-      dev_fallback: true,
+      ...actual,
+      role: previewAs,
+      ventures: previewAs === 'observer' ? ['tuto'] : [],
+      title: previewAs === 'observer' ? 'Observer (preview)'
+            : previewAs === 'unknown' ? 'No access (preview)'
+            : 'Not signed in (preview)',
+      preview_as: previewAs,
+      actual_role: 'admin',
+      actual_email: actual.email,
     };
   }
-  const match = roles.users.find(u => (u.email || '').toLowerCase() === email);
-  if (!match) {
-    return { email, role: 'unknown', ventures: [] };
-  }
-  return {
-    email: match.email,
-    role: match.role,
-    ventures: match.ventures || [],
-    display_name: match.display_name || match.email,
-    title: match.title || (match.role === 'admin' ? 'Admin' : 'Observer'),
-  };
+  return actual;
 }
 
 // Gate helper for write endpoints. Returns the viewer identity if admin.

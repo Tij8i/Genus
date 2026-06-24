@@ -3988,6 +3988,13 @@ body {
 }
 body.viewer-unauthenticated .observer-banner { background: #ffd6d6; color: #7a1212; border-bottom-color: #d97070; }
 body.viewer-unknown        .observer-banner { background: #ffd6d6; color: #7a1212; border-bottom-color: #d97070; }
+.observer-banner-exit {
+  margin-left: 8px;
+  font-weight: 700;
+  text-decoration: underline;
+  color: inherit;
+}
+.observer-banner-exit:hover { opacity: 0.7; }
 
 /* Role pill rendered next to the email in the sidebar operator chip. */
 .role-pill {
