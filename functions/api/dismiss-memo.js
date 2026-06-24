@@ -4,6 +4,7 @@
 // Body: { bu, memo_id }
 
 import { getFile, putFile, jsonResponse, todayISO } from './_gh.js';
+import { requireAdmin } from './_identity.js';
 
 export async function onRequestPost({ request, env }) {
   if (!env.GITHUB_PAT) return jsonResponse(500, { ok: false, message: 'GITHUB_PAT not set' });
@@ -14,6 +15,9 @@ export async function onRequestPost({ request, env }) {
   const bu = (body.bu || 'tuto').toString();
   const memoId = (body.memo_id || '').toString();
   if (!memoId) return jsonResponse(400, { ok: false, message: 'memo_id is required' });
+
+  const gate = await requireAdmin(request, env, { bu });
+  if (gate instanceof Response) return gate;
 
   const path = `dashboard/public/data/bus/${bu}/memos.jsonl`;
   let current;
@@ -29,7 +33,7 @@ export async function onRequestPost({ request, env }) {
         found = true;
         memo.status = 'dismissed';
         memo.processed_at = todayISO();
-        memo.processed_by = 'operator';
+        memo.processed_by = gate.email || 'operator';
         return JSON.stringify(memo);
       }
       return line;

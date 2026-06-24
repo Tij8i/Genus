@@ -3968,3 +3968,88 @@ body {
   font-weight: 700;
   color: var(--text);
 }
+
+/* ============ AUTH + ROLES (GEN-107) ============ */
+
+/* Observer banner — single line at the very top when the viewer isn't admin.
+   Pinned to the page (not the shell) so it shows even if main scrolls. */
+.observer-banner {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  padding: 9px 16px;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: center;
+  letter-spacing: .01em;
+  background: #fff4c2;
+  color: #6b4f00;
+  border-bottom: 1px solid #e0c466;
+}
+body.viewer-unauthenticated .observer-banner { background: #ffd6d6; color: #7a1212; border-bottom-color: #d97070; }
+body.viewer-unknown        .observer-banner { background: #ffd6d6; color: #7a1212; border-bottom-color: #d97070; }
+.observer-banner-exit {
+  margin-left: 8px;
+  font-weight: 700;
+  text-decoration: underline;
+  color: inherit;
+}
+.observer-banner-exit:hover { opacity: 0.7; }
+
+/* Role pill rendered next to the email in the sidebar operator chip. */
+.role-pill {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 99px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  vertical-align: 1px;
+}
+.role-pill--admin     { background: #e2f0ff; color: #1c4ec8; }
+.role-pill--observer  { background: #fff4c2; color: #6b4f00; }
+.role-pill--unknown   { background: #ffd6d6; color: #7a1212; }
+.role-pill--unauth    { background: #ffd6d6; color: #7a1212; }
+
+/* Observer mode visual gate. Dims buttons that mutate state when the viewer
+   isn't admin. We KEEP pointer-events live (no `pointer-events: none`) so the
+   browser still fires the hover event — that's what lets the `title=` tooltip
+   render. The logical gate is a capture-phase click listener in app.js that
+   short-circuits the click before any view handler runs. */
+body.viewer-observer [data-write-action],
+body.viewer-unknown [data-write-action],
+body.viewer-unauthenticated [data-write-action],
+body.viewer-observer .primary-btn-pill:not(.btn-soon):not([disabled]),
+body.viewer-unknown .primary-btn-pill:not(.btn-soon):not([disabled]),
+body.viewer-observer .kpi-log-btn,
+body.viewer-unknown .kpi-log-btn,
+body.viewer-observer .approve-btn,
+body.viewer-unknown .approve-btn,
+body.viewer-observer .reject-btn,
+body.viewer-unknown .reject-btn {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: grayscale(0.4);
+}
+
+/* Observer-mode toast popup when a write button is clicked anyway. */
+.observer-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #6b4f00;
+  color: #fff4c2;
+  padding: 9px 16px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 600;
+  z-index: 1000;
+  box-shadow: 0 6px 24px rgba(0,0,0,.2);
+  opacity: 0;
+  transition: opacity 160ms ease-out;
+  pointer-events: none;
+}
+.observer-toast.is-visible { opacity: 1; }

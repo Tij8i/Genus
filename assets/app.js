@@ -82,6 +82,186 @@ function wireNavGroups() {
 // + decision 5 in the migration plan, others appear as they migrate.
 const BU = 'tuto';
 
+// Viewer = logged-in user identity resolved from CF Access JWT + roles.json.
+// Per GEN-107: { email, role: 'admin'|'observer'|'unknown'|'unauthenticated',
+// ventures: ['*' | bu...], display_name?, title?, dev_fallback? }.
+// Populated at boot from /api/identity, then passed through to every view via
+// the render ctx so write actions can gate on viewer.role.
+let viewer = null;
+function viewerIsAdmin() { return viewer && viewer.role === 'admin'; }
+
+// Preview-as override: an admin can append ?viewAs=observer (or unknown /
+// unauthenticated) to the URL to simulate that role end-to-end. We persist
+// the choice in sessionStorage so it survives route navigation, and we
+// monkey-patch window.fetch to add an `x-genus-view-as` header to every
+// request — _identity.js honors the header server-side, so the dashboard,
+// /api/identity, and the write Pages Functions all see the same downgraded
+// role. Only admins can use it (non-admins are ignored server-side); this
+// is one-way de-escalation, never an upgrade.
+const VIEW_AS_STORAGE_KEY = 'genus.viewAs.v1';
+const VALID_PREVIEW_ROLES = new Set(['observer', 'unknown', 'unauthenticated']);
+function readPreviewAsFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const raw = params.get('viewAs');
+  if (raw === null) return undefined; // no preference expressed
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === '' || normalized === 'off' || normalized === 'admin') return null; // explicit clear
+  return VALID_PREVIEW_ROLES.has(normalized) ? normalized : null;
+}
+function currentPreviewAs() {
+  try { return sessionStorage.getItem(VIEW_AS_STORAGE_KEY) || null; }
+  catch { return null; }
+}
+function setPreviewAs(value) {
+  try {
+    if (value) sessionStorage.setItem(VIEW_AS_STORAGE_KEY, value);
+    else sessionStorage.removeItem(VIEW_AS_STORAGE_KEY);
+  } catch { /* sessionStorage unavailable — silently degrade */ }
+}
+function applyUrlPreviewAs() {
+  const fromUrl = readPreviewAsFromUrl();
+  if (fromUrl === undefined) return;          // ?viewAs not present
+  if (fromUrl === null) setPreviewAs(null);   // explicit clear
+  else setPreviewAs(fromUrl);                 // set / replace
+}
+function installFetchViewAsHeader() {
+  const origFetch = window.fetch.bind(window);
+  window.fetch = function(input, init) {
+    const preview = currentPreviewAs();
+    if (!preview) return origFetch(input, init);
+    const opts = init ? { ...init } : {};
+    const headers = new Headers(opts.headers || (typeof input === 'object' && input && input.headers) || {});
+    headers.set('x-genus-view-as', preview);
+    opts.headers = headers;
+    return origFetch(input, opts);
+  };
+}
+
+// Fetch /api/identity. On any failure, fall back to a synthetic anonymous
+// viewer so the dashboard still renders (read-only) rather than white-screening.
+async function fetchViewer() {
+  try {
+    const resp = await fetch('/api/identity', { cache: 'no-store' });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const json = await resp.json();
+    if (!json.ok || !json.viewer) throw new Error(json.message || 'malformed response');
+    return json.viewer;
+  } catch (e) {
+    console.warn('[genus] identity fetch failed, falling back to anonymous viewer:', e.message || e);
+    return { email: null, role: 'unauthenticated', ventures: [], display_name: 'Unknown', title: 'Not signed in' };
+  }
+}
+
+// Show a transient "Observer mode — read-only" toast at the bottom of the
+// viewport. Used by the capture-phase click gate below when a non-admin
+// clicks a write-action button.
+let observerToastTimer = null;
+function showObserverToast(msg) {
+  let el = document.getElementById('observer-toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'observer-toast';
+    el.className = 'observer-toast';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg || 'Observer mode — read-only';
+  // Re-trigger transition
+  // eslint-disable-next-line no-unused-expressions
+  el.offsetWidth;
+  el.classList.add('is-visible');
+  if (observerToastTimer) clearTimeout(observerToastTimer);
+  observerToastTimer = setTimeout(() => el.classList.remove('is-visible'), 2200);
+}
+
+// Selectors that mark "this click mutates state." Capture-phase handler below
+// short-circuits clicks on these when viewer.role !== 'admin'. Keep this in
+// sync with the same selector list in app.css so visuals and logic agree.
+const WRITE_ACTION_SELECTORS = [
+  '[data-write-action]',
+  '.primary-btn-pill:not(.btn-soon):not([disabled])',
+  '.kpi-log-btn',
+  '.approve-btn',
+  '.reject-btn',
+].join(',');
+
+// Install a single document-level capture-phase click listener that gates
+// every write-action click for non-admin viewers. Capture phase + stopPropagation
+// means view-level handlers never see the event — no per-view changes needed.
+function installObserverClickGate() {
+  document.addEventListener('click', (e) => {
+    if (viewerIsAdmin()) return;
+    const target = e.target instanceof Element ? e.target.closest(WRITE_ACTION_SELECTORS) : null;
+    if (!target) return;
+    e.preventDefault();
+    e.stopPropagation();
+    showObserverToast(viewer && viewer.role === 'unknown'
+      ? 'No access — your email is not in roles.json'
+      : 'Observer mode — read-only');
+  }, true); // capture: true so we run before any view handler
+}
+
+// Apply body classes + render the operator chip based on the resolved viewer.
+// Triggers CSS that dims action buttons when viewer.role !== 'admin'.
+function applyViewerToShell(v) {
+  if (!v) return;
+  document.body.classList.toggle('viewer-observer', v.role === 'observer');
+  document.body.classList.toggle('viewer-unauthenticated', v.role === 'unauthenticated');
+  document.body.classList.toggle('viewer-unknown', v.role === 'unknown');
+  document.body.classList.toggle('viewer-admin', v.role === 'admin');
+  document.body.classList.toggle('viewer-dev-fallback', !!v.dev_fallback);
+
+  // Operator chip bottom-left of sidebar — was hardcoded "Alessio Tixi /
+  // Founder · Operator" pre-GEN-107. Now reflects the actual signed-in user.
+  const chip = document.querySelector('.operator-chip');
+  if (chip) {
+    const display = v.display_name || v.email || 'Unknown';
+    const initial = (display.charAt(0) || '?').toUpperCase();
+    const rolePill = v.role === 'admin'
+      ? '<span class="role-pill role-pill--admin">Admin</span>'
+      : v.role === 'observer'
+      ? '<span class="role-pill role-pill--observer">Observer</span>'
+      : v.role === 'unknown'
+      ? '<span class="role-pill role-pill--unknown">No access</span>'
+      : '<span class="role-pill role-pill--unauth">Not signed in</span>';
+    chip.innerHTML = `
+      <span class="operator-avatar">${initial}</span>
+      <span class="operator-label">
+        <span class="operator-name">${display}</span>
+        <span class="operator-role">${v.email ? v.email + ' · ' : ''}${v.title || ''} ${rolePill}</span>
+      </span>
+    `;
+  }
+
+  // Observer banner — single line at top of main, only visible when role
+  // isn't admin. Keeps the operator-mental-model honest: "you're in read-only
+  // mode, write attempts will be rejected."
+  const existing = document.getElementById('observer-banner');
+  if (v.role !== 'admin') {
+    const previewSuffix = v.preview_as
+      ? ` <a href="?viewAs=off" class="observer-banner-exit">Exit preview ←</a>`
+      : '';
+    const previewPrefix = v.preview_as
+      ? `<strong>Preview-as-${v.preview_as}</strong> (you're actually admin · ${v.actual_email || '—'}) — `
+      : '';
+    const msg = v.role === 'observer'
+      ? `${previewPrefix}Observer mode — read-only. Write actions are disabled${v.preview_as ? '' : ` (${v.email || '—'})`}.${previewSuffix}`
+      : v.role === 'unknown'
+      ? `${previewPrefix}${v.email || 'You'} ${v.preview_as ? 'would be' : 'are'} signed in but not in roles.json — contact the operator for access.${previewSuffix}`
+      : `${previewPrefix}Not signed in — Cloudflare Access header missing. Local-dev fallback is showing the first admin's view; mutations will fail.${previewSuffix}`;
+    if (!existing) {
+      const banner = document.createElement('div');
+      banner.id = 'observer-banner';
+      banner.className = 'observer-banner';
+      banner.innerHTML = msg;
+      document.body.insertBefore(banner, document.body.firstChild);
+    } else {
+      existing.innerHTML = msg;
+    }
+  } else if (existing) {
+    existing.remove();
+  }
+}
+
 // Module-level state, populated at boot.
 let identity = null;
 let goals = [];
@@ -119,6 +299,17 @@ async function boot() {
   // serve without Pages Functions, or auth failure).
   wireNavGroups();
 
+  // Wire preview-as override BEFORE the identity fetch so the very first
+  // /api/identity call already carries the x-genus-view-as header. Otherwise
+  // boot would briefly render admin UI then flicker to observer.
+  applyUrlPreviewAs();
+  installFetchViewAsHeader();
+
+  // Resolve viewer identity (CF Access email → roles.json lookup) in parallel
+  // with the substrate fetch. Done early so the operator chip + observer
+  // banner + body class are correct before any render runs. Per GEN-107.
+  const viewerPromise = fetchViewer();
+
   // Fire all substrate reads in parallel — Pages Functions handle cross-repo
   // GitHub reads via the GITHUB_PAT env var.
   const baseRel = (file) => `${substrateBase(BU)}/${file}`;
@@ -147,6 +338,12 @@ async function boot() {
     results = [null, [], [], [], [], [], [], [], {}, [], []];
   }
   [identity, goals, initiatives, plans, tasks, meetings, memos, kpis, governance, connectors, documentation] = results;
+
+  // Resolve viewer and reflect it in the shell (operator chip + body class +
+  // observer banner) before any route renders so views see the correct ctx.
+  viewer = await viewerPromise;
+  applyViewerToShell(viewer);
+  installObserverClickGate();
 
   // Hydrate per-KPI measurement series (GEN-48). Each KPI has its own
   // measurements/<kpi_id>.jsonl; many will 404 (no captures yet) which
@@ -250,30 +447,51 @@ function renderRoute(route) {
   else if (route === 'budget') safeRender('budget', renderBudget);
   else if (route === 'costs') safeRender('costs', renderCosts);
   else if (route === 'invoices') safeRender('invoices', renderInvoices);
+
+  // Apply observer-mode tooltips to write-action buttons in the just-rendered
+  // route. Views rebuild innerHTML so titles must be re-applied post-render.
+  applyObserverTooltips();
+}
+
+// For non-admin viewers, set `title` on all write-action elements so the
+// browser shows a "read-only" tooltip on hover. Pairs with the capture-phase
+// click gate (which stops the action) and the CSS dim (which signals
+// disabled-ness). Called after every renderRoute.
+function applyObserverTooltips() {
+  if (viewerIsAdmin()) return;
+  const tooltip = viewer && viewer.role === 'unknown'
+    ? 'No access — your email is not in roles.json'
+    : 'Observer mode — read-only';
+  document.querySelectorAll(WRITE_ACTION_SELECTORS).forEach(el => {
+    if (!el.hasAttribute('data-original-title')) {
+      el.setAttribute('data-original-title', el.getAttribute('title') || '');
+    }
+    el.setAttribute('title', tooltip);
+  });
 }
 
 function renderBudget() {
-  renderBudgetView({ identity, plans, initiatives, tasks, kpis, governance });
+  renderBudgetView({ identity, viewer, plans, initiatives, tasks, kpis, governance });
 }
 
 function renderCosts() {
-  renderCostsView({ identity });
+  renderCostsView({ identity, viewer });
 }
 
 function renderInvoices() {
-  renderInvoicesView({ identity });
+  renderInvoicesView({ identity, viewer });
 }
 
 function renderLearning() {
-  renderLearningView({ identity, plans, initiatives, tasks, meetings, memos, kpis, governance, connectors, documentation });
+  renderLearningView({ identity, viewer, plans, initiatives, tasks, meetings, memos, kpis, governance, connectors, documentation });
 }
 
 function renderModules() {
-  renderModulesView({ identity, plans, initiatives, tasks, meetings, memos, kpis, governance, connectors, documentation });
+  renderModulesView({ identity, viewer, plans, initiatives, tasks, meetings, memos, kpis, governance, connectors, documentation });
 }
 
 function renderPeople() {
-  renderPeopleView({ identity, plans, initiatives, tasks, meetings, memos, kpis, governance, connectors, documentation });
+  renderPeopleView({ identity, viewer, plans, initiatives, tasks, meetings, memos, kpis, governance, connectors, documentation });
   // Header Invite button is disabled (v0.8). No click handler — disabled
   // attribute + .btn-soon class handle visual + interaction lockout.
 }
@@ -282,20 +500,20 @@ function renderDashboard() {
   // Delegate to the view module (step 2b). It reads from the substrate state
   // we hydrated at boot. ctx is a snapshot — if substrate updates we re-render.
   renderDashboardView({
-    identity, plans, initiatives, tasks, meetings, memos, kpis, governance,
+    identity, viewer, plans, initiatives, tasks, meetings, memos, kpis, governance,
   });
 }
 
 function renderPlanning() {
   renderPlanningView(
-    { identity, plans, initiatives, tasks, meetings, memos, kpis, governance, goals },
+    { identity, viewer, plans, initiatives, tasks, meetings, memos, kpis, governance, goals },
     { onChange: rehydrateAndRerender },
   );
 }
 
 function renderKpis() {
   renderKpisView(
-    { identity, plans, initiatives, tasks, meetings, memos, kpis, measurementsByKpi, governance, connectors, documentation },
+    { identity, viewer, plans, initiatives, tasks, meetings, memos, kpis, measurementsByKpi, governance, connectors, documentation },
     { onChange: rehydrateMeasurementsAndRerender },
   );
 }
@@ -317,7 +535,7 @@ async function rehydrateMeasurementsAndRerender() {
 
 function renderInputs() {
   renderInputsView(
-    { identity, plans, initiatives, tasks, meetings, memos, kpis, governance },
+    { identity, viewer, plans, initiatives, tasks, meetings, memos, kpis, governance },
     { onChange: rehydrateAndRerender },
   );
 }
@@ -347,12 +565,12 @@ async function rehydrateAndRerender() {
 }
 
 function renderOutputs() {
-  renderOutputsView({ identity, plans, initiatives, tasks, meetings, memos, kpis, governance, connectors, documentation });
+  renderOutputsView({ identity, viewer, plans, initiatives, tasks, meetings, memos, kpis, governance, connectors, documentation });
 }
 
 function renderSettings() {
   renderSettingsView(
-    { identity, plans, initiatives, tasks, meetings, memos, kpis, governance, connectors, documentation },
+    { identity, viewer, plans, initiatives, tasks, meetings, memos, kpis, governance, connectors, documentation },
     { onChange: rehydrateAndRerender },
   );
 }

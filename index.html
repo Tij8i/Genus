@@ -116,11 +116,14 @@
           Settings
         </a>
         <div class="sidebar-divider"></div>
+        <!-- Operator chip — populated by app.js applyViewerToShell() after
+             /api/identity resolves (GEN-107). Initial state is a neutral
+             placeholder so first paint doesn't flash a hardcoded name. -->
         <div class="operator-chip">
-          <span class="operator-avatar">A</span>
+          <span class="operator-avatar">…</span>
           <span class="operator-label">
-            <span class="operator-name">Alessio Tixi</span>
-            <span class="operator-role">Founder · Operator</span>
+            <span class="operator-name">Signing in…</span>
+            <span class="operator-role">resolving identity</span>
           </span>
         </div>
       </div>
