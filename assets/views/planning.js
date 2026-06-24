@@ -16,6 +16,7 @@ let openInitiativeId = null;
 let activeSubTab = 'active';
 let editPlanOpen = false;
 let cycleBusy = false;  // disables buttons while a plan-cycle mutation is in flight
+let showArchive = false;  // Backlog kanban: toggle Promoted + Discarded columns (GEN-50)
 
 export function renderPlanning(ctx, { onChange }) {
   // Read sub-tab from URL query (#planning?tab=backlog). Router now strips
@@ -62,6 +63,9 @@ export function renderPlanning(ctx, { onChange }) {
 
   // Wire plan-cycle controls on the active plan card
   wirePlanCycleControls(body, ctx, onChange);
+
+  // Wire Backlog kanban triage buttons + archive toggle (GEN-50)
+  if (activeSubTab === 'backlog') wireBacklogActions(body, ctx, onChange);
 
   if (openInitiativeId) renderInitiativeDetailOverlay(ctx, onChange);
   if (editPlanOpen) renderEditPlanOverlay(ctx, onChange);
@@ -308,54 +312,153 @@ function renderTimelineRow(init, ctx, pct, today) {
   `;
 }
 
-// ============ Sub-tab: Backlog ============
+// ============ Sub-tab: Backlog (GEN-50 — restored from legacy parity audit) ============
+//
+// 4-column kanban (Untriaged / Ready / Promoted / Discarded) with per-card
+// triage buttons that POST to /api/update-backlog-item. Both goals + initiatives
+// surface as cards, tagged with a GOAL/INIT badge. "Show Promoted + Discarded"
+// toggle hides the archive columns by default. See GEN-39 audit + GEN-50.
 
 function renderBacklogSubTab(ctx) {
-  const activePlan = ctx.plans.find(p => p.status === 'active');
-  const planInitIds = new Set(activePlan?.initiative_ids || []);
-  const backlogInits = (ctx.initiatives || []).filter(i =>
-    !planInitIds.has(i.id) &&
-    !['completed', 'abandoned', 'discarded'].includes((i.status || '').toLowerCase()) &&
-    (i.backlog_state === 'untriaged' || !i.backlog_state || i.backlog_state === 'pending_review')
-  );
-  const backlogGoals = (ctx.goals || []).filter(g => g.backlog_state === 'untriaged' || !g.promoted_to_plan_id);
+  const allItems = [
+    ...(ctx.goals || []).map(g => ({ ...g, _type: 'goal' })),
+    ...(ctx.initiatives || []).map(i => ({ ...i, _type: 'initiative' })),
+  ];
+
+  const cols = {
+    untriaged: allItems.filter(x => (x.backlog_state || 'untriaged') === 'untriaged'),
+    ready: allItems.filter(x => x.backlog_state === 'ready'),
+    promoted_to_plan: allItems.filter(x => x.backlog_state === 'promoted_to_plan'),
+    discarded: allItems.filter(x => x.backlog_state === 'discarded'),
+  };
 
   return `
     <div class="card">
-      <div class="card-title">Backlog</div>
-      <p class="card-sub">Goals + Initiatives not in the active plan. The staging area before promoting to a cycle.</p>
-      ${backlogGoals.length ? `
-        <div class="backlog-section">
-          <div class="mono" style="font-size:10px;color:var(--text-faint);letter-spacing:.1em;margin:14px 0 8px">GOALS · ${backlogGoals.length}</div>
-          ${backlogGoals.map(g => `
-            <div class="backlog-row">
-              <div class="backlog-row-body">
-                <div class="backlog-row-title">${escapeHtml(g.title || 'Untitled goal')}</div>
-                ${g.description ? `<div class="backlog-row-desc">${escapeHtml(g.description)}</div>` : ''}
-              </div>
-            </div>
-          `).join('')}
+      <div class="backlog-header">
+        <div class="backlog-tagline">
+          Candidate pool. Memos + agent scans feed <strong>Untriaged</strong>. Vet → <strong>Ready</strong>.
+          Promote to a Plan from the Active tab.
         </div>
-      ` : ''}
-      ${backlogInits.length ? `
-        <div class="backlog-section">
-          <div class="mono" style="font-size:10px;color:var(--text-faint);letter-spacing:.1em;margin:14px 0 8px">INITIATIVES · ${backlogInits.length}</div>
-          ${backlogInits.map(i => `
-            <div class="backlog-row" role="button" tabindex="0" data-init-id="${escapeHtml(i.id)}">
-              <div class="backlog-row-body">
-                <div class="backlog-row-title">${escapeHtml(i.title)}</div>
-                ${i.active_hypothesis ? `<div class="backlog-row-desc"><strong>Hypothesis:</strong> ${escapeHtml((i.active_hypothesis || '').slice(0, 200))}</div>` : ''}
-                <div class="mono" style="font-size:10px;color:var(--text-faint);margin-top:6px">${escapeHtml(i.id)} · ${escapeHtml(i.backlog_state || 'untriaged')}${i.from_memo ? ` · from ${escapeHtml(i.from_memo)}` : ''}</div>
-              </div>
-            </div>
-          `).join('')}
-        </div>
-      ` : ''}
-      ${(!backlogGoals.length && !backlogInits.length) ? `
-        <div class="empty-state">Backlog is empty. Strategic memos auto-create Backlog items at next heartbeat.</div>
-      ` : ''}
+        <label class="backlog-archive-toggle">
+          <input type="checkbox" id="backlog-show-archive" ${showArchive ? 'checked' : ''}>
+          Show Promoted + Discarded
+        </label>
+      </div>
+      <div class="kanban">
+        ${renderBacklogColumn('Untriaged', '🆕', cols.untriaged, 'untriaged')}
+        ${renderBacklogColumn('Ready', '✓', cols.ready, 'ready')}
+        ${showArchive ? renderBacklogColumn('Promoted', '➤', cols.promoted_to_plan, 'promoted_to_plan') : ''}
+        ${showArchive ? renderBacklogColumn('Discarded', '✗', cols.discarded, 'discarded') : ''}
+      </div>
     </div>
   `;
+}
+
+function renderBacklogColumn(label, icon, items, state) {
+  return `
+    <div class="kanban-col" data-state="${escapeHtml(state)}">
+      <div class="kanban-col-h">
+        <span>${icon} ${escapeHtml(label)}</span>
+        <span class="kanban-count">${items.length}</span>
+      </div>
+      <div class="kanban-col-body">
+        ${items.length ? items.map(renderBacklogCard).join('') : '<div class="kanban-empty">—</div>'}
+      </div>
+    </div>
+  `;
+}
+
+function renderBacklogCard(it) {
+  const typeBadge = it._type === 'goal'
+    ? '<span class="b-type b-type-goal">GOAL</span>'
+    : '<span class="b-type b-type-init">INIT</span>';
+  const state = it.backlog_state || 'untriaged';
+
+  let actions = '';
+  if (state === 'untriaged') {
+    actions = `
+      <button class="b-action b-ready" data-action="move_to_ready" data-item-type="${it._type}" data-item-id="${escapeHtml(it.id)}">→ Ready</button>
+      <button class="b-action b-discard" data-action="discard" data-item-type="${it._type}" data-item-id="${escapeHtml(it.id)}">Discard</button>
+    `;
+  } else if (state === 'ready') {
+    actions = `
+      <button class="b-action" data-action="move_to_untriaged" data-item-type="${it._type}" data-item-id="${escapeHtml(it.id)}">← Untriaged</button>
+      <button class="b-action b-discard" data-action="discard" data-item-type="${it._type}" data-item-id="${escapeHtml(it.id)}">Discard</button>
+    `;
+  } else if (state === 'discarded') {
+    actions = `
+      <button class="b-action" data-action="restore" data-item-type="${it._type}" data-item-id="${escapeHtml(it.id)}">Restore</button>
+    `;
+  } else if (state === 'promoted_to_plan') {
+    actions = `<span class="b-promoted-note">in plan ${escapeHtml((it.promoted_to_plan_id || '').slice(0, 22))}</span>`;
+  }
+
+  const desc = it._type === 'goal'
+    ? (it.description ? `<div class="b-desc">${escapeHtml(it.description)}</div>` : '')
+    : (it.active_hypothesis ? `<div class="b-desc"><strong>Hypothesis:</strong> ${escapeHtml(it.active_hypothesis.slice(0, 240))}${it.active_hypothesis.length > 240 ? '…' : ''}</div>` : '');
+
+  return `
+    <div class="b-card b-card-${escapeHtml(state)}">
+      <div class="b-card-head">
+        ${typeBadge}
+        ${it.from_memo ? `<span class="b-from-memo">memo ${escapeHtml(it.from_memo.slice(0, 22))}</span>` : ''}
+      </div>
+      <div class="b-title">${escapeHtml(it.title || 'Untitled')}</div>
+      ${desc}
+      ${it.discarded_reason ? `<div class="b-discarded-reason">Reason: ${escapeHtml(it.discarded_reason)}</div>` : ''}
+      <div class="b-actions">${actions}</div>
+    </div>
+  `;
+}
+
+function wireBacklogActions(scope, ctx, onChange) {
+  // Archive toggle
+  const archiveToggle = scope.querySelector('#backlog-show-archive');
+  if (archiveToggle) {
+    archiveToggle.addEventListener('change', e => {
+      showArchive = e.target.checked;
+      renderPlanning(ctx, { onChange });
+    });
+  }
+
+  // Per-card action buttons
+  scope.querySelectorAll('button.b-action[data-action]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const itemType = btn.dataset.itemType;
+      const itemId = btn.dataset.itemId;
+      const action = btn.dataset.action;
+
+      let discardedReason = null;
+      if (action === 'discard') {
+        discardedReason = window.prompt('Reason for discarding (optional):') || null;
+      }
+
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '…';
+      try {
+        const resp = await fetch('/api/update-backlog-item', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            bu: BU,
+            item_type: itemType,
+            item_id: itemId,
+            action,
+            discarded_reason: discardedReason,
+          }),
+        });
+        const json = await resp.json().catch(() => ({}));
+        if (!resp.ok || !json.ok) throw new Error(json.message || `HTTP ${resp.status}`);
+        onChange();  // re-fetches ctx + re-renders
+      } catch (e) {
+        btn.disabled = false;
+        btn.textContent = originalText;
+        alert(`Failed: ${e.message}`);
+        console.error('[planning] backlog action failed:', e);
+      }
+    });
+  });
 }
 
 // ============ Sub-tab: Retrospective ============
@@ -418,6 +521,8 @@ function renderInitiativeDetailOverlay(ctx, onChange) {
         </div>
         <button type="button" class="overlay-close" id="overlay-close" aria-label="Close">✕</button>
       </div>
+
+      ${renderGatewayApprovalPanel(init, ms)}
 
       ${ms.length ? `
         <div class="overlay-section">
@@ -497,6 +602,181 @@ function renderInitiativeDetailOverlay(ctx, onChange) {
       }
     });
   }
+
+  wireGatewayApprovalPanel(host, init, onChange);
+}
+
+// ============ Gateway-approval panel (GEN-40) ============
+// Renders only when Initiative status is `gateways_pending_approval`. Shows the
+// proposed gateway list with per-row inline edits (title + criticality) plus
+// Approve / Reject buttons. Schema for `init.gateways[]` documented in
+// dashboard/public/data/bus/tuto/initiatives.schema.md.
+function renderGatewayApprovalPanel(init, milestones) {
+  if ((init.status || '').toLowerCase() !== 'gateways_pending_approval') return '';
+
+  const gateways = Array.isArray(init.gateways) ? init.gateways : [];
+  if (!gateways.length) {
+    return `
+      <div class="overlay-section gateway-panel">
+        <div class="card-section-label" style="margin-bottom:8px">Gateways — awaiting approval</div>
+        <div class="empty-state">Initiative is in <strong>gateways_pending_approval</strong> but no <code>gateways</code> array is populated. Stewart will propose the list at next heartbeat.</div>
+      </div>
+    `;
+  }
+
+  const msById = new Map((milestones || []).map(m => [m.id, m]));
+
+  return `
+    <div class="overlay-section gateway-panel">
+      <div class="card-section-label" style="margin-bottom:8px">Gateways — awaiting your approval</div>
+      <p class="overlay-prose" style="margin-top:0;margin-bottom:14px">
+        Stewart proposed <strong>${gateways.length}</strong> gateway${gateways.length === 1 ? '' : 's'} for this Initiative. Approve to unblock task emission, edit titles/criticality in place, or reject with a reason to send it back to scoping.
+      </p>
+      <div class="gateway-list">
+        ${gateways.map(gw => {
+          const ms = msById.get(gw.gates_milestone_id);
+          const msName = ms ? ms.name : (gw.gates_milestone_id || '—');
+          const crit = (gw.criticality || 'tactical').toLowerCase();
+          const reasoning = gw.reasoning || '';
+          return `
+            <div class="gateway-row" data-gateway-id="${escapeHtml(gw.id)}">
+              <div class="gateway-row-main">
+                <input type="text" class="gateway-title-input" data-field="title" value="${escapeHtml(gw.title || '')}" placeholder="Gateway title">
+                <select class="gateway-crit-select" data-field="criticality">
+                  <option value="critical" ${crit === 'critical' ? 'selected' : ''}>critical</option>
+                  <option value="tactical" ${crit === 'tactical' ? 'selected' : ''}>tactical</option>
+                </select>
+              </div>
+              <div class="gateway-row-meta">
+                <span class="gateway-gates-ms">gates: <span class="mono">${escapeHtml(msName)}</span></span>
+                ${reasoning ? `
+                  <button type="button" class="gateway-reasoning-toggle" aria-expanded="false">why?</button>
+                ` : ''}
+              </div>
+              ${reasoning ? `
+                <div class="gateway-reasoning" hidden>${escapeHtml(reasoning)}</div>
+              ` : ''}
+              <div class="gateway-row-status" aria-live="polite"></div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+      <div class="gateway-actions">
+        <button type="button" class="plan-cycle-btn" data-gateway-action="reject">Reject (back to scoping)</button>
+        <button type="button" class="plan-cycle-btn plan-cycle-btn-primary" data-gateway-action="approve">Approve · unblock emit</button>
+      </div>
+    </div>
+  `;
+}
+
+function wireGatewayApprovalPanel(host, init, onChange) {
+  const panel = host.querySelector('.gateway-panel');
+  if (!panel) return;
+
+  panel.querySelectorAll('.gateway-row').forEach(row => {
+    const gatewayId = row.dataset.gatewayId;
+    const titleInput = row.querySelector('.gateway-title-input');
+    const critSelect = row.querySelector('.gateway-crit-select');
+    const statusEl = row.querySelector('.gateway-row-status');
+
+    const baselineTitle = titleInput?.value ?? '';
+    const baselineCrit = critSelect?.value ?? '';
+
+    async function commit(field, value, controlEl) {
+      const edits = { [field]: value };
+      controlEl.disabled = true;
+      statusEl.textContent = 'saving…';
+      try {
+        const resp = await fetch('/api/update-initiative', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bu: BU, init_id: init.id, action: 'edit_gateway', gateway_id: gatewayId, edits, actor: 'operator' }),
+        });
+        const json = await resp.json().catch(() => ({}));
+        if (!resp.ok || !json.ok) throw new Error(json.message || `HTTP ${resp.status}`);
+        statusEl.textContent = '✓ saved';
+        setTimeout(() => { if (statusEl.textContent === '✓ saved') statusEl.textContent = ''; }, 1500);
+      } catch (e) {
+        statusEl.textContent = `✗ ${e.message?.slice(0, 80) || 'failed'}`;
+      } finally {
+        controlEl.disabled = false;
+      }
+    }
+
+    if (titleInput) {
+      titleInput.addEventListener('blur', () => {
+        const v = titleInput.value.trim();
+        if (!v) { titleInput.value = baselineTitle; return; }
+        if (v === baselineTitle) return;
+        commit('title', v, titleInput);
+      });
+    }
+    if (critSelect) {
+      critSelect.addEventListener('change', () => {
+        if (critSelect.value === baselineCrit) return;
+        commit('criticality', critSelect.value, critSelect);
+      });
+    }
+
+    const toggle = row.querySelector('.gateway-reasoning-toggle');
+    const reasoning = row.querySelector('.gateway-reasoning');
+    if (toggle && reasoning) {
+      toggle.addEventListener('click', () => {
+        const open = reasoning.hidden === false;
+        reasoning.hidden = open;
+        toggle.setAttribute('aria-expanded', open ? 'false' : 'true');
+        toggle.textContent = open ? 'why?' : 'hide';
+      });
+    }
+  });
+
+  const actions = panel.querySelector('.gateway-actions');
+  if (!actions) return;
+  const buttons = actions.querySelectorAll('[data-gateway-action]');
+  buttons.forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const action = btn.dataset.gatewayAction;
+      const body = { bu: BU, init_id: init.id, action: 'set_status', actor: 'operator' };
+      let successPhrase;
+
+      if (action === 'approve') {
+        if (!window.confirm('Approve this gateway list? Initiative moves to in_progress and task emission unblocks at the next heartbeat.')) return;
+        body.status = 'in_progress';
+        body.rationale = 'operator approved gateway list (GEN-40 panel)';
+        successPhrase = '✓ approved';
+      } else if (action === 'reject') {
+        const reason = window.prompt('Reject — send Initiative back to scoping. Reason (Stewart re-proposes on next heartbeat):', '');
+        if (reason === null) return;
+        const trimmed = reason.trim();
+        if (!trimmed) { alert('A rejection reason is required so Stewart knows how to re-propose.'); return; }
+        body.status = 'scoping';
+        body.rationale = trimmed;
+        successPhrase = '✓ rejected';
+      } else {
+        return;
+      }
+
+      buttons.forEach(b => { b.disabled = true; });
+      const original = btn.textContent;
+      btn.textContent = 'working…';
+      try {
+        const resp = await fetch('/api/update-initiative', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const json = await resp.json().catch(() => ({}));
+        if (!resp.ok || !json.ok) throw new Error(json.message || `HTTP ${resp.status}`);
+        btn.textContent = successPhrase;
+        onChange();
+      } catch (e) {
+        btn.disabled = false;
+        btn.textContent = `✗ ${e.message?.slice(0, 80) || 'failed'}`;
+        setTimeout(() => { btn.textContent = original; }, 4000);
+        buttons.forEach(b => { b.disabled = false; });
+      }
+    });
+  });
 }
 
 function renderMilestoneStrip(milestones, currentMs) {
