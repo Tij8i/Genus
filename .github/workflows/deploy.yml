@@ -28,6 +28,30 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Verify Cloudflare API token
+        env:
+          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -e
+          echo "Verifying CLOUDFLARE_API_TOKEN against /user/tokens/verify"
+          http_status=$(curl -sS -m 30 -o /tmp/verify_body -w '%{http_code}' \
+            -H "Authorization: Bearer $CF_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/user/tokens/verify" || echo "curl_failed")
+          echo "  HTTP status: $http_status"
+          echo "  Body length: $(wc -c </tmp/verify_body) bytes"
+          if [ "$http_status" != "200" ]; then
+            echo "  Body:"
+            sed 's/^/    /' /tmp/verify_body
+            echo "Token verification failed. Rotate CLOUDFLARE_API_TOKEN secret on Tij8i/Genus."
+            exit 1
+          fi
+          python3 -c "
+          import json
+          d = json.load(open('/tmp/verify_body'))
+          print(f'  Token status: {d.get(\"result\", {}).get(\"status\", \"?\")}')
+          print(f'  Token id:     {d.get(\"result\", {}).get(\"id\", \"?\")}')
+          "
+
       - name: Trigger Cloudflare Pages deployment
         env:
           CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -36,12 +60,23 @@ jobs:
         run: |
           set -e
           echo "Triggering Pages deploy for project=$CF_PROJECT, commit=$GITHUB_SHA"
-          resp=$(curl -sS -m 60 -X POST \
+          http_status=$(curl -sS -m 60 -o /tmp/cf_resp -w '%{http_code}' -X POST \
             -H "Authorization: Bearer $CF_API_TOKEN" \
-            "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/pages/projects/$CF_PROJECT/deployments")
-          echo "$resp" | python3 -c "
+            "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/pages/projects/$CF_PROJECT/deployments" || echo "curl_failed")
+          body_bytes=$(wc -c </tmp/cf_resp | tr -d ' ')
+          echo "  HTTP status: $http_status"
+          echo "  Body bytes:  $body_bytes"
+          if [ "$http_status" != "200" ] || [ "$body_bytes" -lt 2 ]; then
+            echo "  Body (first 2KB):"
+            head -c 2048 /tmp/cf_resp | sed 's/^/    /'
+            echo ""
+            echo "Cloudflare did not return a usable JSON 200 response."
+            echo "Common causes: expired/revoked token, missing Pages:Edit scope, rate limit, or Cloudflare API incident."
+            exit 1
+          fi
+          python3 -c "
           import json, sys
-          d = json.load(sys.stdin)
+          d = json.load(open('/tmp/cf_resp'))
           if not d.get('success'):
               print('FAIL:', json.dumps(d.get('errors', []), indent=2))
               sys.exit(1)
