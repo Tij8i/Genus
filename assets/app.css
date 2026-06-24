@@ -1546,6 +1546,95 @@ body {
   display: flex; justify-content: flex-end; gap: 8px;
 }
 
+/* Gateway-approval panel (GEN-40) — shown above milestones when Initiative
+   status is `gateways_pending_approval`. */
+.gateway-panel {
+  border: 1px solid var(--yellow-fg, #b58900);
+  background: var(--yellow-bg, rgba(181, 137, 0, .06));
+  border-radius: 10px;
+  padding: 16px 18px;
+}
+.gateway-list {
+  display: flex; flex-direction: column; gap: 10px;
+  margin-bottom: 16px;
+}
+.gateway-row {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 8px;
+}
+.gateway-row-main {
+  display: flex; gap: 8px; align-items: center;
+  flex-wrap: wrap;
+}
+.gateway-title-input {
+  flex: 1; min-width: 180px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 7px 9px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  box-sizing: border-box;
+}
+.gateway-title-input:focus {
+  outline: none;
+  border-color: var(--accent, var(--blue, #4d6ef5));
+}
+.gateway-crit-select {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 7px 9px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.gateway-crit-select:focus { outline: none; border-color: var(--accent, var(--blue, #4d6ef5)); }
+.gateway-row-meta {
+  display: flex; gap: 12px; align-items: center;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.gateway-gates-ms { letter-spacing: .04em; }
+.gateway-reasoning-toggle {
+  background: transparent;
+  border: none;
+  color: var(--accent, var(--blue, #4d6ef5));
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 0;
+}
+.gateway-reasoning-toggle:hover { text-decoration: underline; }
+.gateway-reasoning {
+  font-size: 12.5px; line-height: 1.55;
+  color: var(--text-dim);
+  padding: 8px 10px;
+  background: var(--surface2);
+  border-radius: 6px;
+  border-left: 2px solid var(--text-faint);
+  white-space: pre-wrap;
+}
+.gateway-row-status {
+  font-size: 11px;
+  color: var(--text-faint);
+  min-height: 14px;
+}
+.gateway-actions {
+  display: flex; justify-content: flex-end; gap: 8px;
+  border-top: 1px dashed var(--border);
+  margin-top: 4px;
+  padding-top: 14px;
+}
+
 /* Milestone strip (in detail overlay) */
 .ms-strip {
   display: flex; align-items: flex-start; gap: 0;

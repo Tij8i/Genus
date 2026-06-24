@@ -807,6 +807,7 @@ function initStateColor(status) {
   switch ((status || '').toLowerCase()) {
     case 'not_started': return 'gray';
     case 'scoping': return 'yellow';
+    case 'gateways_pending_approval': return 'yellow';
     case 'in_progress': return 'green';
     case 'review': return 'blue';
     case 'blocked': return 'red';
