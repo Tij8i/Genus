@@ -47,6 +47,17 @@ Spec docs (`GENUS_SPEC.md`, `MASON.md`, `STEWART.md`, etc.) also live at root an
 
 If `substrate_reachable: false`, the PAT is missing or doesn't have access to `Tij8i/Orchestrator`.
 
+## Branch-based preview deploys (GEN-87)
+
+`main` is production. Every other change goes on a feature branch first.
+
+- Branch naming: `feature/GEN-NN-short-slug` (e.g. `feature/GEN-87-pages-preview-deploys`).
+- Push a feature branch → Cloudflare Pages creates a preview URL (typically `<slug>.genus-v06.pages.dev` with `/` normalized to `-`).
+- Operator confirms the preview URL → merge feature branch → `main` → production auto-deploy via `.github/workflows/deploy.yml`.
+- Cloudflare Access policy on `genus-v06.pages.dev` gates all subdomains, including preview URLs (see `docs/system/deploy/genus_v06_access_setup.md` in Orchestrator).
+
+Authoritative working spec + open verification items (Cloudflare GitHub App authorization on `Tij8i/Genus` vs. extending this workflow with a `branch=` form field): `docs/system/deploy/genus_branch_preview_workflow.md` in `Tij8i/Orchestrator`.
+
 ## Substrate
 
 Per `[[genus-repo-split-substrate]]`: the dashboard reads + writes operator data from `Tij8i/Orchestrator` (cross-repo via GitHub PAT), not from this repo. This repo holds only code + Genus spec docs. Operator-specific data (`bus/tuto/*.json`, agent canonicals) lives in Orchestrator until eventual move to its own instance repo (path C).
