@@ -22,6 +22,7 @@
 // clicking approve, because the API returned empty content).
 
 import { getFile, putFile, jsonResponse, todayISO } from './_gh.js';
+import { requireAdmin } from './_identity.js';
 
 const VALID_DECISIONS = new Set(['approved', 'rejected']);
 
@@ -32,6 +33,8 @@ export async function onRequestPost({ request, env }) {
       message: 'GITHUB_PAT env var is not set on the Pages project. See dashboard/DEPLOY.md.',
     });
   }
+  const gate = await requireAdmin(request, env);
+  if (gate instanceof Response) return gate;
 
   // ---- parse + validate body ----
   let body;

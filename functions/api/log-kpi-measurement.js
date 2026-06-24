@@ -8,11 +8,14 @@
 // binary/milestone KPIs (value "done" / 0/1) and free-text captures still work.
 
 import { getFile, putFile, jsonResponse, todayISO, ghHeaders, GITHUB_REPO, BRANCH } from './_gh.js';
+import { requireAdmin } from './_identity.js';
 
 const KPI_ID_RE = /^[A-Za-z0-9_.-]+$/;
 
 export async function onRequestPost({ request, env }) {
   if (!env.GITHUB_PAT) return jsonResponse(500, { ok: false, message: 'GITHUB_PAT not set' });
+  const gate = await requireAdmin(request, env);
+  if (gate instanceof Response) return gate;
 
   let body;
   try { body = await request.json(); } catch { return jsonResponse(400, { ok: false, message: 'Invalid JSON' }); }
