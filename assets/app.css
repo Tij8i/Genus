@@ -446,6 +446,46 @@ body {
 }
 .vel-stat-unit { color: var(--text-faint); font-weight: 500; }
 
+/* Adapter-run trigger on the Velocity card. Restored from legacy parity
+   (GEN-47). Wired to local meeting server /adapter/run; gated on /health. */
+.vel-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+  flex-wrap: wrap;
+}
+.vel-actions-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+}
+.vel-actions-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.vel-actions-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.vel-actions-status {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+  letter-spacing: .02em;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.4;
+}
+.vel-actions-running { color: var(--text-dim); font-style: italic; }
+.vel-actions-ok { color: var(--green); }
+.vel-actions-fail { color: var(--red); }
+
 /* Activity + Historical grids (same 2-col shape) */
 .activity-grid {
   display: grid;
@@ -3238,4 +3278,175 @@ body {
   font-size: 14px;
   color: var(--text-faint);
   font-style: italic;
+}
+
+/* ============ Interactive Governance gauges (GEN-46) ============ */
+/* 5-dot ordinal track per axis (Off / Cautious / Balanced / Bold / Autonomous),
+   maturity backdrop overlay (dashed ring on the dot at observed maturity),
+   recommendation badge (raise / hold / lower), override-with-warning. Replaces
+   the v0.6 read-only `.gauge-segments` rendering. */
+
+.gov-gauges-stack { display: flex; flex-direction: column; gap: 18px; }
+.gov-gauge {
+  display: grid;
+  grid-template-columns: minmax(200px, 240px) 1fr;
+  grid-template-rows: auto auto auto;
+  grid-template-areas:
+    "head track"
+    "head meta"
+    "rec  rec";
+  gap: 8px 24px;
+  padding: 16px 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.gov-gauge-head { grid-area: head; }
+.gov-gauge-name { font-size: 14px; font-weight: 700; color: var(--text); }
+.gov-gauge-sub { font-size: 12px; color: var(--text-faint); margin-top: 4px; line-height: 1.45; }
+.gov-gauge-track {
+  grid-area: track;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+  align-items: end;
+}
+.gov-dot {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 6px;
+  padding: 6px 4px 4px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+  transition: background .12s ease, border-color .12s ease, transform .08s ease;
+}
+.gov-dot:hover:not(:disabled) { background: var(--surface2); }
+.gov-dot:disabled { cursor: not-allowed; opacity: .55; }
+.gov-dot-circle {
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: var(--surface2);
+  border: 1.5px solid var(--border);
+  box-sizing: border-box;
+  transition: background .12s ease, border-color .12s ease, box-shadow .12s ease;
+}
+.gov-dot-label {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  font-weight: 600;
+}
+.gov-dot-trail .gov-dot-circle {
+  background: color-mix(in oklab, var(--accent) 35%, transparent);
+  border-color: color-mix(in oklab, var(--accent) 55%, transparent);
+}
+.gov-dot-set .gov-dot-circle {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 22%, transparent);
+}
+.gov-dot-set .gov-dot-label { color: var(--text); }
+.gov-dot-maturity .gov-dot-circle {
+  outline: 2px dashed color-mix(in oklab, var(--text-faint) 80%, transparent);
+  outline-offset: 3px;
+}
+.gov-dot-maturity .gov-dot-label::after {
+  content: " · maturity";
+  color: var(--text-veryfaint);
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.gov-dot-set-at-maturity .gov-dot-circle {
+  outline-color: color-mix(in oklab, var(--accent) 80%, transparent);
+}
+.gov-dot-pending .gov-dot-circle { animation: gov-pulse 1s ease-in-out infinite; }
+@keyframes gov-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .4; }
+}
+.gov-gauge-meta {
+  grid-area: meta;
+  display: flex; flex-wrap: wrap;
+  gap: 8px 10px;
+  align-items: center;
+  margin-top: 4px;
+}
+.gov-gauge-meta-pill {
+  display: inline-flex; gap: 6px; align-items: baseline;
+  font-size: 11.5px; color: var(--text-dim);
+  padding: 4px 10px;
+  background: var(--surface2);
+  border-radius: 999px;
+}
+.gov-gauge-meta-pill strong { color: var(--text); font-weight: 700; }
+.gov-gauge-meta-label {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+.gov-gauge-meta-pill-maturity strong { color: var(--text-dim); }
+.gov-gauge-meta-warn {
+  font-size: 11px;
+  color: #b45309;
+  background: color-mix(in oklab, #f59e0b 18%, var(--surface));
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+.gov-gauge-rec {
+  grid-area: rec;
+  display: flex; flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  background: var(--surface2);
+  border-radius: 8px;
+  margin-top: 8px;
+}
+.gov-gauge-rec-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+}
+.gov-gauge-rec-raise .gov-gauge-rec-badge {
+  color: #047857;
+  background: color-mix(in oklab, #10b981 16%, var(--surface));
+  border-color: color-mix(in oklab, #10b981 35%, var(--border));
+}
+.gov-gauge-rec-lower .gov-gauge-rec-badge {
+  color: #b45309;
+  background: color-mix(in oklab, #f59e0b 16%, var(--surface));
+  border-color: color-mix(in oklab, #f59e0b 35%, var(--border));
+}
+.gov-gauge-rec-text {
+  flex: 1;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  min-width: 200px;
+}
+.gov-gauge-rec-time { font-size: 10.5px; color: var(--text-veryfaint); }
+@media (max-width: 720px) {
+  .gov-gauge {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "head"
+      "track"
+      "meta"
+      "rec";
+  }
 }

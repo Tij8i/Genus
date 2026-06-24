@@ -46,6 +46,7 @@ let tasks = [];
 let meetings = [];
 let memos = [];
 let kpis = [];
+let measurementsByKpi = {};
 let governance = {};
 let connectors = [];
 let documentation = [];
@@ -91,6 +92,16 @@ async function boot() {
     return;
   }
   [identity, goals, initiatives, plans, tasks, meetings, memos, kpis, governance, connectors, documentation] = results;
+
+  // Hydrate per-KPI measurement series (GEN-48). Each KPI has its own
+  // measurements/<kpi_id>.jsonl; many will 404 (no captures yet) which
+  // fetchSubstrateJsonl turns into [] without throwing. Run in parallel so
+  // boot still finishes in a single round-trip wait.
+  await Promise.all((kpis || []).map(async (k) => {
+    if (!k || !k.id) return;
+    const rows = await fetchSubstrateJsonl(baseRel(`measurements/${k.id}.jsonl`));
+    measurementsByKpi[k.id] = rows;
+  }));
 
   // Sidebar BU name from identity
   const buName = document.getElementById('bu-name');
@@ -213,7 +224,25 @@ function renderPlanning() {
 }
 
 function renderKpis() {
-  renderKpisView({ identity, plans, initiatives, tasks, meetings, memos, kpis, governance, connectors, documentation });
+  renderKpisView(
+    { identity, plans, initiatives, tasks, meetings, memos, kpis, measurementsByKpi, governance, connectors, documentation },
+    { onChange: rehydrateMeasurementsAndRerender },
+  );
+}
+
+async function rehydrateMeasurementsAndRerender() {
+  try {
+    const baseRel = (file) => `${substrateBase(BU)}/${file}`;
+    await Promise.all((kpis || []).map(async (k) => {
+      if (!k || !k.id) return;
+      const rows = await fetchSubstrateJsonl(baseRel(`measurements/${k.id}.jsonl`));
+      measurementsByKpi[k.id] = rows;
+    }));
+    const route = (window.location.hash || '#dashboard').replace(/^#/, '').split('?')[0];
+    renderRoute(route);
+  } catch (e) {
+    console.error('[genus] kpi measurements rehydrate failed:', e);
+  }
 }
 
 function renderInputs() {
@@ -229,15 +258,16 @@ function renderInputs() {
 async function rehydrateAndRerender() {
   try {
     const baseRel = (file) => `${substrateBase(BU)}/${file}`;
-    const [t, m, mm, mt, i, g] = await Promise.all([
+    const [t, m, mm, mt, i, g, gov] = await Promise.all([
       fetchSubstrateJson(baseRel('tasks.json'), tasks),
       fetchSubstrateJson(baseRel('meetings.json'), meetings),
       fetchSubstrateJsonl(baseRel('memos.jsonl')),
       fetchSubstrateJson(baseRel('plans.json'), plans),
       fetchSubstrateJson(baseRel('initiatives.json'), initiatives),
       fetchSubstrateJson(baseRel('goals.json'), goals),
+      fetchSubstrateJson(baseRel('governance.json'), governance),
     ]);
-    tasks = t; meetings = m; memos = mm; plans = mt; initiatives = i; goals = g;
+    tasks = t; meetings = m; memos = mm; plans = mt; initiatives = i; goals = g; governance = gov;
     // Re-render current route
     const route = (window.location.hash || '#dashboard').replace(/^#/, '');
     renderRoute(route);
@@ -251,7 +281,10 @@ function renderOutputs() {
 }
 
 function renderSettings() {
-  renderSettingsView({ identity, plans, initiatives, tasks, meetings, memos, kpis, governance, connectors, documentation });
+  renderSettingsView(
+    { identity, plans, initiatives, tasks, meetings, memos, kpis, governance, connectors, documentation },
+    { onChange: rehydrateAndRerender },
+  );
 }
 
 function renderWsMenu(identity) {

@@ -13,7 +13,7 @@ import { ACCENT_OPTIONS, DENSITY_OPTIONS, loadAppearance, saveAppearance } from 
 
 let activeSubTab = 'profile';
 
-export function renderSettings(ctx) {
+export function renderSettings(ctx, opts = {}) {
   const queryStr = (window.location.hash || '').split('?')[1] || '';
   const tab = new URLSearchParams(queryStr).get('tab');
   // Modules moved out of Settings — it's a top-level nav route now per v0.7 IA.
@@ -35,13 +35,16 @@ export function renderSettings(ctx) {
     btn.addEventListener('click', () => {
       activeSubTab = btn.dataset.subtab;
       window.location.hash = `#settings?tab=${activeSubTab}`;
-      renderSettings(ctx);
+      renderSettings(ctx, opts);
     });
   });
 
   const body = document.getElementById('settings-subtab-body');
   if (activeSubTab === 'profile') body.innerHTML = renderProfileSubTab(ctx);
-  else if (activeSubTab === 'governance') body.innerHTML = renderGovernanceSubTab(ctx);
+  else if (activeSubTab === 'governance') {
+    body.innerHTML = renderGovernanceSubTab(ctx);
+    wireGovernanceControls(ctx, opts.onChange);
+  }
   else if (activeSubTab === 'wiring') body.innerHTML = renderWiringSubTab(ctx);
   else if (activeSubTab === 'appearance') {
     body.innerHTML = renderAppearanceSubTab(ctx);
@@ -93,37 +96,145 @@ function renderProfileSubTab(ctx) {
 }
 
 // ============ Governance ============
+//
+// Interactive gauges restored in v0.7 per GEN-46 (legacy parity audit GEN-39).
+// Mirrors the legacy Orchestrator dashboard idiom (tuto.js renderGovernance):
+//   - 5-dot ordinal track per axis (Off / Cautious / Balanced / Bold / Autonomous)
+//   - Per-gauge maturity backdrop overlay (dashed ring on the dot at observed maturity)
+//   - Daily recommendation badge (↑ raise / = hold / ↓ lower + one-line rationale)
+//   - Override-with-warning confirm when operator dials above current maturity
+// Writes go through POST /api/update-governance (functions/api/update-governance.js).
+
+const GOV_LEVELS = ['off', 'cautious', 'balanced', 'bold', 'autonomous'];
+const GOV_LEVEL_LABELS = ['Off', 'Cautious', 'Balanced', 'Bold', 'Autonomous'];
+
+function govLevelIndex(v) {
+  const i = GOV_LEVELS.indexOf((v || '').toString().toLowerCase());
+  return i < 0 ? 0 : i;
+}
 
 function renderGovernanceSubTab(ctx) {
-  const g = ctx.governance?.gauges || {};
+  const g = ctx.governance || {};
+  const hasData = g && g.gauges;
   return `
     <div class="card">
       <div class="card-section-label">Governance</div>
-      <p class="card-sub" style="margin-bottom:14px">How much rope the agents have, and how fast they move.</p>
-      <div class="settings-rows">
-        ${gauge('Delegation level', g.delegation, 'How far Stewart goes before checking with you.')}
-        ${gauge('Trust level', g.trust, 'How much auto-approval Stewart can apply to its own emissions.')}
-        ${gauge('Speed level', g.speed, 'How aggressively stale items get surfaced as meeting requests.')}
-      </div>
-      <div class="settings-foot mono">📖 Read-only · inline sliders ship in v0.8 · edit via <code>governance.json</code> for now</div>
+      <p class="card-sub" style="margin-bottom:14px">How much rope the agents have, and how fast they move. Click any dot to change a gauge — a confirm dialog warns if you dial above current maturity.</p>
+      ${hasData ? `
+        <div class="gov-gauges-stack">
+          ${interactiveGauge('delegation', 'Delegation', 'How far Stewart goes before checking with you.', g)}
+          ${interactiveGauge('trust', 'Trust', 'How much auto-approval Stewart can apply to its own emissions.', g)}
+          ${interactiveGauge('speed', 'Speed', 'How aggressively stale items get surfaced as meeting requests.', g)}
+        </div>
+      ` : `
+        <div class="empty-state-sm" style="padding:18px 0;text-align:center">governance.json not loaded.</div>
+      `}
+      <div class="settings-foot mono">Writes <code>governance.json</code> + appends an <code>audit_log</code> entry. See <code>docs/system/GOVERNANCE_GAUGES.md</code> for the spec.</div>
     </div>
   `;
 }
 
-function gauge(label, g, sub) {
-  const cur = (g?.current || 'off').toLowerCase();
-  const levels = ['off', 'cautious', 'balanced', 'bold', 'autonomous'];
+function interactiveGauge(key, label, sub, gov) {
+  const gaugeData = gov.gauges?.[key] || {};
+  const matData = gov.maturity?.[key] || {};
+  const recData = gov.recommendations?.[key] || {};
+  const setIdx = govLevelIndex(gaugeData.current);
+  const matIdx = govLevelIndex(matData.level);
+  const recVerdict = (recData.verdict || 'hold').toLowerCase();
+  const recArrow = recVerdict === 'raise' ? '↑' : recVerdict === 'lower' ? '↓' : '=';
+
+  const dots = GOV_LEVELS.map((lv, i) => {
+    const classes = ['gov-dot'];
+    if (i <= setIdx) classes.push('gov-dot-trail');
+    if (i === setIdx) classes.push('gov-dot-set');
+    if (i === matIdx) classes.push('gov-dot-maturity');
+    if (i === setIdx && i === matIdx) classes.push('gov-dot-set-at-maturity');
+    const wouldOverride = i > matIdx;
+    const isCurrent = i === setIdx;
+    const title = isCurrent
+      ? `Current setting (${GOV_LEVEL_LABELS[i]})`
+      : (wouldOverride ? `Click to set — will warn (above maturity ${GOV_LEVEL_LABELS[matIdx]})` : `Click to set (${GOV_LEVEL_LABELS[i]})`);
+    return `
+      <button type="button" class="${classes.join(' ')}"
+        data-gauge="${key}" data-level="${lv}" data-level-label="${GOV_LEVEL_LABELS[i]}"
+        data-current="${isCurrent ? '1' : '0'}" data-would-override="${wouldOverride ? '1' : '0'}"
+        title="${escapeHtml(title)}">
+        <span class="gov-dot-circle"></span>
+        <span class="gov-dot-label">${escapeHtml(GOV_LEVEL_LABELS[i])}</span>
+      </button>
+    `;
+  }).join('');
+
   return `
-    <div class="settings-row">
-      <div class="settings-row-label">
-        <div class="settings-row-name">${escapeHtml(label)}</div>
-        <div class="settings-row-sub">${escapeHtml(sub)}</div>
+    <div class="gov-gauge">
+      <div class="gov-gauge-head">
+        <div class="gov-gauge-name">${escapeHtml(label)}</div>
+        <div class="gov-gauge-sub">${escapeHtml(sub)}</div>
       </div>
-      <div class="gauge-segments">
-        ${levels.map(l => `<span class="gauge-seg ${l === cur ? 'gauge-seg-current' : ''}">${escapeHtml(l)}</span>`).join('')}
+      <div class="gov-gauge-track">${dots}</div>
+      <div class="gov-gauge-meta">
+        <span class="gov-gauge-meta-pill"><span class="gov-gauge-meta-label">Current</span><strong>${escapeHtml(GOV_LEVEL_LABELS[setIdx])}</strong></span>
+        <span class="gov-gauge-meta-pill gov-gauge-meta-pill-maturity"><span class="gov-gauge-meta-label">Maturity</span><strong>${escapeHtml(GOV_LEVEL_LABELS[matIdx])}</strong></span>
+        ${gaugeData.set_with_override_warning ? `<span class="gov-gauge-meta-warn" title="Current setting is above observed maturity. Override is in the audit log.">⚠ override</span>` : ''}
+      </div>
+      <div class="gov-gauge-rec gov-gauge-rec-${recVerdict}">
+        <span class="gov-gauge-rec-badge">${recArrow} ${escapeHtml(recVerdict)}</span>
+        <span class="gov-gauge-rec-text">${escapeHtml(recData.rationale || '—')}</span>
+        ${recData.computed_at ? `<span class="gov-gauge-rec-time mono">${escapeHtml(ago(recData.computed_at))}</span>` : ''}
       </div>
     </div>
   `;
+}
+
+function wireGovernanceControls(ctx, onChange) {
+  const root = document.getElementById('settings-subtab-body');
+  if (!root) return;
+  root.querySelectorAll('.gov-dot[data-gauge]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.dataset.current === '1' || btn.disabled) return;
+      const gauge = btn.dataset.gauge;
+      const level = btn.dataset.level;
+      const levelLabel = btn.dataset.levelLabel;
+      const wouldOverride = btn.dataset.wouldOverride === '1';
+      const matNow = ((ctx.governance?.maturity || {})[gauge] || {}).level || 'off';
+      const matLabel = matNow.charAt(0).toUpperCase() + matNow.slice(1);
+
+      const warning = wouldOverride
+        ? `\n\n⚠ This dials ${gauge} ABOVE its current maturity (${matLabel}). Expect rougher output until evidence catches up. The override is logged in the audit trail.`
+        : '';
+      const msg = `Set ${gauge} → ${levelLabel}?${warning}\n\nThis writes governance.json + appends an audit_log entry.`;
+      if (!window.confirm(msg)) return;
+
+      updateGovernanceGauge(btn, gauge, level, onChange);
+    });
+  });
+}
+
+async function updateGovernanceGauge(btn, gauge, level, onChange) {
+  const allBtns = document.querySelectorAll('.gov-dot[data-gauge]');
+  allBtns.forEach(b => { b.disabled = true; });
+  btn.classList.add('gov-dot-pending');
+  try {
+    const r = await fetch('/api/update-governance', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        bu: 'tuto', gauge, new_level: level, actor: 'operator',
+        rationale: 'Set via Genus dashboard governance card',
+      }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) throw new Error(j.message || `HTTP ${r.status}`);
+    if (typeof onChange === 'function') {
+      await onChange();
+    } else {
+      window.location.reload();
+    }
+  } catch (e) {
+    btn.classList.remove('gov-dot-pending');
+    allBtns.forEach(b => { b.disabled = false; });
+    alert(`Could not update ${gauge}: ${e.message}`);
+  }
 }
 
 // ============ Modules ============
