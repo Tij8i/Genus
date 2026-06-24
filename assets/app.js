@@ -138,8 +138,13 @@ async function boot() {
       fetchSubstrateJson(baseRel('documentation.json'), []),
     ]);
   } catch (e) {
+    // Substrate unreachable (e.g. preview deploy missing GITHUB_PAT, or local
+    // file serve with no Pages Functions). Show the banner so it's obvious
+    // something is wrong, but keep booting with empty defaults so the sidebar
+    // + router + routes that don't depend on substrate (Budget, Costs,
+    // Invoices) still render. Per GEN-99 verification needs.
     bootError(e.message || String(e));
-    return;
+    results = [null, [], [], [], [], [], [], [], {}, [], []];
   }
   [identity, goals, initiatives, plans, tasks, meetings, memos, kpis, governance, connectors, documentation] = results;
 
