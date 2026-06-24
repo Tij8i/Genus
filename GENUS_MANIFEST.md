@@ -1,8 +1,8 @@
 # Genus — Manifest Specification
 
-**Version**: 0.3 (draft) — Campaign substrate added per `GENUS_SPEC.md` v0.3: `substrate_mapping.campaign_store` recognized; Stewart gains optional `campaign_status_enum` + `campaign_cap` fields
+**Version**: 0.4 — adds `confidence_frame_mode` per bound surface per `GENUS_SPEC.md` v0.5 and `CONFIDENCE_FRAME.md` v1
 **Status**: Public specification. Manifest contract for Genus-conformant agents.
-**Last updated**: 2026-05-29
+**Last updated**: 2026-06-24
 
 ---
 
@@ -80,6 +80,7 @@ Required for every Genus agent regardless of archetype.
 | `distribution` | enum | no (v0.2) | Clarifies license semantics: `"community-template"` (open-source template anyone may fork), `"operator-bound"` (a specific operator's instance; not designed for general fork), `"proprietary"` (closed source). When omitted, inferred from the `license` field (`"MIT"` etc. → community-template; `"proprietary"` → proprietary; ambiguous values like `"internal"` → operator-bound). |
 | `substrate_mapping` | object | no (v0.2) | Declares which configured connector implements which Genus operational substrate store. Recognized keys (v0.3): `task_store`, `campaign_store`, `kpi_registry`, `workflow_registry`, `agent_updates_store`, `approval_log`, `artifact_index`. Example: `{ task_store: "notion:taskDB-id", campaign_store: "notion:goalsProjectsDB-id", kpi_registry: "notion:kpiRegistry-id", ... }`. Without this, the installation can't know which Notion database is which store. Optional (defaults inferred from connector defaults); recommended for installations with multiple data stores. |
 | `installation_configuration` | object | no (v0.2) | Declares what an installation must wire up before the agent can run. Example: a Mason that uses Canva may declare `installation_configuration: { brand_kit_ids: { required: true, type: "list[string]" } }` — the installation must supply at least one brand-kit ID before the Mason is usable. Surfaces configuration requirements that the agent itself doesn't ship with. |
+| `confidence_frame_mode` | enum \| object | conditional (v0.4) | Declares how this agent's bound surfaces handle low-confidence claims per `CONFIDENCE_FRAME.md` v1. **Required for any agent that emits claims to a Genus surface** (substrate stores, dashboards, module views, operator-facing artifacts). Omit for agents that produce only raw chat output (the `GENUS_SPEC.md` non-negotiable #2 grandfathering). Simple form: one of `"silent"`, `"warn"`, `"block"` — applied uniformly to every surface the agent emits to. Per-surface form: object mapping surface identifier → mode, e.g. `{ "finance.overview": "silent", "finance.outbound_payment": "block" }`. Surface identifiers are module-defined; consult the module's binding contract. Default when ambiguous: `"silent"`. See [CONFIDENCE_FRAME.md § 6](./CONFIDENCE_FRAME.md) for mode semantics. |
 
 ### Composability object
 
@@ -216,6 +217,7 @@ Notice the absence of `identity`, `contract`, `playbook`, `domain_model`, `refle
 | `connectors` | Each entry must match a connector available in the installation's connector pool (or be flagged as a missing dependency). |
 | `heartbeat_schedule` | Stewart + Virgil: must be a valid cron expression. Mason: must be `null`. |
 | `composability.standalone` | If `false`, the `expects` list must contain at least one entry. |
+| `confidence_frame_mode` | Required for agents that emit claims to a Genus surface (per `GENUS_SPEC.md` non-negotiable #2 and `CONFIDENCE_FRAME.md` v1). Simple form: one of `"silent"` / `"warn"` / `"block"`. Per-surface form: object mapping surface identifier → mode; each value one of the same three strings. Omit only for agents that produce raw chat output and write no claims to substrate / dashboards / module views. |
 
 A manifest that fails validation is not registered. The installation surfaces the validation failure to the operator (or the agent author) for correction.
 
@@ -462,3 +464,8 @@ All five are additive and optional; v0.1 manifests continue to validate under v0
 - Mindy example updated to demonstrate the Campaign-store substrate mapping + the new Stewart fields, using placeholder substrate IDs to document the mapping shape.
 
 All additions are additive and optional; v0.1 and v0.2 manifests continue to validate under v0.3 (MINOR per the versioning rules). An installation can adopt the Campaign primitive without re-issuing existing manifests.*
+
+*v0.4 (2026-06-24) — `confidence_frame_mode` field added per `GENUS_SPEC.md` v0.5 partial bump and `CONFIDENCE_FRAME.md` v1:
+- Universal field, conditionally required: any agent emitting claims to a Genus surface (substrate stores, dashboards, module views, operator-facing artifacts) must declare its policy mode. Agents producing only raw chat output may omit (the grandfathering carve-out from `GENUS_SPEC.md` non-negotiable #2).
+- Two shapes: simple string (`"silent"` / `"warn"` / `"block"`) applied uniformly to every surface the agent emits to, or an object mapping surface identifier → mode for richer per-surface control. The per-surface shape is the one referenced by the Finance Module v1 spec and by future module bindings.
+- v0.1 / v0.2 / v0.3 manifests continue to validate under v0.4 (MINOR per the versioning rules), but agents already emitting claims to Genus surfaces are expected to add this field on their next manifest revision to remain conformant with the updated non-negotiable #2.*
