@@ -144,6 +144,38 @@ body {
   text-align: center;
 }
 
+/* Collapsible nav groups (FINANCE / STRATEGY / OPERATIONS).
+   Each group has a label-button + a child item list. Click the label to toggle.
+   State is persisted in localStorage (see app.js). */
+.nav-group { display: flex; flex-direction: column; }
+.nav-group-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: #aab0bb;
+  padding: 16px 10px 7px;
+  text-align: left;
+  transition: color .15s;
+}
+.nav-group-label:hover { color: #7b8190; }
+.nav-group-chevron {
+  margin-left: auto;
+  flex: none;
+  transition: transform .15s;
+  color: currentColor;
+}
+.nav-group.nav-group--collapsed .nav-group-chevron { transform: rotate(-90deg); }
+.nav-group-items { display: flex; flex-direction: column; gap: 3px; }
+.nav-group.nav-group--collapsed .nav-group-items { display: none; }
+
 .sidebar-bottom { margin-top: auto; display: flex; flex-direction: column; gap: 3px; }
 .operator-chip {
   display: flex;
@@ -3739,4 +3771,200 @@ body {
 }
 .kpi-log-btn:disabled {
   opacity: .55; cursor: progress;
+}
+
+/* ============ Budget view (GEN-99) ============ */
+/* High-level abstraction over specialized tools — planned vs actual,
+   burn, runway. Real accounting wiring lands with the Finance module
+   (GEN-89); for now this surface ships against a v1 mock series. */
+
+.budget-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  padding: 6px 2px;
+}
+.budget-hint svg { flex: none; opacity: .8; }
+
+.budget-pace-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  padding: 4px 9px;
+  border-radius: 99px;
+  border: 1px solid transparent;
+}
+.budget-pace-on   { background: var(--green-bg);  color: var(--green-fg);  border-color: var(--green-border); }
+.budget-pace-hot  { background: var(--yellow-bg); color: var(--yellow-fg); border-color: rgba(224, 160, 8, .25); }
+.budget-pace-cool { background: rgba(47, 107, 255, .08); color: var(--accent); border-color: rgba(47, 107, 255, .18); }
+.budget-pace-over { background: var(--red-bg);    color: var(--red-fg);    border-color: var(--red-border); }
+
+/* Summary card */
+.budget-summary-card { display: flex; flex-direction: column; gap: 18px; }
+.budget-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 16px;
+  margin-top: 4px;
+}
+.budget-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px 16px;
+  background: var(--surface2);
+  border-radius: 12px;
+}
+.budget-stat-label {
+  font-size: 10.5px;
+  letter-spacing: .14em;
+  color: var(--text-faint);
+}
+.budget-stat-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -.01em;
+  line-height: 1.1;
+  margin-top: 4px;
+}
+.budget-stat-sub {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
+
+.budget-summary-bar-wrap { display: flex; flex-direction: column; gap: 6px; }
+.budget-summary-bar {
+  position: relative;
+  height: 12px;
+  background: var(--surface2);
+  border-radius: 99px;
+  overflow: visible;
+}
+.budget-summary-fill {
+  height: 100%;
+  border-radius: 99px;
+  transition: width .2s ease;
+}
+.budget-summary-fill-on   { background: var(--green); }
+.budget-summary-fill-hot  { background: var(--yellow); }
+.budget-summary-fill-over { background: var(--red); }
+.budget-summary-pace-marker {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  background: var(--text-dim);
+  border-radius: 2px;
+  opacity: .55;
+}
+.budget-summary-axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+/* Category list */
+.budget-cat-list { display: flex; flex-direction: column; gap: 18px; }
+.budget-cat-row { display: flex; flex-direction: column; gap: 6px; }
+.budget-cat-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.budget-cat-name { font-size: 14px; font-weight: 600; color: var(--text); }
+.budget-cat-bar {
+  height: 8px;
+  background: var(--surface2);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.budget-cat-fill { height: 100%; border-radius: 99px; transition: width .2s ease; }
+.budget-cat-fill-on   { background: var(--green); }
+.budget-cat-fill-hot  { background: var(--yellow); }
+.budget-cat-fill-over { background: var(--red); }
+.budget-cat-row-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.budget-cat-foot-faint { color: var(--text-faint); }
+.budget-cat-note { font-size: 12px; color: var(--text-faint); margin-top: 2px; }
+
+/* Burn chart */
+.budget-burn-avg { font-size: 11.5px; color: var(--text-faint); }
+.budget-burn-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 18px;
+  height: 160px;
+  padding: 8px 4px 0;
+  margin-top: 10px;
+}
+.budget-burn-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+}
+.budget-burn-bar-wrap {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.budget-burn-bar {
+  width: 60%;
+  max-width: 64px;
+  background: linear-gradient(180deg, var(--accent), rgba(47, 107, 255, .55));
+  border-radius: 8px 8px 4px 4px;
+  min-height: 4px;
+  transition: height .2s ease;
+}
+.budget-burn-month {
+  font-size: 11px;
+  color: var(--text-faint);
+  letter-spacing: .04em;
+}
+.budget-burn-val {
+  font-size: 12px;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.budget-cash-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.budget-cash-label {
+  font-size: 11px;
+  letter-spacing: .14em;
+  color: var(--text-faint);
+}
+.budget-cash-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
 }
