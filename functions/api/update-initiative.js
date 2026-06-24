@@ -18,14 +18,15 @@
 
 import { getFile, putFile, jsonResponse, todayISO } from './_gh.js';
 
-const VALID_ACTIONS = new Set(['log_actual', 'add_learning', 'set_status', 'mark_milestone_done']);
+const VALID_ACTIONS = new Set(['log_actual', 'add_learning', 'set_status', 'mark_milestone_done', 'edit_gateway']);
 // Legacy statuses kept for backwards-compat: active / on_track / at_risk.
 // New Genus-native cycle states per docs/system/EXECUTION_CYCLE.md:
-// not_started / scoping / in_progress / blocked / review / completed (was done) / abandoned (was discarded).
+// not_started / scoping / gateways_pending_approval (GEN-34) / in_progress / blocked / review / completed (was done) / abandoned (was discarded).
 const VALID_STATUSES = new Set([
-  'not_started', 'scoping', 'in_progress', 'blocked', 'review', 'completed', 'abandoned',
+  'not_started', 'scoping', 'gateways_pending_approval', 'in_progress', 'blocked', 'review', 'completed', 'abandoned',
   'active', 'on_track', 'at_risk',  // legacy compatibility
 ]);
+const VALID_GATEWAY_CRITICALITIES = new Set(['critical', 'tactical']);
 
 export async function onRequestPost({ request, env }) {
   if (!env.GITHUB_PAT) return jsonResponse(500, { ok: false, message: 'GITHUB_PAT not set' });
@@ -93,6 +94,33 @@ export async function onRequestPost({ request, env }) {
       via: 'api/update-initiative',
       rationale: body.rationale || null,
     });
+  } else if (action === 'edit_gateway') {
+    // Operator inline-edits a single gateway's title or criticality from the
+    // gateway-approval panel (GEN-40). Add/remove gateways is out of scope —
+    // Stewart proposes the list at scoping; operator edits in place.
+    const gwId = (body.gateway_id || '').toString();
+    if (!gwId) return jsonResponse(400, { ok: false, message: 'gateway_id required for edit_gateway' });
+    const edits = body.edits || {};
+    if (typeof edits !== 'object') return jsonResponse(400, { ok: false, message: 'edits must be an object' });
+    const gateways = target.gateways || [];
+    const gw = gateways.find(g => g.id === gwId);
+    if (!gw) return jsonResponse(404, { ok: false, message: `Gateway ${gwId} not found on initiative ${initId}` });
+
+    const newTitle = typeof edits.title === 'string' ? edits.title.trim() : undefined;
+    const newCrit = typeof edits.criticality === 'string' ? edits.criticality.trim().toLowerCase() : undefined;
+
+    if (newTitle !== undefined) {
+      if (!newTitle) return jsonResponse(400, { ok: false, message: 'gateway title cannot be empty' });
+      gw.title = newTitle.slice(0, 200);
+    }
+    if (newCrit !== undefined) {
+      if (!VALID_GATEWAY_CRITICALITIES.has(newCrit)) {
+        return jsonResponse(400, { ok: false, message: `criticality must be one of: ${[...VALID_GATEWAY_CRITICALITIES].join(', ')}` });
+      }
+      gw.criticality = newCrit;
+    }
+    gw.last_edited_at = now;
+    gw.last_edited_by = body.actor || 'operator';
   } else if (action === 'mark_milestone_done') {
     // Manual operator mark-done on a specific milestone. Complements the auto-
     // mark-done that fires when an initiative_milestone meeting closes. Use

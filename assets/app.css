@@ -3450,3 +3450,51 @@ body {
       "rec";
   }
 }
+
+
+/* ============ Section 5 — Cycle health (restored from legacy renderCycle, GEN-51) ============ */
+.cyc-card { padding: var(--pad); }
+.cyc-tile-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 880px) { .cyc-tile-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.cyc-tile { border: 1px solid var(--border); border-radius: 10px; padding: 11px 13px; background: var(--surface); display: flex; flex-direction: column; gap: 4px; }
+.cyc-tile-good { border-color: var(--green-border); background: var(--green-bg); }
+.cyc-tile-warn { border-color: #f0e0ab; background: var(--yellow-bg); }
+.cyc-tile-bad  { border-color: var(--red-border); background: var(--red-bg); }
+.cyc-tile-gray { background: var(--surface2); }
+.cyc-tile-label { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-faint); }
+.cyc-tile-value { font-size: 18px; font-weight: 700; letter-spacing: -.01em; color: var(--text); }
+.cyc-tile-sub { font-size: 11.5px; color: var(--text-dim); }
+.cyc-block { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
+.cyc-block-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.cyc-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+.cyc-table th { text-align: left; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-faint); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.cyc-th-right { text-align: right; }
+.cyc-table td { padding: 9px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.cyc-table tr:last-child td { border-bottom: none; }
+.cyc-init-id { font-size: 11px; color: var(--text-faint); margin-bottom: 2px; }
+.cyc-init-title { font-weight: 600; color: var(--text); line-height: 1.3; }
+.cyc-na { color: var(--text-veryfaint); font-style: italic; font-size: 12px; }
+.cyc-state-pill { display: inline-block; font-size: 11px; letter-spacing: .02em; padding: 2px 8px; border-radius: 99px; font-weight: 600; white-space: nowrap; }
+.cyc-state-fresh  { background: var(--green-bg); color: var(--green-fg); border: 1px solid var(--green-border); }
+.cyc-state-aging  { background: var(--yellow-bg); color: var(--yellow-fg); border: 1px solid #f0e0ab; }
+.cyc-state-stuck  { background: var(--red-bg); color: var(--red-fg); border: 1px solid var(--red-border); }
+.cyc-dwell-cell { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+.cyc-dwell-val { font-weight: 700; font-size: 13px; color: var(--text); }
+.cyc-stuck-badge { display: inline-block; font-size: 10.5px; font-weight: 600; padding: 2px 7px; border-radius: 99px; background: var(--red-bg); color: var(--red-fg); border: 1px solid var(--red-border); white-space: nowrap; }
+.cyc-stuck-badge-soft { background: var(--yellow-bg); color: var(--yellow-fg); border-color: #f0e0ab; }
+.cyc-funnel { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.cyc-funnel-row { display: grid; grid-template-columns: 140px minmax(0, 1fr) 40px; align-items: center; gap: 10px; font-size: 12.5px; }
+.cyc-funnel-key { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-dim); text-align: right; }
+.cyc-funnel-track { height: 18px; background: var(--surface2); border-radius: 6px; overflow: hidden; position: relative; }
+.cyc-funnel-fill { height: 100%; background: var(--accent); border-radius: 6px; transition: width .25s ease; }
+.cyc-funnel-fill-done           { background: var(--green); }
+.cyc-funnel-fill-executing,
+.cyc-funnel-fill-in_progress,
+.cyc-funnel-fill-pushed         { background: var(--accent); }
+.cyc-funnel-fill-approved,
+.cyc-funnel-fill-work_ready     { background: #8a6cf2; }
+.cyc-funnel-fill-awaiting_approval { background: var(--yellow); }
+.cyc-funnel-fill-not_started    { background: var(--text-veryfaint); }
+.cyc-funnel-fill-blocked,
+.cyc-funnel-fill-failed         { background: var(--red); }
+.cyc-funnel-count { font-weight: 700; text-align: right; color: var(--text); }

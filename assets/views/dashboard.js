@@ -60,6 +60,7 @@ export function renderDashboard(ctx) {
     ${renderHistoricalSection(initiatives, memos)}
     ${renderSnapshotSection(activePlan, tasks, meetings, timeProg)}
     ${renderDoctorNoteSection(identity)}
+    ${renderCycleHealthSection(activePlan, initiatives, tasks, meetings, timeProg)}
   `;
 
   wireAdapterRunButton();
@@ -618,5 +619,298 @@ function renderDoctorNoteSection(identity) {
         ${h.rationale ? `<div class="doctor-rationale">${escapeHtml(h.rationale)}</div>` : ''}
       </div>
     </section>
+  `;
+}
+
+
+// ============ Section 5 — Cycle health (restored from legacy renderCycle, GEN-51) ============
+//
+// Three legacy views from `tuto.js#renderCycle` (GEN-39 parity audit):
+//   - 4-tile phase strip (Cycle phase / Operator queue / Throughput / Last activity)
+//   - Initiatives table with Dwell column + ⚠ stuck-Xh badge
+//   - Task funnel (counts by status)
+//
+// Data is derived client-side from existing substrate (initiatives.status_history,
+// tasks.status, etc.) rather than reading the legacy cycle_state.json — the v0.6
+// Genus app talks directly to substrate, no diagnostic-script intermediate.
+
+const TERMINAL_INITIATIVE_STATES = new Set([
+  'completed', 'done', 'discarded', 'abandoned', 'cancelled', 'rejected',
+]);
+
+// Stuck threshold per-state, in hours. Mirrors the legacy heuristic in
+// renderInitiativeRow (tuto.js): review_required is allowed to dwell longer
+// because human review naturally takes days; in-flight states should not
+// idle past 24h without movement.
+const STUCK_THRESHOLD_H = {
+  review_required: 72,
+  not_started: 72,
+  default: 24,
+};
+
+function renderCycleHealthSection(activePlan, initiatives, tasks, meetings, timeProg) {
+  const phase = computeCyclePhase(activePlan, timeProg);
+  const queue = computeOperatorQueue(tasks, meetings);
+  const throughput = computeThroughput(tasks);
+  const lastActivity = computeLastActivity(tasks, initiatives, meetings);
+
+  const initRows = computeInitiativeDwell(initiatives);
+  const funnel = computeTaskFunnel(tasks);
+
+  return `
+    <section>
+      <div class="section-rule">
+        <span class="card-section-label">05 · Cycle health</span>
+        <div class="rule-line"></div>
+      </div>
+
+      <div class="card cyc-card">
+        <div class="cyc-tile-grid">
+          ${cycleTile('Cycle phase', phase)}
+          ${cycleTile('Operator queue', queue)}
+          ${cycleTile('Throughput', throughput)}
+          ${cycleTile('Last activity', lastActivity)}
+        </div>
+
+        <div class="cyc-block">
+          <div class="cyc-block-head">
+            <span class="card-title">Initiatives — dwell time</span>
+            <span class="muted-emph">${initRows.filter(r => r.stuck).length} stuck · ${initRows.length} tracked</span>
+          </div>
+          <p class="card-sub">Hours in current state. ⚠ flag fires past ${STUCK_THRESHOLD_H.default}h for in-flight states, ${STUCK_THRESHOLD_H.review_required}h for review/idle states.</p>
+          <table class="cyc-table">
+            <thead><tr>
+              <th>Initiative</th>
+              <th>State</th>
+              <th>Linked tasks</th>
+              <th class="cyc-th-right">Dwell</th>
+            </tr></thead>
+            <tbody>
+              ${initRows.length === 0
+                ? `<tr><td colspan="4" class="cyc-na">No initiatives in this BU.</td></tr>`
+                : initRows.map(renderInitDwellRow).join('')}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="cyc-block">
+          <div class="cyc-block-head">
+            <span class="card-title">Task funnel</span>
+            <span class="muted-emph">${funnel.total} task${funnel.total === 1 ? '' : 's'} total</span>
+          </div>
+          <p class="card-sub">Throughput visualization — counts per status stage.</p>
+          ${renderTaskFunnel(funnel)}
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function cycleTile(label, t) {
+  return `
+    <div class="cyc-tile cyc-tile-${t.tone}">
+      <div class="cyc-tile-label">${escapeHtml(label)}</div>
+      <div class="cyc-tile-value">${escapeHtml(t.value)}</div>
+      ${t.sub ? `<div class="cyc-tile-sub">${escapeHtml(t.sub)}</div>` : ''}
+    </div>
+  `;
+}
+
+function computeCyclePhase(activePlan, timeProg) {
+  if (!activePlan) {
+    return { value: 'No active cycle', sub: 'create a plan to begin', tone: 'gray' };
+  }
+  if (!timeProg) {
+    return { value: 'Planning', sub: 'plan dates not set', tone: 'gray' };
+  }
+  const { percentElapsed, remainingDays } = timeProg;
+  if (percentElapsed >= 100) {
+    return { value: 'Overdue', sub: `${-remainingDays}d past target`, tone: 'bad' };
+  }
+  if (percentElapsed >= 80) {
+    return { value: 'Closing', sub: `${remainingDays}d remaining`, tone: 'warn' };
+  }
+  if (percentElapsed >= 20) {
+    return { value: 'In flight', sub: `${percentElapsed}% elapsed`, tone: 'good' };
+  }
+  return { value: 'Kicking off', sub: `${percentElapsed}% elapsed`, tone: 'good' };
+}
+
+function computeOperatorQueue(tasks, meetings) {
+  const waitingTasks = (tasks || []).filter(t => (t.status || '').toLowerCase() === 'awaiting_approval');
+  const waitingMeetings = (meetings || []).filter(m => m.status === 'requested_by_agent');
+  const total = waitingTasks.length + waitingMeetings.length;
+  if (total === 0) {
+    return { value: 'Inbox zero', sub: 'nothing waiting', tone: 'good' };
+  }
+  const allAt = [
+    ...waitingTasks.map(t => t.proposed_at),
+    ...waitingMeetings.map(m => m.requested_at),
+  ].filter(Boolean).sort();
+  const oldest = allAt[0];
+  const oldestH = oldest ? Math.floor((Date.now() - new Date(oldest).getTime()) / 3600000) : 0;
+  const tone = (total >= 5 || oldestH > 48) ? 'bad' : (total >= 3 || oldestH > 24) ? 'warn' : 'good';
+  return {
+    value: `${total} waiting`,
+    sub: oldest ? `oldest ${oldestH}h` : '',
+    tone,
+  };
+}
+
+function computeThroughput(tasks) {
+  const cutoff24h = Date.now() - 86400000;
+  const cutoff7d = Date.now() - 7 * 86400000;
+  let last24 = 0;
+  let last7 = 0;
+  for (const t of tasks || []) {
+    const c = (t.execution || {}).completed_at;
+    if (!c) continue;
+    const ts = new Date(c).getTime();
+    if (isNaN(ts)) continue;
+    if (ts >= cutoff7d) last7++;
+    if (ts >= cutoff24h) last24++;
+  }
+  const avgPerDay = (last7 / 7).toFixed(1);
+  const tone = last24 >= 3 ? 'good' : last24 >= 1 ? 'warn' : 'bad';
+  return {
+    value: `${last24}/24h`,
+    sub: `${avgPerDay}/day · 7d avg`,
+    tone,
+  };
+}
+
+function computeLastActivity(tasks, initiatives, meetings) {
+  let latest = null;
+  const consider = (iso) => {
+    if (!iso) return;
+    const t = new Date(iso).getTime();
+    if (isNaN(t)) return;
+    if (latest == null || t > latest) latest = t;
+  };
+  for (const t of tasks || []) {
+    consider((t.execution || {}).completed_at);
+    consider(t.last_edited_at);
+  }
+  for (const i of initiatives || []) {
+    consider(i.last_edited_at);
+    const sh = i.status_history || [];
+    if (sh.length) consider(sh[sh.length - 1].at);
+  }
+  for (const m of meetings || []) {
+    consider(m.last_edited_at);
+    consider(m.requested_at);
+  }
+  if (latest == null) {
+    return { value: '—', sub: 'no activity logged', tone: 'gray' };
+  }
+  const hoursAgo = (Date.now() - latest) / 3600000;
+  const tone = hoursAgo < 6 ? 'good' : hoursAgo < 24 ? 'warn' : 'bad';
+  return {
+    value: ago(new Date(latest).toISOString()),
+    sub: hoursAgo < 1 ? 'just now' : `${Math.floor(hoursAgo)}h ago`,
+    tone,
+  };
+}
+
+function computeInitiativeDwell(initiatives) {
+  return (initiatives || [])
+    .filter(i => !TERMINAL_INITIATIVE_STATES.has((i.status || '').toLowerCase()))
+    .map(i => {
+      const status = (i.status || 'unknown').toLowerCase();
+      const sh = i.status_history || [];
+      const lastChange = sh.length ? sh[sh.length - 1].at : (i.last_edited_at || i.created_at);
+      let dwellH = null;
+      if (lastChange) {
+        const ms = Date.now() - new Date(lastChange).getTime();
+        if (!isNaN(ms)) dwellH = Math.floor(ms / 3600000);
+      }
+      const threshold = STUCK_THRESHOLD_H[status] ?? STUCK_THRESHOLD_H.default;
+      const stuck = dwellH != null && dwellH >= threshold;
+      return { id: i.id, title: i.title || 'Untitled', status, dwellH, stuck, threshold };
+    })
+    .sort((a, b) => (b.dwellH || 0) - (a.dwellH || 0));
+}
+
+function renderInitDwellRow(r) {
+  const stateClass = r.stuck ? 'cyc-state-stuck' : r.dwellH != null && r.dwellH >= 6 ? 'cyc-state-aging' : 'cyc-state-fresh';
+  const dwellLabel = r.dwellH == null ? '—' : `${r.dwellH}h`;
+  const badge = r.stuck
+    ? `<span class="cyc-stuck-badge">⚠ stuck ${r.dwellH}h</span>`
+    : r.dwellH != null && r.dwellH >= 6
+      ? `<span class="cyc-stuck-badge cyc-stuck-badge-soft">in ${escapeHtml(r.status.replace(/_/g, ' '))} for ${r.dwellH}h</span>`
+      : '';
+  return `
+    <tr>
+      <td>
+        <div class="cyc-init-id mono">${escapeHtml(r.id)}</div>
+        <div class="cyc-init-title">${escapeHtml(r.title)}</div>
+      </td>
+      <td><span class="cyc-state-pill ${stateClass}">${escapeHtml(r.status.replace(/_/g, ' '))}</span></td>
+      <td class="cyc-na">—</td>
+      <td class="cyc-th-right">
+        <div class="cyc-dwell-cell">
+          <span class="cyc-dwell-val mono">${dwellLabel}</span>
+          ${badge}
+        </div>
+      </td>
+    </tr>
+  `;
+}
+
+// Funnel stage order matches the natural left-to-right flow of work through
+// statuses. Statuses outside this list get bucketed under "other" at the end.
+const FUNNEL_ORDER = [
+  'not_started',
+  'work_ready',
+  'awaiting_approval',
+  'approved',
+  'executing',
+  'in_progress',
+  'pushed',
+  'done',
+  'blocked',
+  'failed',
+];
+
+function computeTaskFunnel(tasks) {
+  const counts = {};
+  let total = 0;
+  for (const t of tasks || []) {
+    const s = (t.status || 'unknown').toLowerCase();
+    // Exclude cancelled/rejected from the funnel — they're not in-flight work.
+    if (s === 'cancelled' || s === 'rejected') continue;
+    counts[s] = (counts[s] || 0) + 1;
+    total++;
+  }
+  const stages = [];
+  for (const k of FUNNEL_ORDER) {
+    if (counts[k]) stages.push({ key: k, count: counts[k] });
+  }
+  for (const k of Object.keys(counts)) {
+    if (!FUNNEL_ORDER.includes(k)) stages.push({ key: k, count: counts[k] });
+  }
+  return { stages, total };
+}
+
+function renderTaskFunnel(funnel) {
+  if (funnel.total === 0) {
+    return `<div class="empty-state">No tasks tracked in this BU yet.</div>`;
+  }
+  const max = Math.max(1, ...funnel.stages.map(s => s.count));
+  return `
+    <div class="cyc-funnel">
+      ${funnel.stages.map(s => {
+        const widthPct = Math.round((s.count / max) * 100);
+        return `
+          <div class="cyc-funnel-row">
+            <div class="cyc-funnel-key">${escapeHtml(s.key.replace(/_/g, ' '))}</div>
+            <div class="cyc-funnel-track">
+              <div class="cyc-funnel-fill cyc-funnel-fill-${s.key}" style="width:${Math.max(2, widthPct)}%"></div>
+            </div>
+            <div class="cyc-funnel-count mono">${s.count}</div>
+          </div>
+        `;
+      }).join('')}
+    </div>
   `;
 }
