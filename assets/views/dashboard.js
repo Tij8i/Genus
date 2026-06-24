@@ -660,7 +660,7 @@ function renderCycleHealthSection(activePlan, initiatives, tasks, meetings, time
   return `
     <section>
       <div class="section-rule">
-        <span class="card-section-label">05 · Cycle health</span>
+        <span class="card-section-label">06 · Cycle health</span>
         <div class="rule-line"></div>
       </div>
 
