@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Investor view — Medivara</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; max-width: 720px; margin: 60px auto; padding: 0 24px; color: #1a1a1a; background: #fafafa; }
+    .header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 24px; }
+    .header h1 { font-size: 22px; margin: 0; }
+    .badge { font-size: 11px; color: #888; }
+    .kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .kpi { background: #fff; border: 1px solid #e6e6e6; border-radius: 8px; padding: 18px 20px; }
+    .kpi-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #888; margin-bottom: 6px; }
+    .kpi-value { font-size: 28px; font-weight: 600; }
+    .kpi-meta { font-size: 12px; color: #666; margin-top: 6px; }
+    .health-green { color: #167d3a; } .health-yellow { color: #b07a00; } .health-red { color: #c12525; }
+    .footer { margin-top: 32px; font-size: 11px; color: #999; }
+    .auth-fail { background: #fff; border: 1px solid #f4c1c1; border-radius: 8px; padding: 36px 24px; color: #c12525; text-align: center; }
+    .auth-fail h2 { margin: 0 0 8px; font-size: 22px; }
+    .conf-low { color: #b07a00; font-size: 11px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Medivara — investor view</h1>
+    <span class="badge" id="as-of"></span>
+  </div>
+  <main id="content"><div class="kpi"><div class="kpi-value">Loading…</div></div></main>
+  <div class="footer">Read-only view. Numbers refresh daily. <span id="conf-note"></span></div>
+
+  <script type="module">
+    // Dev-only signing secret (Session #18 Q3=B). Rotate before production via Cloudflare Pages env
+    // INVESTOR_SIGNING_SECRET. See modules/finance/INVESTOR_SIGNING_ROTATION.md.
+    const DEV_SIGNING_SECRET = 'medivara-dev-only-rotate-before-prod-9c5a';
+
+    async function hmacHex(secret, message) {
+      const enc = new TextEncoder();
+      const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+      const sig = await crypto.subtle.sign('HMAC', key, enc.encode(message));
+      return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    function getParam(name) { return new URL(location.href).searchParams.get(name); }
+    function fmtEUR(n) { return '€' + Math.round(n).toLocaleString('en-US'); }
+    function trendArrow(t) { return { up: '↑', down: '↓', flat: '→' }[t] || '→'; }
+    function healthClass(v) { return { green: 'health-green', yellow: 'health-yellow', red: 'health-red' }[v] || ''; }
+
+    function renderKpis(kpis, asOf) {
+      document.getElementById('as-of').textContent = 'As of ' + (asOf || '—');
+      const labels = {
+        runway_days: 'Runway',
+        gross_revenue_3mo: 'Gross revenue (3mo)',
+        burn_rate_3mo: 'Burn rate (3mo avg)',
+        cash_position: 'Cash position',
+        health_indicator: 'Health',
+      };
+      let html = '<div class="kpis">';
+      let hasLowConf = false;
+      for (const k of kpis) {
+        const lab = labels[k.kpi_id] || k.kpi_id;
+        let val = k.value, cls = '';
+        if (k.kpi_id === 'runway_days') val = (val >= 9999 ? '∞ days' : (val + ' days'));
+        else if (k.kpi_id === 'health_indicator') { cls = healthClass(val); val = String(val).toUpperCase(); }
+        else val = fmtEUR(val);
+        const conf = k.confidence_layer === 'low' ? ' <span class="conf-low">⚠ low confidence</span>' : '';
+        if (k.confidence_layer === 'low') hasLowConf = true;
+        html += `<div class="kpi"><div class="kpi-label">${lab}</div><div class="kpi-value ${cls}">${val} <span style="font-size:14px;color:#999;">${trendArrow(k.trend)}</span></div><div class="kpi-meta">${conf}</div></div>`;
+      }
+      html += '</div>';
+      document.getElementById('content').innerHTML = html;
+      if (hasLowConf) document.getElementById('conf-note').textContent = 'Some numbers carry a low-confidence marker due to incomplete source data.';
+    }
+
+    function renderAuthFail(reason) {
+      document.getElementById('content').innerHTML = `<div class="auth-fail"><h2>Access denied</h2><p>${reason}</p></div>`;
+    }
+
+    // Hardcoded fixture KPIs for v1 (Q2=B fixture + Q3=B dev secret).
+    // Production: fetch from substrate at /api/substrate?path=dashboard/public/data/bus/<bu>/finance/snapshots/investor.json
+    const FIXTURE_KPIS = {
+      medivara: {
+        generated_at: '2026-06-25T20:00:00Z',
+        kpis: [
+          { kpi_id: 'runway_days', value: 365, trend: 'up', confidence_layer: 'high' },
+          { kpi_id: 'gross_revenue_3mo', value: 169600, trend: 'up', confidence_layer: 'low' },
+          { kpi_id: 'burn_rate_3mo', value: 0, trend: 'flat', confidence_layer: 'high' },
+          { kpi_id: 'cash_position', value: 212750, trend: 'up', confidence_layer: 'high' },
+          { kpi_id: 'health_indicator', value: 'green', trend: 'flat', confidence_layer: 'high' },
+        ],
+      },
+    };
+
+    async function main() {
+      const bu = getParam('bu') || 'medivara';
+      const token = getParam('token');
+      const expires = parseInt(getParam('e') || '0', 10);
+      if (!token) return renderAuthFail('Missing token.');
+      if (!expires || Date.now() / 1000 > expires) return renderAuthFail('Link expired.');
+
+      const payload = bu + '|' + expires;
+      let expected;
+      try {
+        expected = await hmacHex(DEV_SIGNING_SECRET, payload);
+      } catch (e) {
+        return renderAuthFail('Signature verification failed.');
+      }
+      if (token !== expected) return renderAuthFail('Invalid signature.');
+
+      const data = FIXTURE_KPIS[bu];
+      if (!data) return renderAuthFail('Unknown BU.');
+      renderKpis(data.kpis, data.generated_at);
+    }
+    main();
+  </script>
+</body>
+</html>
