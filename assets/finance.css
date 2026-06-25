@@ -1,0 +1,29 @@
+/* Finance module v1 — minimal styles for substrate-backed views */
+.finance-shell { padding: 16px; }
+.finance-header h1 { margin: 0 0 4px; font-size: 18px; }
+.finance-tab-chip { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: var(--surface2); color: var(--text-dim); margin-left: 8px; vertical-align: middle; }
+.finance-meta { font-size: 11px; color: var(--text-faint); margin-bottom: 18px; }
+.finance-section { margin-top: 20px; }
+.finance-section h2 { font-size: 14px; font-weight: 600; margin: 0 0 10px; color: var(--text); }
+.finance-headline-strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; }
+.finance-factor-label { font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.06em; }
+.finance-factor-value { font-size: 14px; font-weight: 600; color: var(--text); margin-top: 4px; }
+.finance-bignum { font-size: 28px; font-weight: 600; }
+.finance-bignum-sub { font-size: 12px; color: var(--text-dim); font-weight: 400; }
+.finance-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.finance-table th, .finance-table td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); }
+.finance-table th { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-faint); }
+.finance-note { font-size: 11px; color: var(--text-dim); }
+.finance-pill { font-size: 10px; padding: 2px 8px; background: var(--accent); color: var(--bg); border-radius: 10px; margin-left: 6px; }
+.conf-marker { color: var(--yellow); font-size: 11px; padding: 1px 6px; background: var(--yellow-bg); border-radius: 8px; }
+.proj-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; font-size: 11px; color: var(--text-dim); }
+.proj-point { padding: 4px; background: var(--surface); border-radius: 4px; }
+.rec-card { margin-bottom: 12px; }
+.rec-head { display: flex; gap: 12px; align-items: baseline; margin-bottom: 8px; font-size: 11px; }
+.rec-id { font-family: var(--mono); color: var(--text-faint); }
+.rec-cat { background: var(--surface2); padding: 2px 8px; border-radius: 8px; }
+.rec-conf { font-size: 10px; }
+.rec-row { font-size: 12px; margin: 4px 0; }
+.rec-reasoning { font-size: 12px; color: var(--text-dim); margin-top: 8px; padding: 8px; background: var(--surface); border-radius: 4px; }
+.rec-impact { font-size: 11px; color: var(--text-faint); margin-top: 6px; }
+.runway-conflict { margin-top: 12px; padding: 10px; background: var(--yellow-bg); border-radius: 6px; color: var(--text); font-size: 12px; }

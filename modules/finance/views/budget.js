@@ -1,209 +1,168 @@
-// Budget view — lightweight venture budgeting (GEN-99).
+// Budget (Cash + Runway) view — Medivara Finance Module v1.
 //
-// v1 scope per the GEN-99 handoff:
-//   - Planned vs actual spend across categories (agents/runtime, infra,
-//     marketing, tools)
-//   - Burn vs the active plan
-//   - Runway
+// Reads materialized snapshots from bus/medivara/finance/snapshots/cash.json
+// and runway.json (written by the Orchestrator-side Python heartbeat).
 //
-// Real accounting/Stripe integration is GEN-89 (Finance Module). For now we
-// drive the visualization from a small in-file v1 mock that exercises the
-// shape of the cards. The Budget screen exists so the IA + design language
-// can ship; the numbers get wired up next.
+// Renders SPEC §3 "Cash" tab content + the six always-visible factors strip
+// + the active Recommendations card surface (filed by CAP-FIN-RECOMMEND-*).
+//
+// Substrate is fetched via the /api/substrate Pages Function which proxies
+// to the Orchestrator repo. Per Session #18 shipping plan (Phase 3, GEN-132).
 
 import { escapeHtml } from '../../../assets/utils.js';
+import { fetchSubstrateJson, fetchSubstrateJsonl } from '../../../assets/substrate-client.js';
 
-const EUR = (n) => '€' + (Math.round(n).toLocaleString('en-US'));
-const PCT = (n) => `${Math.round(n)}%`;
+const BU = 'medivara';
+const baseRel = (file) => `dashboard/public/data/bus/${BU}/finance/${file}`;
+const EUR = (n) => '€' + (Math.round(n || 0).toLocaleString('en-US'));
 
-// ============ v1 mock data ============
-// Period is the active month. Each category has a planned + actual figure.
-// Tagged with a posture: under_plan | on_plan | over_plan based on % used vs
-// pace through the period.
-const PERIOD = {
-  label: 'June 2026',
-  daysElapsed: 24,
-  daysTotal: 30,
-};
-
-const CATEGORIES = [
-  { id: 'agents-runtime', name: 'Agents & runtime', planned: 1800, actual: 1420,
-    note: 'Anthropic API + Paperclip runtime.' },
-  { id: 'infra', name: 'Infrastructure', planned: 420, actual: 388,
-    note: 'Cloudflare Pages, Workers, R2.' },
-  { id: 'marketing', name: 'Marketing', planned: 600, actual: 240,
-    note: 'Landing-page experiments only this month.' },
-  { id: 'tools', name: 'Tools', planned: 380, actual: 502,
-    note: 'Linear, Notion, design tools. Slight overspend — see Costs.' },
-];
-
-const CASH_ON_HAND = 38400;
-const MONTHLY_BURN_3MO = 3120;
-
-function paceFor(cat, period) {
-  const expectedAt = cat.planned * (period.daysElapsed / period.daysTotal);
-  if (cat.actual > cat.planned) return 'over_plan';
-  if (cat.actual > expectedAt * 1.05) return 'hot';
-  if (cat.actual < expectedAt * 0.7) return 'cool';
-  return 'on_plan';
-}
-
-function paceChip(pace) {
-  const map = {
-    on_plan: { label: 'On plan', cls: 'budget-pace-on' },
-    hot:     { label: 'Hot',     cls: 'budget-pace-hot' },
-    cool:    { label: 'Under',   cls: 'budget-pace-cool' },
-    over_plan: { label: 'Over plan', cls: 'budget-pace-over' },
-  };
-  const m = map[pace] || map.on_plan;
-  return `<span class="budget-pace-chip ${m.cls}">${m.label}</span>`;
-}
-
-// ============ Render ============
-
-export function renderBudget(_ctx) {
+export async function renderBudget(ctx) {
   const root = document.getElementById('route-budget');
-  if (!root) return;
+  root.innerHTML = '<div class="card"><div class="card-body">Loading Finance snapshots…</div></div>';
 
-  const totalPlanned = CATEGORIES.reduce((s, c) => s + c.planned, 0);
-  const totalActual = CATEGORIES.reduce((s, c) => s + c.actual, 0);
-  const pctUsed = totalPlanned > 0 ? (totalActual / totalPlanned) * 100 : 0;
-  const pacePct = (PERIOD.daysElapsed / PERIOD.daysTotal) * 100;
-  const runwayMonths = MONTHLY_BURN_3MO > 0 ? CASH_ON_HAND / MONTHLY_BURN_3MO : null;
+  const [cash, runway, headline, recs, conf, onboarding] = await Promise.all([
+    fetchSubstrateJson(baseRel('snapshots/cash.json'), null),
+    fetchSubstrateJson(baseRel('snapshots/runway.json'), null),
+    fetchSubstrateJson(baseRel('snapshots/headline.json'), null),
+    fetchSubstrateJsonl(baseRel('RECOMMENDATION_LEDGER.jsonl')),
+    fetchSubstrateJson(baseRel('CONFIDENCE_STATE.json'), { per_figure: {} }),
+    fetchSubstrateJson(baseRel('ONBOARDING_STATE.json'), null),
+  ]);
 
+  if (!onboarding || onboarding.status !== 'passed') {
+    root.innerHTML = renderOnboardingBlock(onboarding);
+    return;
+  }
+
+  const pending = (recs || []).filter(r => r.outcome === 'pending');
   root.innerHTML = `
-    ${renderConnectHint()}
-    ${renderSummaryCard({ totalPlanned, totalActual, pctUsed, pacePct, runwayMonths })}
-    ${renderCategoriesCard()}
-    ${renderBurnCard()}
-  `;
-}
+    <div class="finance-shell">
+      <header class="finance-header">
+        <h1>🪙 Finance — Medivara <span class="finance-tab-chip">Cash · Runway</span></h1>
+        <div class="finance-meta">L1 onboarding: <strong>passed</strong> · Connector: <code>moneybird_medivara</code> (fixture) · Heartbeat: ${escapeHtml(cash?.generated_at || '—')}</div>
+      </header>
 
-function renderConnectHint() {
-  return `
-    <div class="budget-hint mono">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
-      Demo numbers. Wiring to accounting + Stripe ships with the Finance module (GEN-89).
+      ${headline ? renderHeadlineStrip(headline) : ''}
+
+      <section class="finance-section">
+        <h2>Cash position</h2>
+        ${renderCashCard(cash, conf)}
+      </section>
+
+      <section class="finance-section">
+        <h2>Runway</h2>
+        ${renderRunwayCard(runway, conf)}
+      </section>
+
+      <section class="finance-section">
+        <h2>Recommendations <span class="finance-pill">${pending.length} pending</span></h2>
+        ${pending.length === 0
+          ? '<div class="card"><div class="card-body">No open recommendations.</div></div>'
+          : pending.map(renderRecCard).join('')}
+      </section>
     </div>
   `;
 }
 
-function renderSummaryCard({ totalPlanned, totalActual, pctUsed, pacePct, runwayMonths }) {
-  const tone = pctUsed > 100 ? 'over' : (pctUsed > pacePct + 5 ? 'hot' : 'on');
-  return `
-    <div class="card budget-summary-card">
-      <div class="card-header-row">
-        <div class="card-header-left">
-          <span class="card-title">${escapeHtml(PERIOD.label)}</span>
-          <p class="card-sub">Day ${PERIOD.daysElapsed} of ${PERIOD.daysTotal} — burn vs the active plan.</p>
-        </div>
-        ${paceChip(tone === 'over' ? 'over_plan' : tone === 'hot' ? 'hot' : 'on_plan')}
-      </div>
-
-      <div class="budget-summary-grid">
-        <div class="budget-stat">
-          <span class="mono budget-stat-label">SPENT</span>
-          <span class="budget-stat-value">${EUR(totalActual)}</span>
-          <span class="budget-stat-sub">of ${EUR(totalPlanned)} planned</span>
-        </div>
-        <div class="budget-stat">
-          <span class="mono budget-stat-label">% USED</span>
-          <span class="budget-stat-value">${PCT(pctUsed)}</span>
-          <span class="budget-stat-sub">vs ${PCT(pacePct)} of period elapsed</span>
-        </div>
-        <div class="budget-stat">
-          <span class="mono budget-stat-label">RUNWAY</span>
-          <span class="budget-stat-value">${runwayMonths != null ? runwayMonths.toFixed(1) + ' mo' : '—'}</span>
-          <span class="budget-stat-sub">at ${EUR(MONTHLY_BURN_3MO)}/mo (3-mo avg)</span>
-        </div>
-      </div>
-
-      <div class="budget-summary-bar-wrap">
-        <div class="budget-summary-bar">
-          <div class="budget-summary-fill budget-summary-fill-${tone}" style="width:${Math.min(100, pctUsed).toFixed(1)}%"></div>
-          <div class="budget-summary-pace-marker" style="left:${pacePct.toFixed(1)}%" title="Pace: ${PCT(pacePct)} of period elapsed"></div>
-        </div>
-        <div class="budget-summary-axis mono">
-          <span>€0</span>
-          <span>${EUR(totalPlanned)}</span>
-        </div>
-      </div>
-    </div>
-  `;
-}
-
-function renderCategoriesCard() {
+function renderOnboardingBlock(state) {
+  const checks = state?.checks || {};
   return `
     <div class="card">
-      <div class="card-header-row">
-        <div class="card-header-left">
-          <span class="card-title">Categories</span>
-          <p class="card-sub">Planned vs actual spend, by area.</p>
-        </div>
+      <div class="card-body">
+        <h2>🪙 Finance — L1 onboarding incomplete</h2>
+        <p>Finance Stewart of Medivara refuses to render numbers until onboarding completeness check passes (PLAYBOOK §4).</p>
+        <ul>
+          <li>Connector probe: ${checks.connector_probe?.pass ? '✅' : '❌'} — ${escapeHtml(checks.connector_probe?.detail || '—')}</li>
+          <li>Category coverage: ${checks.category_coverage?.pass ? '✅' : '❌'} — missing: ${(checks.category_coverage?.missing || []).join(', ') || 'none'}</li>
+          <li>Data freshness: ${checks.data_freshness?.pass ? '✅' : '❌'} — last sync ${escapeHtml(checks.data_freshness?.last_sync_at || '—')}</li>
+          <li>Identity binding: ${checks.identity_binding?.pass ? '✅' : '❌'} — ${escapeHtml(checks.identity_binding?.detail || '—')}</li>
+        </ul>
+        <p>Run the heartbeat: <code>python -m dashboard.scripts.finance.heartbeat --bu medivara</code></p>
       </div>
-      <div class="budget-cat-list">
-        ${CATEGORIES.map(renderCategoryRow).join('')}
-      </div>
-    </div>
-  `;
+    </div>`;
 }
 
-function renderCategoryRow(cat) {
-  const pace = paceFor(cat, PERIOD);
-  const pct = cat.planned > 0 ? (cat.actual / cat.planned) * 100 : 0;
-  const fillCls = pct > 100 ? 'budget-cat-fill-over' : pct > (PERIOD.daysElapsed / PERIOD.daysTotal) * 100 + 5 ? 'budget-cat-fill-hot' : 'budget-cat-fill-on';
-  return `
-    <div class="budget-cat-row">
-      <div class="budget-cat-row-head">
-        <span class="budget-cat-name">${escapeHtml(cat.name)}</span>
-        ${paceChip(pace)}
-      </div>
-      <div class="budget-cat-bar">
-        <div class="budget-cat-fill ${fillCls}" style="width:${Math.min(100, pct).toFixed(1)}%"></div>
-      </div>
-      <div class="budget-cat-row-foot mono">
-        <span>${EUR(cat.actual)} <span class="budget-cat-foot-faint">/ ${EUR(cat.planned)}</span></span>
-        <span>${PCT(pct)}</span>
-      </div>
-      ${cat.note ? `<p class="budget-cat-note">${escapeHtml(cat.note)}</p>` : ''}
-    </div>
-  `;
+function renderHeadlineStrip(h) {
+  const factor = (f) => {
+    const label = escapeHtml(f.label);
+    let value = '—';
+    if (typeof f.value_eur === 'number') value = EUR(f.value_eur);
+    else if (typeof f.value_days === 'number') value = `${f.value_days} d`;
+    else if (typeof f.value_pct === 'number') value = `${f.value_pct.toFixed(1)}%`;
+    const conf = f.confidence === 'low' ? ' <span class="conf-marker" title="Why this might be wrong">⚠ low</span>' : '';
+    return `<div class="finance-factor"><div class="finance-factor-label">${label}</div><div class="finance-factor-value">${value}${conf}</div></div>`;
+  };
+  return `<div class="finance-headline-strip">${(h.factors || []).map(factor).join('')}</div>`;
 }
 
-function renderBurnCard() {
-  // Compact monthly burn series; real data lands with the Finance module.
-  // For v1 we surface the 3-month rolling average + the cash-on-hand line so
-  // the operator sees runway derivation, not just the headline number.
-  const series = [
-    { month: 'Apr', burn: 2880 },
-    { month: 'May', burn: 3100 },
-    { month: 'Jun', burn: 3380 },
-  ];
-  const max = Math.max(...series.map(s => s.burn)) * 1.1;
+function renderCashCard(cash, conf) {
+  if (!cash) return '<div class="card"><div class="card-body">No cash snapshot.</div></div>';
+  const confTag = (key) => conf?.per_figure?.[key] === 'low' ? ' <span class="conf-marker" title="Source data partial">⚠ low</span>' : '';
+  const accounts = (cash.accounts || []).map(a => `<li><strong>${escapeHtml(a.name)}</strong>: ${EUR(a.current_balance)}</li>`).join('');
+  const proj30 = (cash.projection_30d || []).map(p => `<div class="proj-point">d+${p.day}: ${EUR(p.cash)}</div>`).join('');
+  const proj90 = (cash.projection_90d || []).map(p => `<div class="proj-point">d+${p.day}: ${EUR(p.cash)}</div>`).join('');
   return `
     <div class="card">
-      <div class="card-header-row">
-        <div class="card-header-left">
-          <span class="card-title">Burn</span>
-          <p class="card-sub">Last 3 months. 3-month average drives the runway number above.</p>
+      <div class="card-body">
+        <div class="finance-bignum">${EUR(cash.current_balance_eur)} <span class="finance-bignum-sub">current cash${confTag('cash_position')}</span></div>
+        <ul>${accounts}</ul>
+        <h3>30-day projection (tactical)</h3>
+        <div class="proj-row">${proj30}</div>
+        <h3>90-day projection (strategic)</h3>
+        <div class="proj-row">${proj90}</div>
+      </div>
+    </div>`;
+}
+
+function renderRunwayCard(runway, conf) {
+  if (!runway) return '<div class="card"><div class="card-body">No runway snapshot.</div></div>';
+  const days = runway.runway_days >= 9999 ? '∞' : runway.runway_days;
+  const draw = runway.runway_with_planned_draw;
+  const th = runway.thresholds || {};
+  const confTag = conf?.per_figure?.runway_days === 'low' ? ' <span class="conf-marker">⚠ low</span>' : '';
+  const drawNote = draw !== null && draw !== undefined ? `
+      <div class="runway-conflict">
+        If planned founder draw goes through: runway drops to <strong>${draw} d</strong> (threshold: ${th.draw_vs_runway_block_days} d).
+      </div>` : '';
+  return `
+    <div class="card">
+      <div class="card-body">
+        <div class="finance-bignum">${days} d <span class="finance-bignum-sub">runway${confTag}</span></div>
+        <div>Threshold: <strong>${th.runway_alert_days} d</strong> — status:
+          ${runway.runway_days >= th.runway_alert_days ? '🟢 healthy' : '🟡 watch'}</div>
+        ${drawNote}
+      </div>
+    </div>`;
+}
+
+function renderRecCard(r) {
+  const meta = r.target_ref || {};
+  const cur = meta.current_state || {};
+  const prop = meta.proposed_state || {};
+  const conf = r.confidence === 'low' ? '⚠ low' : '✅ high';
+  let body = '';
+  if (r.category === 'expense-recategorization') {
+    body = `
+      <div class="rec-row"><strong>Vendor:</strong> ${escapeHtml(cur.vendor || '—')}</div>
+      <div class="rec-row"><strong>Current category:</strong> <code>${escapeHtml(cur.category || '—')}</code></div>
+      <div class="rec-row"><strong>Proposed:</strong> <code>${escapeHtml(prop.category || '—')}</code></div>`;
+  } else if (r.category === 'founder-draw-adjustment') {
+    body = `
+      <div class="rec-row"><strong>Founder:</strong> ${escapeHtml(cur.founder_name || '—')}</div>
+      <div class="rec-row"><strong>Requested:</strong> ${EUR(cur.requested_amount_eur)} for ${escapeHtml(cur.requested_month || '')}</div>
+      <div class="rec-row"><strong>Suggested:</strong> ${EUR(prop.suggested_amount_eur)}</div>`;
+  }
+  return `
+    <div class="card rec-card">
+      <div class="card-body">
+        <div class="rec-head">
+          <span class="rec-id mono">${escapeHtml(r.recommendation_id)}</span>
+          <span class="rec-cat">${escapeHtml(r.category)}</span>
+          <span class="rec-conf">${conf}</span>
         </div>
-        <span class="mono budget-burn-avg">avg ${EUR(MONTHLY_BURN_3MO)}/mo</span>
+        ${body}
+        <div class="rec-reasoning">${escapeHtml(r.reasoning || '')}</div>
+        ${r.runway_impact_days ? `<div class="rec-impact">Runway impact: ${r.runway_impact_days} days</div>` : ''}
       </div>
-      <div class="budget-burn-chart">
-        ${series.map(s => `
-          <div class="budget-burn-col">
-            <div class="budget-burn-bar-wrap">
-              <div class="budget-burn-bar" style="height:${((s.burn / max) * 100).toFixed(1)}%" title="${EUR(s.burn)}"></div>
-            </div>
-            <span class="mono budget-burn-month">${s.month}</span>
-            <span class="mono budget-burn-val">${EUR(s.burn)}</span>
-          </div>
-        `).join('')}
-      </div>
-      <div class="budget-cash-row">
-        <span class="mono budget-cash-label">CASH ON HAND</span>
-        <span class="budget-cash-value">${EUR(CASH_ON_HAND)}</span>
-      </div>
-    </div>
-  `;
+    </div>`;
 }
