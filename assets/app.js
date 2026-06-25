@@ -425,6 +425,12 @@ async function boot() {
       // Add-a-* actions are disabled (v0.8) — their disabled attribute
       // blocks clicks. Manage-people still navigates.
       wsMenu.querySelector('[data-action="manage-people"]')?.addEventListener('click', () => { wsMenu.hidden = true; window.location.hash = '#people'; });
+      // Add a venture → minimal modal flow (Session #18 Initiative #2 v1)
+      wsMenu.querySelector('[data-action="add-venture"]')?.addEventListener('click', async () => {
+        wsMenu.hidden = true;
+        wsBtn.setAttribute('aria-expanded', 'false');
+        await addVentureFlow();
+      });
       // Click outside to close
       setTimeout(() => {
         document.addEventListener('click', function closeOnce() {
@@ -624,6 +630,43 @@ function renderSettings() {
   );
 }
 
+// "Add a venture" — minimal v1 flow per Session #18 Initiative #2.
+// Per operator: keep it simple; this just creates an empty installation. Module
+// install + agent setup happen later from Modules / People surfaces.
+async function addVentureFlow() {
+  const display_name = window.prompt('New venture name (e.g. "Acme Corp"):');
+  if (!display_name) return;
+  const trimmed = display_name.trim();
+  if (!trimmed) return;
+  // Auto-derive id from name: lowercase, replace non-alphanum with hyphens.
+  const suggestedId = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30);
+  const id = window.prompt(`URL id for this venture (lowercase, letters/digits/hyphens):`, suggestedId);
+  if (!id) return;
+  const idTrimmed = id.trim();
+  if (!idTrimmed) return;
+
+  try {
+    const res = await fetch('/api/create-bu', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: idTrimmed, display_name: trimmed }),
+    });
+    const result = await res.json();
+    if (!res.ok || !result.ok) {
+      window.alert('Could not create venture: ' + (result.message || `HTTP ${res.status}`));
+      return;
+    }
+    // Switch to the new BU
+    localStorage.setItem('genus.currentBu', result.bu.id);
+    const url = new URL(location.href);
+    url.searchParams.set('bu', result.bu.id);
+    url.hash = '';
+    location.href = url.toString();
+  } catch (e) {
+    window.alert('Network error creating venture: ' + (e.message || e));
+  }
+}
+
 // Filter sidebar nav links: hide routes that are not in the current BU's installed
 // modules + the always-visible core_routes. Reads `module_route_map` + `core_routes`
 // from the registry. Defensive — if registry missing, leave nav as-is.
@@ -671,9 +714,9 @@ function renderWsMenu(identity) {
       <span class="ws-menu-action-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg></span>
       Add a person<span class="soon-tag">soon</span>
     </button>
-    <button type="button" class="ws-menu-action btn-soon" data-action="add-venture" disabled title="Add-a-venture flow ships in v0.8">
+    <button type="button" class="ws-menu-action" data-action="add-venture" title="Create a new BU (empty install)">
       <span class="ws-menu-action-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/></svg></span>
-      Add a venture<span class="soon-tag">soon</span>
+      Add a venture
     </button>
     <button type="button" class="ws-menu-action btn-soon" data-action="add-agent" disabled title="Add-an-agent flow ships in v0.8">
       <span class="ws-menu-action-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8.5" width="16" height="11" rx="3.2"/><path d="M12 4.8v3.7"/><circle cx="12" cy="3.6" r="1.4"/></svg></span>
