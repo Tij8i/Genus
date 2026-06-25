@@ -4,6 +4,7 @@
 import { escapeHtml } from '../../../assets/utils.js';
 
 const EUR = (n) => '€' + (Math.round(n || 0).toLocaleString('en-US'));
+const CURRENT_BU = new URLSearchParams(location.search).get('bu') || localStorage.getItem('genus.currentBu') || 'medivara';
 
 const SALARIES = [
   { name: 'Senior Engineer 1', monthly_gross: 7000 },

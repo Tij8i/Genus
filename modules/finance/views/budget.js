@@ -5,6 +5,7 @@
 import { escapeHtml } from '../../../assets/utils.js';
 
 const EUR = (n) => '€' + (Math.round(n || 0).toLocaleString('en-US'));
+const CURRENT_BU = new URLSearchParams(location.search).get('bu') || localStorage.getItem('genus.currentBu') || 'medivara';
 
 // ============ Medivara dummy data ============
 

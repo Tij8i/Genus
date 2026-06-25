@@ -82,9 +82,20 @@ function wireNavGroups() {
 }
 
 // v1: hardcoded BU. Multi-BU switcher slot exists in the sidebar but only
-// one BU is wired today (Tuto on Genus-native substrate). Per [[v06-mockup-interpretation]]
-// + decision 5 in the migration plan, others appear as they migrate.
-const BU = 'tuto';
+// Multi-BU resolution (Session #18 Initiative #2, 2026-06-25):
+// Reads ?bu=<id> from URL, falls back to localStorage, then to registry default.
+// Registry is loaded async at boot — see boot() for the fetch + apply step.
+function resolveCurrentBu(registry) {
+  const fromUrl = new URLSearchParams(location.search).get('bu');
+  if (fromUrl) return fromUrl;
+  const fromStorage = localStorage.getItem('genus.currentBu');
+  if (fromStorage) return fromStorage;
+  return registry?.default_bu || 'genus';
+}
+// Registry state — populated at boot from /api/substrate?path=dashboard/public/data/bus/_registry.json.
+let BU_REGISTRY = null;
+// Master BU constant — set at boot. Views read this via the existing baseRel() helpers.
+let BU = 'genus';
 
 // Viewer = logged-in user identity resolved from CF Access JWT + roles.json.
 // Per GEN-107: { email, role: 'admin'|'observer'|'unknown'|'unauthenticated',
@@ -298,6 +309,17 @@ async function boot() {
   // Apply saved appearance prefs (accent + density) before any render
   applyAppearance();
 
+  // Multi-BU bootstrap: load registry, resolve current BU from URL/localStorage/default,
+  // persist + filter sidebar nav before any view renders. (Session #18 Initiative #2)
+  try {
+    BU_REGISTRY = await fetchSubstrateJson('dashboard/public/data/bus/_registry.json', null);
+  } catch (e) {
+    console.warn('[genus] BU registry fetch failed; falling back to default', e);
+  }
+  BU = resolveCurrentBu(BU_REGISTRY);
+  localStorage.setItem('genus.currentBu', BU);
+  applyBuNavFilter(BU, BU_REGISTRY);
+
   // Wire sidebar nav-group collapse (GEN-99) BEFORE substrate fetch so the
   // sidebar still toggles even if substrate is unreachable (e.g. local file
   // serve without Pages Functions, or auth failure).
@@ -359,13 +381,19 @@ async function boot() {
     measurementsByKpi[k.id] = rows;
   }));
 
-  // Sidebar BU name from identity
+  // Sidebar BU name + avatar — prefer registry entry over per-BU identity.json
+  // so the switcher and the sidebar header agree on the same label/avatar.
+  const registryBu = (BU_REGISTRY?.business_units || []).find(b => b.id === BU);
   const buName = document.getElementById('bu-name');
   const buAvatar = document.getElementById('bu-avatar');
   const buMeta = document.getElementById('bu-meta');
-  if (buName) buName.textContent = identity?.name || BU;
-  if (buAvatar) buAvatar.textContent = (identity?.name || BU).charAt(0).toUpperCase();
-  if (buMeta) buMeta.textContent = `${identity?.category || 'BU'} · v0.7`;
+  const buDisplay = registryBu?.display_name || identity?.name || BU;
+  if (buName) buName.textContent = buDisplay;
+  if (buAvatar) {
+    buAvatar.textContent = registryBu?.avatar_initial || buDisplay.charAt(0).toUpperCase();
+    if (registryBu?.color) buAvatar.style.background = registryBu.color;
+  }
+  if (buMeta) buMeta.textContent = `${identity?.category || (registryBu?.modules_installed || []).join(', ') || 'BU'} · v0.7`;
 
   // Workspace switcher dropdown
   const wsBtn = document.getElementById('bu-switcher');
@@ -382,6 +410,18 @@ async function boot() {
       wsMenu.innerHTML = renderWsMenu(identity);
       wsMenu.hidden = false;
       wsBtn.setAttribute('aria-expanded', 'true');
+      // BU switcher click handlers — reload page with new ?bu= (hard swap v1; soft swap = v1.1)
+      wsMenu.querySelectorAll('.ws-menu-venture-switchable').forEach(row => {
+        row.addEventListener('click', () => {
+          const newBu = row.dataset.buId;
+          if (!newBu || newBu === BU) return;
+          localStorage.setItem('genus.currentBu', newBu);
+          const url = new URL(location.href);
+          url.searchParams.set('bu', newBu);
+          url.hash = ''; // start fresh on default route for the new BU
+          location.href = url.toString();
+        });
+      });
       // Add-a-* actions are disabled (v0.8) — their disabled attribute
       // blocks clicks. Manage-people still navigates.
       wsMenu.querySelector('[data-action="manage-people"]')?.addEventListener('click', () => { wsMenu.hidden = true; window.location.hash = '#people'; });
@@ -584,16 +624,48 @@ function renderSettings() {
   );
 }
 
+// Filter sidebar nav links: hide routes that are not in the current BU's installed
+// modules + the always-visible core_routes. Reads `module_route_map` + `core_routes`
+// from the registry. Defensive — if registry missing, leave nav as-is.
+function applyBuNavFilter(currentBu, registry) {
+  if (!registry || !registry.module_route_map) return;
+  const buEntry = (registry.business_units || []).find(b => b.id === currentBu);
+  if (!buEntry) return;
+  const installed = new Set(buEntry.modules_installed || []);
+  const visibleRoutes = new Set(registry.core_routes || []);
+  for (const m of installed) {
+    for (const r of (registry.module_route_map[m] || [])) visibleRoutes.add(r);
+  }
+  document.querySelectorAll('.nav-link[data-route]').forEach(a => {
+    const r = a.dataset.route;
+    a.style.display = visibleRoutes.has(r) ? '' : 'none';
+  });
+  // Hide nav-groups that have no visible children
+  document.querySelectorAll('.nav-group').forEach(g => {
+    const anyVisible = Array.from(g.querySelectorAll('.nav-link[data-route]')).some(a => a.style.display !== 'none');
+    g.style.display = anyVisible ? '' : 'none';
+  });
+}
+
 function renderWsMenu(identity) {
-  const name = identity?.name || 'Tuto';
-  const letter = name.charAt(0).toUpperCase();
+  const registry = BU_REGISTRY;
+  const currentBu = BU;
+  const list = (registry?.business_units || [{ id: currentBu, display_name: currentBu, avatar_initial: currentBu.charAt(0).toUpperCase(), color: 'var(--accent)' }]);
+  const ventureRows = list.map(b => {
+    const isCurrent = b.id === currentBu;
+    const checkOrSwitch = isCurrent
+      ? `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4.5 4.5L19 7"/></svg>`
+      : '';
+    const cls = isCurrent ? 'ws-menu-venture ws-menu-venture-current' : 'ws-menu-venture ws-menu-venture-switchable';
+    return `<div class="${cls}" data-bu-id="${b.id}" style="cursor:${isCurrent ? 'default' : 'pointer'}">
+      <span class="ws-menu-venture-avatar" style="background:${b.color || 'var(--accent)'}">${b.avatar_initial || b.display_name.charAt(0).toUpperCase()}</span>
+      <span class="ws-menu-venture-name">${b.display_name}</span>
+      ${checkOrSwitch}
+    </div>`;
+  }).join('');
   return `
     <div class="ws-menu-section-label mono">Ventures</div>
-    <div class="ws-menu-venture ws-menu-venture-current">
-      <span class="ws-menu-venture-avatar" style="background:var(--accent)">${letter}</span>
-      <span class="ws-menu-venture-name">${name} BU</span>
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4.5 4.5L19 7"/></svg>
-    </div>
+    ${ventureRows}
     <div class="ws-menu-divider"></div>
     <button type="button" class="ws-menu-action btn-soon" data-action="add-human" disabled title="Add-a-person flow ships in v0.8">
       <span class="ws-menu-action-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg></span>
