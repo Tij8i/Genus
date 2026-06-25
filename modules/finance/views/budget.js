@@ -11,7 +11,7 @@
 // shape of the cards. The Budget screen exists so the IA + design language
 // can ship; the numbers get wired up next.
 
-import { escapeHtml } from '../utils.js';
+import { escapeHtml } from '../../../assets/utils.js';
 
 const EUR = (n) => '€' + (Math.round(n).toLocaleString('en-US'));
 const PCT = (n) => `${Math.round(n)}%`;

@@ -1,0 +1,129 @@
+{
+  "$schema": "https://genus.work/schemas/module-manifest-0.7-draft-1.json",
+  "manifest_version": "0.7-draft-1",
+
+  "name": "finance",
+  "display_name": "Finance",
+  "version": "1.0.0-skeleton",
+  "summary": "Cash-flow monitoring + investor view on Moneybird. Read-only on bookkeeping; write on recommendation feed.",
+  "categories": ["connector", "surface"],
+  "tags": ["finance", "read-only-on-source", "enhances-operations"],
+
+  "genus_core": {
+    "compat_min": "0.7.0",
+    "compat_max": "1.x"
+  },
+
+  "runtime_adapter": {
+    "contract_version": "1.0",
+    "default_implementation": "paperclip",
+    "required_features": ["task_substrate", "interactions", "scheduled_recipes"]
+  },
+
+  "depends_on_modules": [],
+  "conflicts_with_modules": [],
+
+  "agent": {
+    "default_native": {
+      "identity_ref": "./agent/IDENTITY.md",
+      "playbook_ref": "./agent/PLAYBOOK.md",
+      "memory_schema_ref": "./agent/MEMORY.schema.json",
+      "kpi_set_ref": "./agent/KPIS.md"
+    },
+    "binding_policy": {
+      "swappable": true,
+      "required_capability_tag": "finance",
+      "instruction_package_ref": "./instruction-package.md"
+    }
+  },
+
+  "views": {
+    "dashboard": [
+      {
+        "slot": "primary_nav",
+        "label": "Budget",
+        "route": "/budget",
+        "component_ref": "./views/budget.js",
+        "role_filter": ["founder", "operator"]
+      },
+      {
+        "slot": "primary_nav",
+        "label": "Costs",
+        "route": "/costs",
+        "component_ref": "./views/costs.js",
+        "role_filter": ["founder", "operator"]
+      },
+      {
+        "slot": "primary_nav",
+        "label": "Invoices",
+        "route": "/invoices",
+        "component_ref": "./views/invoices.js",
+        "role_filter": ["founder", "operator"]
+      }
+    ],
+    "settings": {
+      "component_ref": "./views/settings.js",
+      "schema_ref": "./settings.schema.json"
+    }
+  },
+
+  "connectors": {
+    "required": [
+      {
+        "type": "mcp",
+        "service": "moneybird",
+        "scopes": ["read:invoices", "read:ledger", "read:contacts"],
+        "owner": "genus_agent",
+        "documentation_ref": "./connectors/moneybird.md"
+      }
+    ],
+    "optional": []
+  },
+
+  "actions": {
+    "allowed": [
+      "fin.recommendation.expense_recategorization",
+      "fin.recommendation.founder_draw_adjustment"
+    ],
+    "forbidden": [
+      "fin.recommendation.fire_people",
+      "fin.recommendation.cut_product",
+      "fin.recommendation.vendor_swap",
+      "fin.recommendation.cancel_subscriptions",
+      "fin.recommendation.chase_receivables",
+      "fin.payment.initiate",
+      "fin.invoice.generate"
+    ],
+    "autonomy_ceiling": { "delegation": 2, "trust": 2, "speed": 3 }
+  },
+
+  "confidence_frame": {
+    "primitive": "ConfidenceFrame@1",
+    "mode": "silent_low_only",
+    "fallback_render": "always"
+  },
+
+  "data": {
+    "writes_to": [
+      "bus/finance/recommendations.jsonl",
+      "bus/finance/cash_state.json",
+      "bus/finance/alerts.jsonl"
+    ],
+    "reads_from_modules": [],
+    "tenancy": "per_installation",
+    "retention_days": 730
+  },
+
+  "instruction_package": {
+    "ref": "./instruction-package.md",
+    "version": "1.0.0-stub",
+    "format": "markdown_v1"
+  },
+
+  "metadata": {
+    "license": "MIT",
+    "maintainer": "Sage Stewart",
+    "first_referenced_issue": "GEN-89",
+    "homepage": "https://genus.work/modules/finance"
+  }
+}

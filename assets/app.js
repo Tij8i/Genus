@@ -29,9 +29,12 @@ import { renderSettings as renderSettingsView } from './views/settings.js';
 import { renderLearning as renderLearningView } from './views/learning.js';
 import { renderModules as renderModulesView } from './views/modules.js';
 import { renderPeople as renderPeopleView } from './views/people.js';
-import { renderBudget as renderBudgetView } from './views/budget.js';
-import { renderCosts as renderCostsView } from './views/costs.js';
-import { renderInvoices as renderInvoicesView } from './views/invoices.js';
+// Finance views migrated to the Finance Module folder (GEN-127). When the
+// module loader (GEN-113) ships, these direct imports are replaced by dynamic
+// resolution via `modules/finance/module.json` → `views.dashboard[*].component_ref`.
+import { renderBudget as renderBudgetView } from '../modules/finance/views/budget.js';
+import { renderCosts as renderCostsView } from '../modules/finance/views/costs.js';
+import { renderInvoices as renderInvoicesView } from '../modules/finance/views/invoices.js';
 import { renderConfidenceDemo as renderConfidenceDemoView } from './views/confidence-demo.js';
 import { openOnboarding } from './overlay.js';
 import { applyAppearance } from './appearance.js';
