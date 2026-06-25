@@ -128,9 +128,94 @@ async function installModuleFlow(modId, bu, install) {
       alert((install ? 'Install' : 'Uninstall') + ' failed: ' + (result.message || `HTTP ${res.status}`));
       return;
     }
-    // Reload so sidebar nav + views re-apply with new module set
-    location.reload();
+    if (install) {
+      // Genus Agent onboarding overlay — drives the post-install setup.
+      openGenusAgentOnboarding(modId, bu);
+    } else {
+      // Uninstall: just reload so nav filter re-applies.
+      location.reload();
+    }
   } catch (e) {
     alert('Network error: ' + (e.message || e));
   }
+}
+
+// Genus Agent onboarding flow — fires after a module install completes.
+// Per Session #18 v0.7: Genus Agent is the Admin archetype that walks the
+// operator through wiring connectors + agent setup for newly installed modules.
+function openGenusAgentOnboarding(modId, bu) {
+  // Per-module step content. Generic shape; module-specific copy.
+  const flows = {
+    finance: {
+      title: 'Finance installed for ' + bu,
+      subtitle: 'Genus Agent — module onboarding',
+      iconHtml: '🪙',
+      iconTint: '#0e9f6e',
+      steps: [
+        { title: '1. Substrate seeded', detail: 'Empty per-BU finance state created (ONBOARDING_STATE, CONFIDENCE_STATE, THRESHOLDS, RECOMMENDATION_LEDGER, DOMAIN_MODEL). The Finance Stewart of ' + bu + ' has a place to remember.', done: true },
+        { title: '2. Wire Moneybird connector', detail: 'Go to Settings → Wiring → Moneybird and provide the API key (or stay in fixture mode for now). Without this, the L1 onboarding check fails and views show "module not active".', done: false },
+        { title: '3. Run the first heartbeat', detail: 'Once the connector is wired, the Finance Stewart\'s first heartbeat seeds Cash / Runway / Costs / Revenue snapshots + fires the first recommendation pass.', done: false },
+        { title: '4. Review + tune thresholds', detail: 'Default thresholds (runway 90d, variance 15%, draw-vs-runway 60d) are seeded. Adjust them in Settings → Modules → Finance once you see the first heartbeat.', done: false },
+      ],
+    },
+    strategy: {
+      title: 'Strategy installed for ' + bu,
+      subtitle: 'Genus Agent — module onboarding',
+      iconHtml: '🎯',
+      iconTint: '#2f6bff',
+      steps: [
+        { title: '1. Strategy Stewart bound', detail: 'A Strategy Stewart instance now owns this BU. They\'ll run the universal planning loop: goals → initiatives → packages → tasks.', done: true },
+        { title: '2. Set the first goal', detail: 'Go to Planning to declare the first goal. The Stewart will draft an Initiative breakdown for your approval.', done: false },
+        { title: '3. Wire KPIs', detail: 'Each goal needs at least one KPI. Wire them in KPIs once goals are set.', done: false },
+      ],
+    },
+  };
+
+  const flow = flows[modId];
+  if (!flow) {
+    location.reload();
+    return;
+  }
+
+  const stepsHtml = flow.steps.map((s, i) => `
+    <div class="onboard-step">
+      <span class="onboard-step-num mono" style="background:${s.done ? 'var(--green)' : 'var(--surface2)'};color:${s.done ? '#fff' : 'var(--text-faint)'};">${s.done ? '✓' : (i + 1)}</span>
+      <div class="onboard-step-text" style="display:flex;flex-direction:column;gap:4px;">
+        <strong style="font-size:13px;color:var(--text);">${escapeHtml(s.title)}</strong>
+        <span style="font-size:12px;color:var(--text-dim);line-height:1.55;">${escapeHtml(s.detail)}</span>
+      </div>
+    </div>
+  `).join('');
+
+  const bodyHtml = `
+    <p style="font-size:13px;color:var(--text-dim);line-height:1.6;margin:0 0 18px;">
+      Walking you through what's done and what's next. Skip if you'd rather wire things up later — the module is installed either way.
+    </p>
+    <div class="onboard-steps">${stepsHtml}</div>
+  `;
+  const footerHtml = `
+    <button type="button" class="onboard-cancel" id="genus-agent-skip">Set up later</button>
+    <button type="button" class="onboard-begin" id="genus-agent-continue">Go to Settings → Wiring</button>
+  `;
+
+  openOverlay({
+    title: flow.title,
+    subtitle: flow.subtitle,
+    iconHtml: flow.iconHtml,
+    iconTint: flow.iconTint,
+    bodyHtml,
+    footerHtml,
+  });
+
+  document.getElementById('genus-agent-skip')?.addEventListener('click', () => {
+    closeOverlay();
+    location.reload();
+  });
+  document.getElementById('genus-agent-continue')?.addEventListener('click', () => {
+    closeOverlay();
+    // Reload to apply nav, then jump to Settings
+    const url = new URL(location.href);
+    url.hash = '#settings';
+    location.href = url.toString();
+  });
 }

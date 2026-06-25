@@ -68,5 +68,84 @@ export async function onRequestPost({ request, env }) {
     return jsonResponse(e.status || 500, { ok: false, message: 'Could not write registry: ' + (e.message || String(e)) });
   }
 
-  return jsonResponse(200, { ok: true, action, bu: buEntry });
+  // 4) On install of `finance`, seed per-BU substrate stubs so the views can
+  //    render an honest "onboarding pending" state instead of "Loading…" forever.
+  //    Failure here is non-fatal — registry is the source of truth.
+  let seeded = null;
+  if (action === 'install' && module_id === 'finance') {
+    seeded = await seedFinanceSubstrate(env.GITHUB_PAT, bu);
+  }
+
+  return jsonResponse(200, { ok: true, action, bu: buEntry, seeded });
+}
+
+// Seed bus/<bu>/finance/ with the 5 per-BU memory files in pending-onboarding state.
+// Returns a summary; never throws (best-effort).
+async function seedFinanceSubstrate(pat, bu) {
+  const now = new Date().toISOString();
+  const files = [
+    {
+      path: `dashboard/public/data/bus/${bu}/finance/ONBOARDING_STATE.json`,
+      content: JSON.stringify({
+        status: 'pending',
+        last_run_at: null,
+        checks: {
+          connector_probe: { pass: false, detail: 'No Moneybird connector wired yet — go to Settings → Wiring' },
+          category_coverage: { pass: false, missing: ['founder-draws', 'revenue-stream'] },
+          data_freshness: { pass: false, last_sync_at: null },
+          identity_binding: { pass: false, detail: `Finance Stewart of ${bu} not yet instantiated` },
+        },
+        gaps_surfaced_to_operator_at: now,
+      }, null, 2) + '\n',
+    },
+    {
+      path: `dashboard/public/data/bus/${bu}/finance/CONFIDENCE_STATE.json`,
+      content: JSON.stringify({
+        computed_at: now,
+        per_figure: {},
+        layer_states: {
+          services_should_exist: { state: 'pending_onboarding' },
+          invoices_present: { state: 'pending_onboarding' },
+          anomalies: { state: 'pending_onboarding' },
+        },
+        dismissed_findings: [],
+      }, null, 2) + '\n',
+    },
+    {
+      path: `dashboard/public/data/bus/${bu}/finance/THRESHOLDS.json`,
+      content: JSON.stringify({
+        runway_alert_days: 90,
+        variance_alert_pct: 15,
+        draw_vs_runway_block_days: 60,
+        digest_day_of_month: 1,
+        tunings_history: [{ tuned_at: now, key: '__seed__', from: null, to: null, reason: `Initial defaults seeded on Finance install for BU '${bu}'.` }],
+      }, null, 2) + '\n',
+    },
+    {
+      path: `dashboard/public/data/bus/${bu}/finance/RECOMMENDATION_LEDGER.jsonl`,
+      content: '',
+    },
+    {
+      path: `dashboard/public/data/bus/${bu}/finance/DOMAIN_MODEL.md`,
+      content: `# Finance Stewart of ${bu} — Domain Model\n\n**Status**: seed (onboarding pending).\n\nNo Moneybird connector wired yet. Once Settings → Wiring → Moneybird is configured + the heartbeat runs, this file refreshes with cash position, runway, recurring-cost map, anomaly list.\n`,
+    },
+  ];
+
+  const results = [];
+  for (const f of files) {
+    try {
+      // Try to read existing — if present, skip (idempotent).
+      let sha;
+      try { const existing = await getFile(pat, f.path); sha = existing.sha; } catch (_) { sha = undefined; }
+      if (sha) {
+        results.push({ path: f.path, status: 'exists' });
+        continue;
+      }
+      await putFile(pat, f.path, f.content, undefined, `finance install: seed ${f.path.split('/').pop()}`);
+      results.push({ path: f.path, status: 'created' });
+    } catch (e) {
+      results.push({ path: f.path, status: 'failed', error: e.message || String(e) });
+    }
+  }
+  return results;
 }
