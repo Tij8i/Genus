@@ -18,17 +18,28 @@
 // from substrate (`modules/*/module.json` manifests) and render as cards
 // here. For now: honest cactus state.
 
+// First real installed module: Finance (GEN-127 skeleton + GEN-136 Settings).
+// Hard-coded for v1 since the module loader (GEN-113) ships later. When the
+// loader lands, this list comes from a manifest scan instead.
+const INSTALLED_MODULES = [
+  {
+    id: 'finance',
+    name: 'Finance',
+    tag: 'connector + surface',
+    blurb: 'Cash-flow monitoring + investor view on Moneybird. Read-only on bookkeeping; writes only to its own recommendation feed.',
+    settingsRoute: 'module-finance-settings',
+    primaryRoute: 'budget',
+  },
+];
+
 export function renderModules(ctx) {
   const root = document.getElementById('route-modules');
   root.innerHTML = `
     <div class="card">
-      <div class="empty-cactus">
-        <div class="empty-cactus-icon">🌵</div>
-        <div class="empty-cactus-title">No modules installed yet</div>
-        <div class="empty-cactus-body">
-          The module loader ships in v0.8. Once installed, modules will appear here as cards (Finance, Stakeholders, Briefings, Concepts, custom).
-          Spec lives in <code>docs/system/MODULES.md</code> in the substrate repo.
-        </div>
+      <div class="card-section-label">Installed modules</div>
+      <p class="card-sub" style="margin-bottom:10px">Modules with a <code>module.json</code> manifest in the dashboard repo. The formal loader (GEN-113) ships next; today these are wired directly.</p>
+      <div class="row-list">
+        ${INSTALLED_MODULES.map(renderInstalledModuleRow).join('')}
       </div>
     </div>
 
@@ -39,6 +50,23 @@ export function renderModules(ctx) {
         <div class="suggest-module-sub">Suggestion intake ships in v0.8. For now, mention it in a memo — Stewart will surface it.</div>
       </div>
       <button type="button" class="suggest-module-btn" disabled>Suggest a module</button>
+    </div>
+  `;
+}
+
+function renderInstalledModuleRow(m) {
+  return `
+    <div class="row-with-icon module-row">
+      <span class="row-icon-letter">${m.name.charAt(0)}</span>
+      <div class="row-body">
+        <div class="row-title">${m.name}</div>
+        <div class="row-sub">${m.blurb}</div>
+      </div>
+      <span class="row-tag-accent mono">${m.tag}</span>
+      <div class="module-row-actions">
+        <a href="#${m.primaryRoute}" class="module-row-link">Open</a>
+        <a href="#${m.settingsRoute}" class="module-row-link module-row-link-settings">Settings</a>
+      </div>
     </div>
   `;
 }

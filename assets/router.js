@@ -1,7 +1,7 @@
 // Tiny hash router. Routes are #dashboard / #planning / #kpis / #inputs /
 // #outputs / #settings. Default route used when hash is missing or invalid.
 
-const VALID_ROUTES = ['dashboard', 'planning', 'kpis', 'inputs', 'outputs', 'learning', 'modules', 'people', 'settings', 'budget', 'costs', 'invoices'];
+const VALID_ROUTES = ['dashboard', 'planning', 'kpis', 'inputs', 'outputs', 'learning', 'modules', 'people', 'settings', 'budget', 'costs', 'invoices', 'module-finance-settings'];
 let currentRoute = null;
 let onChangeCb = () => {};
 

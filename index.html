@@ -15,6 +15,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/app.css">
+  <link rel="stylesheet" href="/assets/finance-settings.css">
 </head>
 <body>
   <div id="app-shell" class="app-shell">
@@ -256,6 +257,16 @@
             </div>
           </header>
           <div class="route-body" id="route-settings"></div>
+        </section>
+
+        <section class="route" data-route="module-finance-settings" hidden>
+          <header class="page-header">
+            <div>
+              <h1 class="page-title">Finance · Settings</h1>
+              <p class="page-sub" style="max-width:560px">Connector reference, agent binding, alert thresholds, and recommendation toggles. Changes persist to substrate and take effect on the next Finance heartbeat.</p>
+            </div>
+          </header>
+          <div class="route-body" id="route-module-finance-settings"></div>
         </section>
 
         <section class="route" data-route="confidence-demo" hidden>
