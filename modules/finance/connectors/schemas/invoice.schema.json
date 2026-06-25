@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://genus.work/schemas/modules/finance/connectors/invoice-1.0.0.json",
+  "title": "Finance — normalized invoice",
+  "description": "Read-side normalized invoice shape. Maps from Moneybird sales + purchase invoices per modules/finance/connectors/moneybird.md §5.1 and §5.2. Sales and purchase invoices share this shape, distinguished by `direction`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["source", "external_ref", "direction", "counterparty", "issued_at", "status", "amount_gross", "amount_net"],
+  "properties": {
+    "source": {
+      "type": "object",
+      "description": "Opaque source-system reference. Never rendered.",
+      "additionalProperties": false,
+      "required": ["system", "id"],
+      "properties": {
+        "system": { "type": "string", "const": "moneybird" },
+        "id": { "type": "string", "minLength": 1 }
+      }
+    },
+    "external_ref": {
+      "type": "string",
+      "description": "Human-readable invoice reference (sales invoice number, or vendor reference on purchase). Falls back to Moneybird's internal invoice_id when no vendor reference is set.",
+      "minLength": 1
+    },
+    "direction": {
+      "type": "string",
+      "enum": ["incoming", "outgoing"],
+      "description": "`outgoing` = sales invoice (we billed someone). `incoming` = purchase invoice (someone billed us)."
+    },
+    "counterparty": {
+      "type": "object",
+      "description": "Customer (outgoing) or vendor (incoming). Joins to the Contact source via `ref`.",
+      "additionalProperties": false,
+      "required": ["ref", "name"],
+      "properties": {
+        "ref": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 }
+      }
+    },
+    "issued_at": {
+      "type": "string",
+      "format": "date",
+      "description": "Invoice date (Moneybird `invoice_date`). ISO 8601."
+    },
+    "due_at": {
+      "type": ["string", "null"],
+      "format": "date",
+      "description": "Due date. Nullable: some invoices have no formal due date."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["draft", "unpaid", "unpaid_overdue", "paid", "written_off", "other"],
+      "description": "Normalized state. Maps from Moneybird `state` per moneybird.md §5.1."
+    },
+    "amount_gross": { "$ref": "#/$defs/money" },
+    "amount_net": { "$ref": "#/$defs/money" }
+  },
+  "$defs": {
+    "money": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "currency"],
+      "properties": {
+        "value": {
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+          "description": "Decimal as string to avoid float drift. e.g. \"1234.56\"."
+        },
+        "currency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$",
+          "description": "ISO 4217 currency code."
+        }
+      }
+    }
+  }
+}

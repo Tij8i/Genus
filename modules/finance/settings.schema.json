@@ -9,30 +9,35 @@
   "properties": {
     "moneybird": {
       "type": "object",
-      "description": "Moneybird MCP connection. Credentials are owned by the Genus Agent via Settings → Wiring; this module only references the wired connector.",
+      "description": "Moneybird MCP connection. Credentials are owned by the Genus Agent via Settings → Wiring; this module only references the wired connector. The full read-side contract — required MCP tools, entity mapping, healthcheck cadence, staleness windows, and the v1→GEN-104 migration delta — lives in modules/finance/connectors/moneybird.md.",
       "additionalProperties": false,
       "required": ["connector_ref"],
       "properties": {
         "connector_ref": {
           "type": "string",
-          "description": "ID of the Moneybird MCP connector entry in Settings → Wiring (e.g. 'connectors/moneybird/medivara').",
+          "description": "Stable id of the Moneybird MCP connector. v1 interim: free-form string (e.g. 'connectors/moneybird/medivara'); the operator picks the installation-name segment. GEN-104 target: resolves against the central Wiring registry — same on-disk format, validated at bind time.",
           "pattern": "^connectors/[a-z0-9-]+/[a-z0-9-]+$"
         },
         "endpoint_override": {
           "type": "string",
           "format": "uri",
-          "description": "Optional override of the MCP endpoint URL. Defaults to the connector's wired endpoint."
+          "description": "MCP endpoint URL. v1 interim: required for bootstrap (no Wiring UI yet). GEN-104 target: optional override of the value the Wiring row provides — the row wins when both exist."
         },
         "auth_token_ref": {
           "type": "string",
-          "description": "Optional override of the credential reference (e.g. 'secrets/moneybird/medivara'). Defaults to the connector's wired credential.",
+          "description": "Reference into the operator's secret store (e.g. 'secrets/moneybird/medivara'). The module NEVER sees the token itself — the Genus Agent injects it into the MCP server's env at start. v1 interim: required for bootstrap. GEN-104 target: optional override of the Wiring-row value.",
           "pattern": "^secrets/[a-z0-9/_-]+$"
         },
         "healthcheck_route": {
           "type": "string",
-          "description": "Path on the MCP endpoint used by the Genus Agent's connector-health probe.",
+          "description": "Path on the MCP endpoint used by the Genus Agent's 15-minute probe loop (see connectors/moneybird.md §4.1). v1 interim: module-local default. GEN-104 target: per-connector-type default in the Wiring registry; module-local value remains as override.",
           "default": "/healthz",
           "pattern": "^/[a-zA-Z0-9/_.-]*$"
+        },
+        "interim_wiring": {
+          "type": "boolean",
+          "default": true,
+          "description": "v1-only marker indicating the fields above are populated directly here rather than resolved from the central Settings → Wiring registry. Set to false once GEN-104 ships and the operator has migrated this installation; the loader then ignores endpoint_override / auth_token_ref and resolves both from the Wiring row keyed by connector_ref. The migration is mechanical — no schema change — per connectors/moneybird.md §7."
         }
       }
     },

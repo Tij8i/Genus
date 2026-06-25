@@ -17,11 +17,16 @@ See SPEC_v1.md for the locked v1 design.
 | `module.json` | Manifest validating against MODULE_MANIFEST v0.7-draft-1. |
 | `README.md` | This file. |
 | `instruction-package.md` | Stub for the agent-agnostic protocol doc; format firms up under GEN-93/GEN-105. |
-| `settings.schema.json` | JSON Schema for operator-configurable settings — Moneybird MCP endpoint, auth token reference, healthcheck route, alert thresholds. |
+| `settings.schema.json` | JSON Schema for operator-configurable settings — Moneybird MCP endpoint, auth token reference, healthcheck route, alert thresholds. Includes the interim wiring contract (GEN-131) and its GEN-104 migration delta. |
 | `views/budget.js` | Founder Budget view (migrated from `assets/views/`). |
 | `views/costs.js` | Founder Costs view (migrated from `assets/views/`). |
 | `views/invoices.js` | Founder Invoices view (migrated from `assets/views/`). |
 | `views/settings.js` | Settings panel stub — full UI ships under child L. |
+| `connectors/moneybird.md` | Moneybird MCP read-side contract (GEN-131): required MCP tools, entity mapping (invoices · costs · ledger · bank), healthcheck cadence + staleness windows, interim wiring path, and the v1 → GEN-104 migration delta. |
+| `connectors/schemas/invoice.schema.json` | Normalized `invoice` shape (sales + purchase). |
+| `connectors/schemas/ledger_entry.schema.json` | Normalized `ledger_entry` shape. |
+| `connectors/schemas/bank_balance.schema.json` | Normalized `bank_balance` snapshot shape. |
+| `connectors/schemas/counterparty.schema.json` | Normalized `counterparty` lookup shape. |
 
 ## What's NOT here yet
 
@@ -30,7 +35,7 @@ Tracked in the GEN-123 child list:
 - `agent/` — native Finance agent identity + playbook + memory schema + KPI set (child B / GEN-106).
 - `recipes/` — `FIN-MONTHLY-DIGEST`, `FIN-RUNWAY-ALERT`, `FIN-DRAW-CONFLICT-ALERT` (child D and onward).
 - `kpis/` — KPI schemas for `fin.runway_days`, `fin.burn_rate`, `fin.cash_position`, `fin.gross_revenue_3m` (child K).
-- `connectors/moneybird.md` — connector usage docs (child C; depends on [GEN-104](https://github.com/Tij8i/Orchestrator/issues) for Settings → Wiring).
+- ~~`connectors/moneybird.md` — connector usage docs (child C; depends on [GEN-104](https://github.com/Tij8i/Orchestrator/issues) for Settings → Wiring).~~ Shipped under [GEN-131](https://github.com/Tij8i/Orchestrator/issues) with an interim wiring path that migrates mechanically to GEN-104.
 - `schemas/` — recommendation / alert / investor-KPI output schemas (child G).
 - Real data wiring (child C).
 - Investor view + signed-URL share (child H/I).

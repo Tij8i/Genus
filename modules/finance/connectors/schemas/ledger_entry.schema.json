@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://genus.work/schemas/modules/finance/connectors/ledger-entry-1.0.0.json",
+  "title": "Finance — normalized ledger entry",
+  "description": "Read-side normalized ledger / journal-line shape. Maps from Moneybird `LedgerEntry` per modules/finance/connectors/moneybird.md §5.3. Categorization (salaries / rent / SaaS) is the bound agent's job, NOT the connector's — this shape preserves the raw ledger view.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["source", "booked_at", "account", "debit", "credit"],
+  "properties": {
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["system", "id"],
+      "properties": {
+        "system": { "type": "string", "const": "moneybird" },
+        "id": { "type": "string", "minLength": 1 }
+      }
+    },
+    "booked_at": {
+      "type": "string",
+      "format": "date",
+      "description": "Booking date (Moneybird `date`). ISO 8601."
+    },
+    "memo": {
+      "type": "string",
+      "description": "Free-text description (Moneybird `description`). May be empty."
+    },
+    "account": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "name"],
+      "properties": {
+        "ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable join key (Moneybird `ledger_account_id`)."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Display string (Moneybird `ledger_account.name`)."
+        }
+      }
+    },
+    "debit": { "$ref": "#/$defs/money_or_zero" },
+    "credit": { "$ref": "#/$defs/money_or_zero" },
+    "tax": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "type": "string",
+          "description": "Free-text tax label (Moneybird `tax_rate.name`). Not parsed in v1."
+        }
+      }
+    }
+  },
+  "$defs": {
+    "money_or_zero": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "currency"],
+      "properties": {
+        "value": {
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+        },
+        "currency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$"
+        }
+      }
+    }
+  }
+}

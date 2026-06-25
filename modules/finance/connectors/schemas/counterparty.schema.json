@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://genus.work/schemas/modules/finance/connectors/counterparty-1.0.0.json",
+  "title": "Finance — counterparty (customer + supplier lookup)",
+  "description": "Read-side normalized contact shape. Maps from Moneybird `Contact` per modules/finance/connectors/moneybird.md §5.5. Used as a lookup table when normalizing invoices and ledger entries; not rendered as a top-level entity.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ref", "name", "roles"],
+  "properties": {
+    "ref": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable join key (Moneybird `id`)."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Display string (Moneybird `company_name`, or `firstname + lastname` when no company name)."
+    },
+    "roles": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["customer", "supplier"]
+      },
+      "uniqueItems": true,
+      "minItems": 1,
+      "description": "Multi-role: a Moneybird contact can be both customer and supplier."
+    }
+  }
+}
