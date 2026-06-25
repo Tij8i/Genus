@@ -36,7 +36,7 @@ import { renderBudget as renderBudgetView } from '../modules/finance/views/budge
 import { renderCosts as renderCostsView } from '../modules/finance/views/costs.js';
 import { renderInvoices as renderInvoicesView } from '../modules/finance/views/invoices.js';
 import { renderConfidenceDemo as renderConfidenceDemoView } from './views/confidence-demo.js';
-import { openOnboarding } from './overlay.js';
+import { openOnboarding, openOverlay, closeOverlay } from './overlay.js';
 import { applyAppearance } from './appearance.js';
 
 // Sidebar nav groups (FINANCE / STRATEGY / OPERATIONS) collapse state.
@@ -632,39 +632,96 @@ function renderSettings() {
 
 // "Add a venture" — minimal v1 flow per Session #18 Initiative #2.
 // Per operator: keep it simple; this just creates an empty installation. Module
-// install + agent setup happen later from Modules / People surfaces.
-async function addVentureFlow() {
-  const display_name = window.prompt('New venture name (e.g. "Acme Corp"):');
-  if (!display_name) return;
-  const trimmed = display_name.trim();
-  if (!trimmed) return;
-  // Auto-derive id from name: lowercase, replace non-alphanum with hyphens.
-  const suggestedId = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30);
-  const id = window.prompt(`URL id for this venture (lowercase, letters/digits/hyphens):`, suggestedId);
-  if (!id) return;
-  const idTrimmed = id.trim();
-  if (!idTrimmed) return;
+// install + agent setup happen later. Uses the shared openOverlay primitive so
+// the modal matches the rest of the dashboard's visual language.
+function addVentureFlow() {
+  const bodyHtml = `
+    <div class="onboard-section-label mono">New venture</div>
+    <p style="font-size:13px;color:var(--text-dim);line-height:1.55;margin:0 0 18px;">
+      Creates a fresh installation. No modules or agents wired yet — set those up later from Modules + People.
+    </p>
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <label style="display:flex;flex-direction:column;gap:6px;">
+        <span style="font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-faint);font-weight:600;">Display name</span>
+        <input id="addbu-name" type="text" placeholder="e.g. Acme Corp" autocomplete="off"
+               style="padding:10px 12px;font-size:14px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-family:inherit;outline:none;" />
+      </label>
+      <label style="display:flex;flex-direction:column;gap:6px;">
+        <span style="font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-faint);font-weight:600;">URL id</span>
+        <input id="addbu-id" type="text" placeholder="acme-corp" autocomplete="off"
+               style="padding:10px 12px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;outline:none;" />
+        <span style="font-size:11px;color:var(--text-faint);">Lowercase letters, digits, hyphens. Auto-derived from name.</span>
+      </label>
+      <div id="addbu-error" style="display:none;padding:10px 12px;background:var(--red-bg);color:var(--red-fg);border-radius:6px;font-size:12px;"></div>
+    </div>
+  `;
+  const footerHtml = `
+    <button type="button" class="onboard-cancel" id="addbu-cancel">Cancel</button>
+    <button type="button" class="onboard-begin" id="addbu-create">Create venture</button>
+  `;
+  openOverlay({
+    title: 'Add a venture',
+    subtitle: 'A new BU installation under this workspace.',
+    iconHtml: '🏛',
+    iconTint: '#0e9f6e',
+    bodyHtml,
+    footerHtml,
+  });
 
-  try {
-    const res = await fetch('/api/create-bu', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: idTrimmed, display_name: trimmed }),
-    });
-    const result = await res.json();
-    if (!res.ok || !result.ok) {
-      window.alert('Could not create venture: ' + (result.message || `HTTP ${res.status}`));
-      return;
+  const $name = document.getElementById('addbu-name');
+  const $id = document.getElementById('addbu-id');
+  const $err = document.getElementById('addbu-error');
+  const $btn = document.getElementById('addbu-create');
+  const $cancel = document.getElementById('addbu-cancel');
+
+  const slugify = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30);
+  let idTouched = false;
+  $id.addEventListener('input', () => { idTouched = true; });
+  $name.addEventListener('input', () => {
+    if (!idTouched) $id.value = slugify($name.value);
+  });
+  setTimeout(() => $name.focus(), 30);
+
+  const submit = async () => {
+    const display_name = $name.value.trim();
+    const id = $id.value.trim();
+    $err.style.display = 'none';
+    if (!display_name) { $err.textContent = 'Display name is required.'; $err.style.display = 'block'; return; }
+    if (!/^[a-z][a-z0-9-]{1,30}$/.test(id)) { $err.textContent = 'URL id must be lowercase letters/digits/hyphens, 2-31 chars, start with a letter.'; $err.style.display = 'block'; return; }
+
+    $btn.disabled = true;
+    $btn.textContent = 'Creating…';
+    try {
+      const res = await fetch('/api/create-bu', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, display_name }),
+      });
+      const result = await res.json();
+      if (!res.ok || !result.ok) {
+        $err.textContent = result.message || `HTTP ${res.status}`;
+        $err.style.display = 'block';
+        $btn.disabled = false;
+        $btn.textContent = 'Create venture';
+        return;
+      }
+      localStorage.setItem('genus.currentBu', result.bu.id);
+      const url = new URL(location.href);
+      url.searchParams.set('bu', result.bu.id);
+      url.hash = '';
+      location.href = url.toString();
+    } catch (e) {
+      $err.textContent = 'Network error: ' + (e.message || e);
+      $err.style.display = 'block';
+      $btn.disabled = false;
+      $btn.textContent = 'Create venture';
     }
-    // Switch to the new BU
-    localStorage.setItem('genus.currentBu', result.bu.id);
-    const url = new URL(location.href);
-    url.searchParams.set('bu', result.bu.id);
-    url.hash = '';
-    location.href = url.toString();
-  } catch (e) {
-    window.alert('Network error creating venture: ' + (e.message || e));
-  }
+  };
+
+  $btn.addEventListener('click', submit);
+  $cancel.addEventListener('click', closeOverlay);
+  // Submit on Enter from either input
+  [$name, $id].forEach(el => el.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); }));
 }
 
 // Filter sidebar nav links: hide routes that are not in the current BU's installed
