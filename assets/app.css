@@ -4053,3 +4053,241 @@ body.viewer-unknown .reject-btn {
   pointer-events: none;
 }
 .observer-toast.is-visible { opacity: 1; }
+
+/* ============================================================
+ * ConfidenceFrame v1 renderer (GEN-110)
+ * Per CONFIDENCE_FRAME.md §5 — four affordances: badge / hover /
+ * hidden / blocking. Warning hue uses --yellow* tones so badges
+ * never visually outweigh the claim's value (spec §5).
+ * ============================================================ */
+
+.claim-with-badge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.claim-value--disabled {
+  opacity: 0.55;
+  text-decoration: line-through;
+  text-decoration-color: var(--text-dim);
+  text-decoration-thickness: 1px;
+}
+.claim-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--yellow-bg);
+  color: var(--yellow-fg);
+  cursor: pointer;
+  line-height: 0;
+  vertical-align: middle;
+  font-size: 0;
+  transition: background 90ms ease, transform 90ms ease;
+}
+.claim-badge--low {
+  background: var(--yellow-bg);
+  color: var(--yellow-fg);
+}
+.claim-badge--medium {
+  background: rgba(224, 160, 8, 0.10);
+  color: var(--yellow-fg);
+}
+.claim-badge--alert {
+  box-shadow: 0 0 0 1px var(--yellow);
+}
+.claim-badge:hover,
+.claim-badge:focus-visible {
+  background: rgba(224, 160, 8, 0.28);
+  transform: translateY(-1px);
+}
+.claim-badge:focus-visible {
+  outline: 2px solid var(--yellow);
+  outline-offset: 2px;
+}
+
+.claim-hover {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--text);
+  color: #f4f5f7;
+  padding: 10px 12px;
+  border-radius: 8px;
+  min-width: 240px;
+  max-width: 340px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+  font-size: 12.5px;
+  line-height: 1.5;
+  z-index: 50;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 90ms ease, visibility 90ms ease;
+  pointer-events: none;
+  text-align: left;
+}
+.claim-with-badge:hover .claim-hover,
+.claim-with-badge:focus-within .claim-hover {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+.claim-hover-summary { display: block; }
+.claim-hover-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.claim-hover-item {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.claim-hover-action {
+  display: inline-block;
+  align-self: flex-start;
+  padding: 3px 9px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  text-decoration: none;
+  border: 0;
+  cursor: pointer;
+  font-family: inherit;
+}
+.claim-hover-action:hover { filter: brightness(1.08); }
+
+.claim-hidden {
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-faint);
+  font-style: italic;
+  font-size: 13px;
+}
+
+.claim-blocking {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 8px;
+  border-radius: 8px;
+  background: rgba(224, 160, 8, 0.08);
+  border: 1px dashed rgba(224, 160, 8, 0.45);
+}
+.claim-blocking-explain {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.claim-blocking-summary {
+  font-style: italic;
+}
+
+/* Test surface (route #confidence-demo). */
+.confidence-demo-intro {
+  max-width: 640px;
+  margin: 0 0 18px;
+  color: var(--text-dim);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.confidence-demo-intro code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12.5px;
+  background: var(--surface2);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+.confidence-demo-section {
+  margin-bottom: 18px;
+}
+.confidence-demo-mode {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+  text-transform: uppercase;
+}
+.confidence-demo-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+}
+.confidence-demo-table tr + tr td { border-top: 1px solid var(--border); }
+.confidence-demo-table td {
+  padding: 10px 0;
+  vertical-align: middle;
+}
+.confidence-demo-label {
+  width: 40%;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+.confidence-demo-claim {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.confidence-demo-summary {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+.confidence-demo-summary--pass {
+  background: var(--green-bg);
+  color: var(--green-fg);
+}
+.confidence-demo-summary--fail {
+  background: var(--red-bg);
+  color: var(--red-fg);
+}
+.confidence-demo-results {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.confidence-demo-results li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  background: var(--surface2);
+}
+.confidence-demo-results li.pass::before {
+  content: '✓';
+  color: var(--green-fg);
+  margin-right: 6px;
+  font-weight: 700;
+}
+.confidence-demo-results li.fail {
+  background: var(--red-bg);
+  color: var(--red-fg);
+}
+.confidence-demo-results li.fail::before {
+  content: '✗';
+  color: var(--red-fg);
+  margin-right: 6px;
+  font-weight: 700;
+}
+.confidence-demo-result-detail {
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
