@@ -35,6 +35,7 @@ import { renderPeople as renderPeopleView } from './views/people.js';
 import { renderBudget as renderBudgetView } from '../modules/finance/views/budget.js';
 import { renderCosts as renderCostsView } from '../modules/finance/views/costs.js';
 import { renderInvoices as renderInvoicesView } from '../modules/finance/views/invoices.js';
+import { renderFinanceSettings as renderFinanceSettingsView } from '../modules/finance/views/settings.js';
 import { renderConfidenceDemo as renderConfidenceDemoView } from './views/confidence-demo.js';
 import { openOnboarding } from './overlay.js';
 import { applyAppearance } from './appearance.js';
@@ -451,6 +452,7 @@ function renderRoute(route) {
   else if (route === 'budget') safeRender('budget', renderBudget);
   else if (route === 'costs') safeRender('costs', renderCosts);
   else if (route === 'invoices') safeRender('invoices', renderInvoices);
+  else if (route === 'module-finance-settings') safeRender('module-finance-settings', renderModuleFinanceSettings);
   else if (route === 'confidence-demo') safeRender('confidence-demo', renderConfidenceDemo);
 
   // Apply observer-mode tooltips to write-action buttons in the just-rendered
@@ -489,6 +491,10 @@ function renderCosts() {
 
 function renderInvoices() {
   renderInvoicesView({ identity, viewer });
+}
+
+function renderModuleFinanceSettings() {
+  renderFinanceSettingsView({ identity, viewer });
 }
 
 function renderLearning() {
