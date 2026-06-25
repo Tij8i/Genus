@@ -10,6 +10,8 @@
 
 import { escapeHtml, ago, icon } from '../utils.js';
 import { ACCENT_OPTIONS, DENSITY_OPTIONS, loadAppearance, saveAppearance } from '../appearance.js';
+import { openOverlay, closeOverlay } from '../overlay.js';
+import { connectorPing, fileHealTask, readConnectorRole, healKindLabel, isStale } from '../connectors-client.js';
 
 let activeSubTab = 'profile';
 
@@ -45,7 +47,10 @@ export function renderSettings(ctx, opts = {}) {
     body.innerHTML = renderGovernanceSubTab(ctx);
     wireGovernanceControls(ctx, opts.onChange);
   }
-  else if (activeSubTab === 'wiring') body.innerHTML = renderWiringSubTab(ctx);
+  else if (activeSubTab === 'wiring') {
+    body.innerHTML = renderWiringSubTab(ctx);
+    wireConnectorRows(ctx);
+  }
   else if (activeSubTab === 'appearance') {
     body.innerHTML = renderAppearanceSubTab(ctx);
     wireAppearanceControls(ctx);
@@ -298,12 +303,19 @@ function renderModulesSubTab(ctx) {
 function renderWiringSubTab(ctx) {
   const i = ctx.identity || {};
   const connectors = ctx.connectors || [];
+  const backrefs = ctx.connectorBackrefs || {};
   const docs = ctx.documentation || [];
 
   // Map connectors → categorized lists for Infrastructure + Operating stack
   // (per Tuto today, all connectors are MCP-type → mostly "Operating stack")
   const healthy = connectors.filter(c => (c.status || '').toLowerCase() === 'working').length;
   const total = connectors.length;
+
+  // Lifecycle-ownership tallies (GEN-104 §4.4)
+  const genusManaged = connectors.filter(c => isGenusManaged(c)).length;
+  const operatorManaged = connectors.filter(c => !isGenusManaged(c)).length;
+  const staleCount = connectors.filter(c => isStale(c)).length;
+  const mcpCount = connectors.filter(c => isMcp(c)).length;
 
   // Primary surface from identity
   const primaryUrl = i.live_surface || 'not set';
@@ -317,10 +329,17 @@ function renderWiringSubTab(ctx) {
         <div class="card-section-label">Wiring</div>
         <p class="card-sub" style="max-width:560px;margin-top:5px">The footprint of the venture — its surfaces, the infrastructure beneath them, and the stack Genus runs on.</p>
       </div>
-      <div class="status-chip-card">
-        <span class="status-dot status-dot-${healthy === total ? 'good' : 'warn'}"></span>
-        <span class="status-chip-card-label">${healthy === total ? 'Production' : 'Mixed'}</span>
-        <span class="status-chip-card-sub">· ${healthy} healthy / ${total}</span>
+      <div class="wiring-header-chips">
+        <div class="status-chip-card">
+          <span class="status-dot status-dot-${healthy === total ? 'good' : 'warn'}"></span>
+          <span class="status-chip-card-label">${healthy === total ? 'Production' : 'Mixed'}</span>
+          <span class="status-chip-card-sub">· ${healthy} healthy / ${total}</span>
+        </div>
+        <div class="status-chip-card connector-ownership-chip" title="Lifecycle ownership across all connectors (GEN-104 §4.4).">
+          <span class="connector-owner-badge connector-owner-badge-genus">Genus-managed ${genusManaged}</span>
+          <span class="connector-owner-sep">·</span>
+          <span class="connector-owner-badge connector-owner-badge-operator">Operator-managed ${operatorManaged}</span>
+        </div>
       </div>
     </div>
 
@@ -378,32 +397,322 @@ function renderWiringSubTab(ctx) {
           ${renderOpRow('C', 'LLM · Claude', 'via claude --print + meeting server', 'dark', 'good')}
           ${renderOpRow('S', 'Meeting server', 'Local · localhost:8765 · launchd', 'gray', 'good')}
           ${renderOpRow('T', 'Ticker (10-min loop)', 'launchd · adapter + emit + cycle diag', 'gray', 'good')}
-          ${renderOpRow('M', 'MCP connectors', `${connectors.length} total · ${healthy} healthy`, 'gray', healthy === total ? 'good' : 'warn')}
+          ${renderOpRow(
+            'M',
+            'MCP connectors',
+            `${mcpCount} MCP · ${healthy} healthy${staleCount ? ` · ${staleCount} stale` : ''}`,
+            'gray',
+            staleCount ? 'warn' : (healthy === total ? 'good' : 'warn'),
+          )}
         </div>
       </div>
     </div>
 
     ${connectors.length ? `
-      <!-- Connectors detail -->
+      <!-- Connectors list — click a row to open the detail overlay -->
       <div class="card">
         <div class="card-section-label">Connectors</div>
-        <p class="card-sub" style="margin-bottom:8px">External services Stewart reaches into.</p>
-        <div class="row-list">
-          ${connectors.map(c => `
-            <div class="row-with-icon">
-              <span class="row-icon-letter">${escapeHtml((c.provider || c.id || '?').charAt(0).toUpperCase())}</span>
-              <div class="row-body">
-                <div class="row-title">${escapeHtml(c.provider || c.id)}</div>
-                <div class="row-sub">${escapeHtml((c.scope || '').slice(0, 80))}${(c.scope || '').length > 80 ? '…' : ''}</div>
-              </div>
-              <span class="row-tag-mono mono">${escapeHtml(c.type || '?')}</span>
-              <span class="status-dot status-dot-${statusToColor(c.status)}" title="${escapeHtml(c.status || 'unknown')}"></span>
-            </div>
-          `).join('')}
+        <p class="card-sub" style="margin-bottom:8px">External services Stewart reaches into. Click a row for endpoint, capabilities, used-by, and health actions.</p>
+        <div class="row-list connector-row-list">
+          ${connectors.map(c => renderConnectorRow(c, backrefs)).join('')}
         </div>
       </div>
     ` : ''}
   `;
+}
+
+function renderConnectorRow(c, backrefs) {
+  const label = c.provider || c.id || '?';
+  const subText = (c.scope || '').slice(0, 80) + ((c.scope || '').length > 80 ? '…' : '');
+  const stale = isStale(c);
+  const usedBy = (backrefs && backrefs[c.id]) || [];
+  return `
+    <button type="button" class="row-with-icon connector-row" data-connector-id="${escapeHtml(c.id || '')}">
+      <span class="row-icon-letter">${escapeHtml(label.charAt(0).toUpperCase())}</span>
+      <div class="row-body">
+        <div class="row-title">${escapeHtml(label)}</div>
+        <div class="row-sub">${escapeHtml(subText)}${usedBy.length ? ` <span class="connector-row-used-by mono">· used by ${usedBy.length}</span>` : ''}</div>
+      </div>
+      <span class="connector-owner-badge connector-owner-badge-${isGenusManaged(c) ? 'genus' : 'operator'}" title="${isGenusManaged(c) ? 'Lifecycle owned by the Genus system agent.' : 'Operator-managed (no agent owner set).'}">${isGenusManaged(c) ? 'Genus' : 'Operator'}</span>
+      <span class="row-tag-mono mono">${escapeHtml(c.type || '?')}</span>
+      ${stale ? `<span class="connector-stale-pill mono" title="last_check_at older than 2× health_check.interval_minutes">stale</span>` : ''}
+      <span class="status-dot status-dot-${statusToColor(c.status)}" title="${escapeHtml(c.status || 'unknown')}"></span>
+    </button>
+  `;
+}
+
+function isGenusManaged(c) {
+  return !!(c && c.owner_agent && c.owner_agent === 'genus-system');
+}
+
+function isMcp(c) {
+  return c && (c.type === 'mcp' || c.kind === 'mcp' || (c.mcp && typeof c.mcp === 'object'));
+}
+
+// ============ Connector detail overlay (GEN-104 §4.3 / §5) ============
+
+export function renderConnectorDetail(connector, backrefs, role) {
+  const c = connector || {};
+  const usedBy = (backrefs && backrefs[c.id]) || [];
+  const stale = isStale(c);
+  const mcp = c.mcp || (c.type === 'mcp' && c.endpoint
+    ? { endpoint: c.endpoint, transport: 'stdio', auth_kind: c.auth?.mode || 'fixture', capabilities: [] }
+    : null);
+  const isDisabled = role === 'module-steward';
+  const disabledTip = 'Only the Genus system agent can change connector state.';
+
+  const header = `
+    <div class="connector-detail-header">
+      <div class="connector-detail-title-row">
+        <span class="row-icon-letter row-icon-letter-accent">${escapeHtml((c.provider || c.id || '?').charAt(0).toUpperCase())}</span>
+        <div>
+          <div class="connector-detail-title">${escapeHtml(c.provider || c.id)}</div>
+          <div class="connector-detail-id mono">${escapeHtml(c.id || '')}</div>
+        </div>
+      </div>
+      <div class="connector-detail-chips">
+        <span class="row-tag-mono mono">${escapeHtml(c.type || '?')}</span>
+        <span class="status-chip-pill status-chip-pill-${pillClass(c.status)}">
+          <span class="status-dot status-dot-${statusToColor(c.status)}"></span>${escapeHtml(c.status || 'unknown')}
+        </span>
+        <span class="connector-owner-badge connector-owner-badge-${isGenusManaged(c) ? 'genus' : 'operator'}">${isGenusManaged(c) ? 'Genus-managed' : 'Operator-managed'}</span>
+        ${stale ? '<span class="connector-stale-pill mono">stale</span>' : ''}
+      </div>
+    </div>
+  `;
+
+  const mcpBlock = mcp ? `
+    <div class="connector-detail-section">
+      <div class="connector-detail-section-label">MCP endpoint</div>
+      <div class="connector-detail-grid">
+        ${detailField('Endpoint', mcp.endpoint, 'mono')}
+        ${detailField('Transport', mcp.transport || '—', 'mono')}
+        ${detailField('Auth kind', mcp.auth_kind || '—')}
+        ${detailField('Auth ref', mcp.auth_ref || '—', 'mono')}
+      </div>
+      ${(mcp.capabilities && mcp.capabilities.length) ? `
+        <div class="connector-detail-cap-row">
+          ${mcp.capabilities.map(cap => `<span class="connector-cap-chip mono">${escapeHtml(cap)}</span>`).join('')}
+        </div>
+      ` : '<div class="connector-detail-cap-empty mono">no capabilities declared</div>'}
+    </div>
+  ` : `
+    <div class="connector-detail-section">
+      <div class="connector-detail-section-label">Endpoint</div>
+      <div class="empty-state-sm" style="text-align:left;padding:8px 0">Non-MCP connector — no endpoint metadata.</div>
+    </div>
+  `;
+
+  const usedByBlock = `
+    <div class="connector-detail-section">
+      <div class="connector-detail-section-label">Used by</div>
+      ${usedBy.length ? `
+        <div class="connector-used-by-list">
+          ${usedBy.map(ref => `
+            <div class="connector-used-by-row">
+              <span class="row-icon-letter">${escapeHtml((ref.module || '?').charAt(0).toUpperCase())}</span>
+              <div class="row-body">
+                <div class="row-title">${escapeHtml(ref.module || ref.id || 'module')}</div>
+                <div class="row-sub mono">${escapeHtml(ref.purpose || ref.scope || '')}</div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      ` : '<div class="empty-state-sm" style="text-align:left;padding:8px 0">No module references this connector yet.</div>'}
+    </div>
+  `;
+
+  const healthBlock = `
+    <div class="connector-detail-section">
+      <div class="connector-detail-section-label">Health</div>
+      <div class="connector-detail-grid">
+        ${detailField('Last checked', c.last_check_at ? ago(c.last_check_at) : '—')}
+        ${detailField('Health check', c.health_check?.kind ? `${escapeHtml(c.health_check.kind)} · every ${c.health_check.interval_minutes || '—'}m` : '—')}
+        ${detailField('Notes', c.notes || '—', 'prose')}
+      </div>
+    </div>
+  `;
+
+  const actionsBlock = `
+    <div class="connector-detail-section">
+      <div class="connector-detail-section-label">Actions</div>
+      <div class="connector-action-row">
+        <button type="button" class="connector-action-btn"
+          id="connector-test-btn"
+          ${isDisabled ? `disabled data-disabled-reason="${escapeHtml(disabledTip)}" title="${escapeHtml(disabledTip)}"` : ''}>
+          Test connection
+        </button>
+        <button type="button" class="connector-action-btn connector-action-btn-heal"
+          id="connector-heal-btn"
+          ${isDisabled ? `disabled data-disabled-reason="${escapeHtml(disabledTip)}" title="${escapeHtml(disabledTip)}"` : ''}>
+          Heal…
+        </button>
+        ${isDisabled ? `<span class="connector-action-disabled-tip">${escapeHtml(disabledTip)}</span>` : ''}
+      </div>
+      <div class="connector-action-result" id="connector-test-result" aria-live="polite"></div>
+    </div>
+  `;
+
+  const footer = `
+    <div class="connector-detail-foot mono">
+      Owner: ${escapeHtml(c.owner_agent || '—')} · Created: ${c.created_at ? ago(c.created_at) : '—'} · Created by: ${escapeHtml(c.created_by || '—')}
+    </div>
+  `;
+
+  return header + mcpBlock + usedByBlock + healthBlock + actionsBlock + footer;
+}
+
+function detailField(label, value, kind) {
+  const v = value == null || value === '' ? '—' : value;
+  const cls = kind === 'mono' ? 'connector-detail-value mono'
+    : kind === 'prose' ? 'connector-detail-value connector-detail-value-prose'
+    : 'connector-detail-value';
+  return `
+    <div class="connector-detail-cell">
+      <div class="connector-detail-cell-label mono">${escapeHtml(label)}</div>
+      <div class="${cls}">${escapeHtml(String(v))}</div>
+    </div>
+  `;
+}
+
+function pillClass(status) {
+  switch ((status || '').toLowerCase()) {
+    case 'working': case 'healthy': case 'ok': case 'active': return 'good';
+    case 'degraded': case 'warning': case 'stale': case 'pending_setup': case 'fixture': return 'warn';
+    case 'broken': case 'down': case 'error': return 'bad';
+    default: return 'warn';
+  }
+}
+
+// Wire row clicks (called from app.js after Settings → Wiring renders).
+export function wireConnectorRows(ctx) {
+  const connectors = ctx.connectors || [];
+  const backrefs = ctx.connectorBackrefs || {};
+  const role = readConnectorRole();
+  const buName = ctx.bu || 'genus';
+
+  document.querySelectorAll('.connector-row[data-connector-id]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.connectorId;
+      const connector = connectors.find(c => c.id === id);
+      if (!connector) return;
+      openConnectorOverlay(connector, backrefs, role, buName);
+    });
+  });
+}
+
+function openConnectorOverlay(connector, backrefs, role, bu) {
+  openOverlay({
+    title: connector.provider || connector.id,
+    subtitle: `${connector.type || 'connector'} · ${connector.id}`,
+    iconHtml: escapeHtml((connector.provider || connector.id || '?').charAt(0).toUpperCase()),
+    iconTint: 'var(--accent)',
+    bodyHtml: renderConnectorDetail(connector, backrefs, role),
+  });
+  wireConnectorOverlayActions(connector, bu);
+}
+
+function wireConnectorOverlayActions(connector, bu) {
+  const testBtn = document.getElementById('connector-test-btn');
+  const healBtn = document.getElementById('connector-heal-btn');
+  const result = document.getElementById('connector-test-result');
+
+  if (testBtn && !testBtn.disabled) {
+    testBtn.addEventListener('click', async () => {
+      testBtn.disabled = true;
+      const orig = testBtn.textContent;
+      testBtn.textContent = 'Pinging…';
+      try {
+        const r = await connectorPing(connector);
+        const msg = r.ok
+          ? `✓ Reachable · ${r.latency_ms}ms${r.opaque ? ' (opaque)' : ''}`
+          : `✗ ${r.error || 'unreachable'}${r.latency_ms != null ? ` · ${r.latency_ms}ms` : ''}`;
+        if (result) {
+          result.textContent = msg;
+          result.className = `connector-action-result connector-action-result-${r.ok ? 'ok' : 'bad'}`;
+        }
+        showConnectorToast(msg);
+        // In-memory only update — no JSON write-back in Phase 1.
+        connector.status = r.ok ? 'working' : 'broken';
+        connector.last_check_at = new Date().toISOString();
+      } catch (e) {
+        const msg = `✗ ${e?.message || String(e)}`;
+        if (result) {
+          result.textContent = msg;
+          result.className = 'connector-action-result connector-action-result-bad';
+        }
+        showConnectorToast(msg);
+      } finally {
+        testBtn.disabled = false;
+        testBtn.textContent = orig;
+      }
+    });
+  }
+
+  if (healBtn && !healBtn.disabled) {
+    healBtn.addEventListener('click', () => promptHealAction(connector, bu));
+  }
+}
+
+function promptHealAction(connector, bu) {
+  const options = ['reauth', 'restart', 'refresh_token', 'other'];
+  const optionLabels = options.map(o => healKindLabel(o)).join('\n');
+  const ans = window.prompt(
+    `Heal connector ${connector.id}\n\nChoose an option:\n  1) ${healKindLabel('reauth')}\n  2) ${healKindLabel('restart')}\n  3) ${healKindLabel('refresh_token')}\n  4) ${healKindLabel('other')}\n\nType 1, 2, 3, or 4:`,
+    '1'
+  );
+  if (ans == null) return;
+  const idx = parseInt(ans, 10) - 1;
+  if (!Number.isFinite(idx) || idx < 0 || idx >= options.length) {
+    showConnectorToast('Invalid choice — heal cancelled.');
+    return;
+  }
+  const kind = options[idx];
+  let description = '';
+  if (kind === 'other') {
+    description = (window.prompt('Describe what should happen:', '') || '').trim();
+    if (!description) {
+      showConnectorToast('Heal cancelled — no description provided.');
+      return;
+    }
+  }
+
+  fileHealTask(connector, { kind, description }, { bu })
+    .then(task => {
+      const result = document.getElementById('connector-test-result');
+      const link = task && task.id ? `task ${task.id}` : 'task filed';
+      const msg = `✓ Heal task filed (${healKindLabel(kind)}) — ${link}`;
+      if (result) {
+        result.textContent = msg;
+        result.className = 'connector-action-result connector-action-result-ok';
+      }
+      showConnectorToast(msg);
+    })
+    .catch(e => {
+      const msg = `✗ Heal task failed: ${e?.message || String(e)}`;
+      const result = document.getElementById('connector-test-result');
+      if (result) {
+        result.textContent = msg;
+        result.className = 'connector-action-result connector-action-result-bad';
+      }
+      showConnectorToast(msg);
+    });
+}
+
+function showConnectorToast(msg) {
+  let el = document.getElementById('observer-toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'observer-toast';
+    el.className = 'observer-toast';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  // eslint-disable-next-line no-unused-expressions
+  el.offsetWidth;
+  el.classList.add('is-visible');
+  clearTimeout(showConnectorToast._timer);
+  showConnectorToast._timer = setTimeout(() => el.classList.remove('is-visible'), 3200);
 }
 
 function renderInfraRow(letter, name, sub, status) {

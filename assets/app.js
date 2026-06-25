@@ -81,10 +81,19 @@ function wireNavGroups() {
   });
 }
 
-// v1: hardcoded BU. Multi-BU switcher slot exists in the sidebar but only
-// one BU is wired today (Tuto on Genus-native substrate). Per [[v06-mockup-interpretation]]
-// + decision 5 in the migration plan, others appear as they migrate.
-const BU = 'tuto';
+// v1: hardcoded BU with an optional `?bu=<name>` URL-bar override so reviewers
+// can smoke-test other BUs (e.g. `?bu=genus` for the Wiring → Connectors
+// overlay smoke test on GEN-143) without redeploying. Per [[testable-previews]].
+const DEFAULT_BU = 'tuto';
+function resolveBu() {
+  try {
+    const params = new URLSearchParams(window.location.search || '');
+    const fromUrl = params.get('bu');
+    if (fromUrl && /^[a-z][a-z0-9_-]{0,31}$/i.test(fromUrl)) return fromUrl.toLowerCase();
+  } catch { /* URL/Search unavailable — fall back to default */ }
+  return DEFAULT_BU;
+}
+const BU = resolveBu();
 
 // Viewer = logged-in user identity resolved from CF Access JWT + roles.json.
 // Per GEN-107: { email, role: 'admin'|'observer'|'unknown'|'unauthenticated',
@@ -278,6 +287,7 @@ let kpis = [];
 let measurementsByKpi = {};
 let governance = {};
 let connectors = [];
+let connectorBackrefs = {};
 let documentation = [];
 
 // ============ Boot ============
@@ -330,6 +340,7 @@ async function boot() {
       fetchSubstrateJson(baseRel('kpis.json'), []),
       fetchSubstrateJson(baseRel('governance.json'), {}),
       fetchSubstrateJson(baseRel('connectors.json'), []),
+      fetchSubstrateJson(baseRel('connectors_backrefs.json'), {}),
       fetchSubstrateJson(baseRel('documentation.json'), []),
     ]);
   } catch (e) {
@@ -339,9 +350,9 @@ async function boot() {
     // + router + routes that don't depend on substrate (Budget, Costs,
     // Invoices) still render. Per GEN-99 verification needs.
     bootError(e.message || String(e));
-    results = [null, [], [], [], [], [], [], [], {}, [], []];
+    results = [null, [], [], [], [], [], [], [], {}, [], {}, []];
   }
-  [identity, goals, initiatives, plans, tasks, meetings, memos, kpis, governance, connectors, documentation] = results;
+  [identity, goals, initiatives, plans, tasks, meetings, memos, kpis, governance, connectors, connectorBackrefs, documentation] = results;
 
   // Resolve viewer and reflect it in the shell (operator chip + body class +
   // observer banner) before any route renders so views see the correct ctx.
@@ -579,7 +590,7 @@ function renderOutputs() {
 
 function renderSettings() {
   renderSettingsView(
-    { identity, viewer, plans, initiatives, tasks, meetings, memos, kpis, governance, connectors, documentation },
+    { identity, viewer, plans, initiatives, tasks, meetings, memos, kpis, governance, connectors, connectorBackrefs, documentation, bu: BU },
     { onChange: rehydrateAndRerender },
   );
 }
