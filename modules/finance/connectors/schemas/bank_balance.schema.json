@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://genus.work/schemas/modules/finance/connectors/bank-balance-1.0.0.json",
+  "title": "Finance — bank balance snapshot",
+  "description": "Read-side bank balance snapshot. Maps from Moneybird `BankAccount` per modules/finance/connectors/moneybird.md §5.4. The runway projection sums `balance.value` across accounts in EUR.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["account", "balance", "as_of"],
+  "properties": {
+    "account": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "name"],
+      "properties": {
+        "ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable join key (Moneybird `id`)."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Display string (Moneybird `name`), e.g. \"ING zakelijk\"."
+        }
+      }
+    },
+    "balance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "currency"],
+      "properties": {
+        "value": {
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+        },
+        "currency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$"
+        }
+      }
+    },
+    "as_of": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Probe timestamp (NOT a Moneybird field). Stamped by the connector at emission."
+    }
+  }
+}
