@@ -1,0 +1,16 @@
+{
+  "_meta": {
+    "shape_version": "1.0.0",
+    "source": "Materialized by dashboard/scripts/finance/heartbeat.py (Orchestrator). Gates whether founder views render numbers — see budget.js / costs.js / invoices.js renderOnboardingBlock. Per FIN Stewart PLAYBOOK §4.",
+    "swap_to_real": "Replace with the heartbeat-materialized state. The sample below mirrors a passing post-bootstrap state for the v1 fixture so the dev surface renders."
+  },
+  "status": "passed",
+  "generated_at": "2026-06-25T20:00:00Z",
+  "bu": "medivara",
+  "checks": {
+    "connector_probe": { "pass": true, "detail": "moneybird_medivara (fixture) — last successful sync 2026-06-25T19:55:00Z" },
+    "category_coverage": { "pass": true, "missing": [] },
+    "data_freshness": { "pass": true, "last_sync_at": "2026-06-25T19:55:00Z" },
+    "identity_binding": { "pass": true, "detail": "Native Finance agent bound to Medivara installation" }
+  }
+}

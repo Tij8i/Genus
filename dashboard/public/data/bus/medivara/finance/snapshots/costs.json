@@ -1,0 +1,38 @@
+{
+  "_meta": {
+    "shape_version": "1.0.0",
+    "source": "Materialized by dashboard/scripts/finance/heartbeat.py (Orchestrator) from modules/finance/fixtures/moneybird_medivara.json. Bound-agent overlay attached to each recurring line per moneybird.md §5.3 — `vendor`, `category`, and (optional) `confidence_marker` / `_anomaly_note` are the agent's categorization, not the connector's.",
+    "swap_to_real": "Replace with snapshots/costs.json materialized from live Moneybird MCP reads once the bound Finance agent runs the recurring-cost categorization recipe against production data."
+  },
+  "generated_at": "2026-06-25T20:00:00Z",
+  "bu": "medivara",
+  "salaries_monthly_total": 32500,
+  "founder_draws_monthly": 6000,
+  "recurring": [
+    { "vendor": "AWS", "category": "saas-infra", "monthly_amount": 1200 },
+    { "vendor": "Stripe", "category": "saas-payments", "variable_pct_of_revenue": 0.029 },
+    { "vendor": "Twilio", "category": "saas-comms", "monthly_amount": 400 },
+    { "vendor": "Notion", "category": "saas-internal-tools", "monthly_amount": 100 },
+    { "vendor": "Slack", "category": "saas-internal-tools", "monthly_amount": 150 },
+    { "vendor": "WeWork Amsterdam", "category": "office-rent", "monthly_amount": 3000 },
+    { "vendor": "Boekhouder Schaap", "category": "professional-services", "monthly_amount": 800 },
+    {
+      "vendor": "ChurnZero",
+      "category": "office-supplies",
+      "monthly_amount": 2400,
+      "confidence_marker": "low",
+      "_anomaly_recategorization_target": "saas-customer-success",
+      "_anomaly_note": "Categorized as office-supplies in Moneybird; spend pattern + vendor name suggest saas-customer-success. Surfaces as an expense_recategorization recommendation candidate."
+    },
+    {
+      "vendor": "UnusedAnalyticsTool",
+      "category": "saas-analytics",
+      "monthly_amount": 200,
+      "confidence_marker": "low",
+      "_anomaly_note": "Subscription active but no usage signals in the last 3 months. Subscription-audit recommendations are forbidden in v1 per SPEC §4 — this is a flag, not a suggested action."
+    }
+  ],
+  "one_off_history": [
+    { "month": "2026-03", "amount": 15000, "note": "Healthcare data certification — legal + compliance" }
+  ]
+}

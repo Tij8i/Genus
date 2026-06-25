@@ -27,3 +27,36 @@
 .rec-reasoning { font-size: 12px; color: var(--text-dim); margin-top: 8px; padding: 8px; background: var(--surface); border-radius: 4px; }
 .rec-impact { font-size: 11px; color: var(--text-faint); margin-top: 6px; }
 .runway-conflict { margin-top: 12px; padding: 10px; background: var(--yellow-bg); border-radius: 6px; color: var(--text); font-size: 12px; }
+
+/* Costs view (GEN-133) */
+.costs-overview-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 8px; }
+.costs-overview-cell { padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; }
+.costs-overview-cell .finance-bignum { font-size: 22px; }
+.costs-overview-cell .finance-bignum-sub { margin-left: 4px; }
+
+.costs-attention-card { padding: 14px; border-color: var(--yellow-border, var(--border)); }
+.costs-attention-card-head { display: flex; align-items: baseline; gap: 10px; }
+.costs-attention-card-head h2 { font-size: 14px; font-weight: 600; margin: 0; }
+.costs-attention-count { background: var(--yellow); color: var(--bg); }
+.costs-attention-list { list-style: none; padding: 0; margin: 10px 0 0; display: flex; flex-direction: column; gap: 8px; }
+.costs-attention-item { padding: 8px 10px; background: var(--surface); border-radius: 4px; }
+.costs-attention-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.costs-attention-vendor { font-weight: 600; font-size: 13px; }
+.costs-attention-amount { font-size: 12px; color: var(--text-dim); }
+.costs-attention-claim { margin-top: 4px; font-size: 12px; }
+
+.costs-ledger-table th:last-child, .costs-ledger-table td:last-child { color: var(--text-dim); }
+.costs-ledger-row--flagged { background: var(--yellow-bg); }
+.costs-row-vendor, .costs-row-category { background: none; border: none; padding: 0; font: inherit; color: inherit; cursor: pointer; text-align: left; }
+.costs-row-vendor { font-weight: 600; }
+.costs-row-vendor:hover, .costs-row-category:hover { text-decoration: underline; }
+
+.costs-chip { display: inline-block; font-size: 10px; padding: 1px 8px; border-radius: 10px; text-transform: uppercase; letter-spacing: 0.05em; line-height: 1.6; }
+.costs-chip-recurring { background: var(--green-bg); color: var(--green-fg); }
+.costs-chip-adhoc { background: var(--surface2); color: var(--text-dim); }
+
+.costs-filter-chips { margin-left: 8px; display: inline-flex; gap: 6px; vertical-align: middle; }
+.costs-filter-chip { font-size: 10px; padding: 2px 8px; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; cursor: pointer; color: var(--text-dim); }
+.costs-filter-chip:hover { color: var(--text); }
+
+.costs-one-off-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
