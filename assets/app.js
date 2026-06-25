@@ -35,6 +35,7 @@ import { renderPeople as renderPeopleView } from './views/people.js';
 import { renderBudget as renderBudgetView } from '../modules/finance/views/budget.js';
 import { renderCosts as renderCostsView } from '../modules/finance/views/costs.js';
 import { renderInvoices as renderInvoicesView } from '../modules/finance/views/invoices.js';
+import { renderConfidenceDemo as renderConfidenceDemoView } from './views/confidence-demo.js';
 import { openOnboarding } from './overlay.js';
 import { applyAppearance } from './appearance.js';
 
@@ -450,10 +451,15 @@ function renderRoute(route) {
   else if (route === 'budget') safeRender('budget', renderBudget);
   else if (route === 'costs') safeRender('costs', renderCosts);
   else if (route === 'invoices') safeRender('invoices', renderInvoices);
+  else if (route === 'confidence-demo') safeRender('confidence-demo', renderConfidenceDemo);
 
   // Apply observer-mode tooltips to write-action buttons in the just-rendered
   // route. Views rebuild innerHTML so titles must be re-applied post-render.
   applyObserverTooltips();
+}
+
+function renderConfidenceDemo() {
+  renderConfidenceDemoView({ identity });
 }
 
 // For non-admin viewers, set `title` on all write-action elements so the
