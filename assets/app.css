@@ -2323,6 +2323,186 @@ body {
 .row-tag-mono { background: var(--surface2); color: var(--text-faint); }
 .row-tag-accent { background: var(--accent-bg); color: var(--accent); }
 
+/* ============================================================
+ * Connector list + overlay (GEN-104 §4.3 / §4.4 / §5 — GEN-143)
+ * Clickable connector rows, overlay detail card (header / MCP / used-by /
+ * health / actions / footer), Genus-vs-operator badges, stale pill,
+ * role-disabled tooltip on action buttons.
+ * ============================================================ */
+.wiring-header-chips {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.connector-ownership-chip {
+  gap: 10px;
+}
+.connector-owner-sep { color: var(--text-veryfaint); font-weight: 700; }
+
+.connector-owner-badge {
+  display: inline-flex; align-items: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .02em;
+  border-radius: 5px; padding: 2px 7px;
+  white-space: nowrap;
+  flex: none;
+}
+.connector-owner-badge-genus {
+  background: var(--accent-bg); color: var(--accent);
+}
+.connector-owner-badge-operator {
+  background: #fff1d6; color: #8a5a00;
+}
+.connector-stale-pill {
+  display: inline-flex; align-items: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px; font-weight: 700; letter-spacing: .04em;
+  border-radius: 5px; padding: 2px 7px;
+  background: var(--yellow-bg); color: var(--yellow-fg);
+  border: 1px solid #f0e0ab;
+  flex: none;
+}
+
+/* Clickable connector rows — keep .row-with-icon visuals but make the whole
+ * row a button + add a hover affordance and a chevron via ::after. */
+.connector-row-list { display: flex; flex-direction: column; }
+.connector-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 8px 12px 4px;
+  border: 0;
+  border-bottom: 1px solid rgba(20, 22, 28, .05);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+  border-radius: 8px;
+  transition: background-color 120ms ease-out;
+}
+.connector-row:hover { background: var(--surface2); }
+.connector-row:last-child { border-bottom: 0; }
+.connector-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.connector-row-used-by { color: var(--text-veryfaint); }
+
+/* Overlay detail card */
+.connector-detail-header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 14px; flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.connector-detail-title-row {
+  display: flex; align-items: center; gap: 12px;
+}
+.connector-detail-title {
+  font-size: 18px; font-weight: 700; letter-spacing: -.01em;
+}
+.connector-detail-id {
+  font-size: 11.5px; color: var(--text-faint); margin-top: 2px;
+}
+.connector-detail-chips {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+
+.connector-detail-section {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.connector-detail-section:first-of-type { border-top: 0; padding-top: 0; }
+.connector-detail-section-label {
+  font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--text-veryfaint); font-weight: 700;
+  margin-bottom: 8px;
+}
+.connector-detail-grid {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px 18px;
+}
+.connector-detail-cell { min-width: 0; }
+.connector-detail-cell-label {
+  font-size: 10px; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--text-veryfaint);
+  margin-bottom: 2px;
+}
+.connector-detail-value {
+  font-size: 13px; font-weight: 500;
+  color: var(--text);
+  word-break: break-word;
+}
+.connector-detail-value-prose {
+  white-space: pre-wrap;
+  color: var(--text-dim);
+}
+
+.connector-detail-cap-row {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  margin-top: 10px;
+}
+.connector-detail-cap-empty {
+  font-size: 11px; color: var(--text-veryfaint); margin-top: 8px;
+}
+.connector-cap-chip {
+  font-size: 10.5px; font-weight: 600;
+  border-radius: 99px; padding: 2px 9px;
+  background: var(--surface2); color: var(--text-dim);
+  border: 1px solid var(--border);
+}
+
+.connector-used-by-list { display: flex; flex-direction: column; }
+.connector-used-by-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(20, 22, 28, .04);
+}
+.connector-used-by-row:last-child { border-bottom: 0; }
+
+.connector-action-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.connector-action-btn {
+  font-size: 13px; font-weight: 600;
+  background: var(--accent); color: #fff;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+  transition: filter 120ms ease-out;
+}
+.connector-action-btn:hover:not([disabled]) { filter: brightness(0.94); }
+.connector-action-btn-heal {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+}
+.connector-action-btn-heal:hover:not([disabled]) { background: var(--surface2); filter: none; }
+.connector-action-btn[disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.connector-action-disabled-tip {
+  font-size: 12px; color: var(--text-faint);
+  font-style: italic;
+}
+.connector-action-result {
+  margin-top: 12px;
+  font-size: 12.5px; font-weight: 600;
+  min-height: 18px;
+}
+.connector-action-result-ok { color: var(--green-fg); }
+.connector-action-result-bad { color: var(--red-fg); }
+
+.connector-detail-foot {
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-veryfaint);
+}
+
+@media (max-width: 640px) {
+  .connector-detail-grid { grid-template-columns: 1fr; }
+}
+
 /* Appearance sub-tab */
 .appearance-name-preview {
   display: flex; align-items: center; gap: 10px;
