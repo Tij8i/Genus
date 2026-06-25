@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://genus.work/schemas/modules/finance/settings-1.0.0.json",
+  "title": "Finance Module — operator settings",
+  "description": "Operator-configurable settings for the Finance Module. Per docs/system/MODULE_MANIFEST.md §6.7 (views.settings.schema_ref) and docs/genus/modules/finance/SPEC_v1.md §9. Connector ownership: Moneybird MCP is wired in Settings → Wiring by the Genus Agent (SPEC_v1 §10); this schema references the connector by id rather than carrying credentials.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["moneybird", "alerts"],
+  "properties": {
+    "moneybird": {
+      "type": "object",
+      "description": "Moneybird MCP connection. Credentials are owned by the Genus Agent via Settings → Wiring; this module only references the wired connector.",
+      "additionalProperties": false,
+      "required": ["connector_ref"],
+      "properties": {
+        "connector_ref": {
+          "type": "string",
+          "description": "ID of the Moneybird MCP connector entry in Settings → Wiring (e.g. 'connectors/moneybird/medivara').",
+          "pattern": "^connectors/[a-z0-9-]+/[a-z0-9-]+$"
+        },
+        "endpoint_override": {
+          "type": "string",
+          "format": "uri",
+          "description": "Optional override of the MCP endpoint URL. Defaults to the connector's wired endpoint."
+        },
+        "auth_token_ref": {
+          "type": "string",
+          "description": "Optional override of the credential reference (e.g. 'secrets/moneybird/medivara'). Defaults to the connector's wired credential.",
+          "pattern": "^secrets/[a-z0-9/_-]+$"
+        },
+        "healthcheck_route": {
+          "type": "string",
+          "description": "Path on the MCP endpoint used by the Genus Agent's connector-health probe.",
+          "default": "/healthz",
+          "pattern": "^/[a-zA-Z0-9/_.-]*$"
+        }
+      }
+    },
+    "alerts": {
+      "type": "object",
+      "description": "Threshold-driven alert configuration. Drives the FIN-RUNWAY-ALERT + FIN-DRAW-CONFLICT-ALERT recipes.",
+      "additionalProperties": false,
+      "properties": {
+        "runway_days_warning": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 90,
+          "description": "Warn (yellow) when runway drops below this many days."
+        },
+        "runway_days_critical": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 45,
+          "description": "Critical (red) when runway drops below this many days."
+        },
+        "burn_variance_warning_pct": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 200,
+          "default": 15,
+          "description": "Warn when monthly burn deviates from plan by this percentage."
+        },
+        "draw_vs_runway_conflict_days": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 30,
+          "description": "Trigger draw-vs-runway conflict alert when a proposed founder draw would shorten runway by at least this many days."
+        }
+      }
+    },
+    "digest": {
+      "type": "object",
+      "description": "Monthly digest configuration (FIN-MONTHLY-DIGEST recipe).",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "day_of_month": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 28,
+          "default": 1,
+          "description": "Day of the month the digest fires."
+        },
+        "include_categories": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["cash", "revenue", "costs", "runway", "recommendations"]
+          },
+          "uniqueItems": true,
+          "default": ["cash", "revenue", "costs", "runway", "recommendations"]
+        }
+      }
+    },
+    "recommendations": {
+      "type": "object",
+      "description": "Per-category enable/disable within the v1 allowed action set.",
+      "additionalProperties": false,
+      "properties": {
+        "expense_recategorization_enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "founder_draw_adjustment_enabled": {
+          "type": "boolean",
+          "default": true
+        }
+      }
+    }
+  }
+}
