@@ -13,7 +13,7 @@ The archetype specification for **Virgil** — the continuous personal agent. Re
 - Forking the `Virgil` reference repo to seed a new instance
 - Integrating a runtime that needs to host Virgil agents
 
-Prior reading: `GENUS_SPEC.md` (the protocol) and `AGENT_FAMILIES.md` (the three families overview).
+Prior reading: `GENUS_SPEC.md` (the protocol) and `AGENT_FAMILIES.md` (the four families overview).
 
 ---
 
@@ -87,6 +87,8 @@ Same structural progression as Stewart; the substance is personal, not business.
 A Virgil's job is to **maximize Execute within the operator's envelope by winning Trust** — same as Stewart. The difference is that Virgil's actions touch the operator's personal life (calendar mods, communications drafted in their voice, financial moves), so the envelope is held tighter at the start.
 
 Some personal-domain actions may stay permanently at Recommend (e.g., sending messages to family in the operator's voice). That's a feature, not a ceiling.
+
+> **Disambiguation (per `GENUS_SPEC.md` v0.6).** Virgil's *Monitor mode* (above) is the **operational stance** of one Virgil workflow at a moment in time — observing-without-executing while trust is built. It is NOT the same as the **Monitor family** (a separate archetype documented in `MONITOR.md`, scoped to one business + one domain). A Virgil in Monitor mode is still a Virgil (personal scope, climbs toward Execute). When ambiguity matters in writing, use *Virgil's Monitor mode* vs *Monitor family*.
 
 ---
 

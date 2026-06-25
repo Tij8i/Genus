@@ -17,8 +17,9 @@ Genus sits **above** the technical runtime — n8n, LangGraph, CrewAI, OpenAI Ag
 | File | Purpose |
 |---|---|
 | [`GENUS_SPEC.md`](./GENUS_SPEC.md) | The protocol specification — primitives, substrate, governance model, runtime adapters |
-| [`AGENT_FAMILIES.md`](./AGENT_FAMILIES.md) | The three archetypes and how they compose (Stewart · Virgil · Mason) |
-| [`STEWART.md`](./STEWART.md) | Stewart archetype — business-unit agents (Monitor → Recommend → Execute) |
+| [`AGENT_FAMILIES.md`](./AGENT_FAMILIES.md) | The four archetypes and how they compose (Stewart · Virgil · Monitor · Mason) |
+| [`STEWART.md`](./STEWART.md) | Stewart archetype — business-unit agents, delivery-shaped (Campaigns, Monitor → Recommend → Execute trust modes) |
+| [`MONITOR.md`](./MONITOR.md) | Monitor archetype — domain-bound watchers, ConfidenceFrame-native, no Campaigns (Finance is the first instance) |
 | [`MASON.md`](./MASON.md) | Mason archetype — per-invocation craft specialists |
 | [`VIRGIL.md`](./VIRGIL.md) | Virgil archetype — personal-OS agents |
 | [`GENUS_MANIFEST.md`](./GENUS_MANIFEST.md) | The manifest contract every Genus-conformant agent declares |
@@ -31,15 +32,16 @@ Genus sits **above** the technical runtime — n8n, LangGraph, CrewAI, OpenAI Ag
 
 ## Status
 
-**Genus v0.3** — public specification. Phase B retrofitted three reference agents (a Stewart instance, a Virgil instance, a Designer Mason) and folded the findings into the spec.
+**Genus v0.6 (partial)** — public specification. v0.4 added the Productivity Taxonomy (Goal / Initiative / Package / Task); v0.5 partial promoted ConfidenceFrame to a protocol-level primitive; v0.6 partial declares **Monitor** as the fourth Genus family (Finance is the first Monitor instance). `MODULES.md` remains pending.
 
 Companion open-source agents (sister repos — each independently forkable, composable together):
 
 - [Tij8i/virgil](https://github.com/Tij8i/virgil) — reference Virgil agent (personal-OS, runs in Claude Code)
 - [Tij8i/Stewart](https://github.com/Tij8i/Stewart) — reference Stewart agent (business-unit operator, daily heartbeat)
+- Finance Monitor — the first Monitor instance, shipping inside the Finance Module (`modules/finance/` in this repo; the native agent overlay lives in the Orchestrator repo at `docs/genus/modules/finance/agent/`)
 - Mason reference implementation — coming soon
 
-## Runtime support (v0.3)
+## Runtime support (v0.6)
 
 Genus v0.1+ commits to **one runtime**: Claude Code. All other runtimes (n8n, LangGraph, CrewAI, OpenAI Agents SDK, Make, Zapier, custom code) are documented as *future, adopter-pull* in `GENUS_SPEC.md` § Runtime adapters. No speculative adapter work — the spec is pressure-tested under one runtime first, multi-runtime support comes after.
 

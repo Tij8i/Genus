@@ -13,7 +13,7 @@ The archetype specification for **Stewart** — the continuous business-unit age
 - Forking the `Stewart` reference repo to seed a new instance
 - Integrating a runtime that needs to host Stewart agents
 
-Prior reading: `GENUS_SPEC.md` (the protocol) and `AGENT_FAMILIES.md` (the three families overview).
+Prior reading: `GENUS_SPEC.md` (the protocol) and `AGENT_FAMILIES.md` (the four families overview — note that Stewart and Monitor are both continuous-business archetypes, separated by work shape; see `MONITOR.md` if your candidate agent is read-mostly with no Campaigns).
 
 ---
 
@@ -119,6 +119,8 @@ Every Stewart operates across three modes. A given Stewart may be in different m
 The Stewart's job is to **maximize Execute within the operator's envelope by winning Trust**. Climbing is gradual — the Trust Cycle Reflection (bi-weekly) is where the envelope re-evaluates.
 
 A workflow does not have to climb to Execute. High-stakes work may permanently sit at Recommend; that's a feature, not a failure.
+
+> **Disambiguation (per `GENUS_SPEC.md` v0.6).** Stewart's *Monitor mode* (above) is the **operational stance** of one Stewart workflow at a moment in time — observing-without-executing while trust is built. It is NOT the same as the **Monitor family** (a separate archetype documented in `MONITOR.md`). A Stewart in Monitor mode is still a Stewart: it carries Campaigns, runs delivery loops, climbs toward Execute. A Monitor agent is a different archetype with a different work shape (watch, not delivery) and never runs Campaigns. When ambiguity matters in writing, use *Stewart's Monitor mode* vs *Monitor family*.
 
 ---
 
