@@ -9,10 +9,24 @@ import { fetchSubstrateJson } from '../substrate-client.js';
 const ROLE_TINTS = { owner: '#16181d', admin: '#2f6bff', member: '#0e9f6e', observer: '#9aa1ae' };
 const ROLE_LABELS = { owner: 'Owner', admin: 'Admin', member: 'Member', observer: 'Observer' };
 
+// Cached viewer — survives re-renders triggered by add/edit/remove so the
+// re-render doesn't lose admin context and grey out the page.
+let CACHED_VIEWER = null;
+
 export async function renderPeople(ctx) {
   const root = document.getElementById('route-people');
   if (!root) return;
-  const viewer = ctx?.viewer || {};
+  // Prefer freshly-passed viewer (from app.js boot); fall back to cached.
+  // If neither, re-fetch from /api/identity so re-renders never lose context.
+  let viewer = ctx?.viewer && Object.keys(ctx.viewer).length ? ctx.viewer : CACHED_VIEWER;
+  if (!viewer) {
+    try {
+      const r = await fetch('/api/identity', { cache: 'no-store' });
+      const j = await r.json();
+      viewer = j.ok && j.viewer ? j.viewer : {};
+    } catch { viewer = {}; }
+  }
+  CACHED_VIEWER = viewer;
   root.innerHTML = '<div class="card"><div class="card-body">Loading roster…</div></div>';
 
   const currentBu = new URLSearchParams(location.search).get('bu') || localStorage.getItem('genus.currentBu') || 'genus';
@@ -234,7 +248,7 @@ function wireForm(u, action, addToBu) {
         return;
       }
       closeOverlay();
-      renderPeople({ viewer: {} });
+      renderPeople({ viewer: CACHED_VIEWER });
     } catch (e) {
       $err.textContent = 'Network error: ' + (e.message || e); $err.style.display = 'block';
       $save.disabled = false; $save.textContent = action === 'add' ? `Add to ${addToBu}` : 'Save changes';
