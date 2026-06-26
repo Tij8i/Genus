@@ -56,15 +56,41 @@ export async function onRequestPost({ request, env }) {
   const ownerCount = roles.users.filter(u => u.role === 'owner').length;
 
   if (action === 'add') {
-    if (existing) return jsonResponse(409, { ok: false, message: `${email} already exists; use action=edit` });
-    const newUser = {
-      email,
-      role: targetRole || 'member',
-      ventures: Array.isArray(body.ventures) ? body.ventures : [],
-      display_name: (body.display_name || email).toString(),
-      title: (body.title || '').toString() || undefined,
-    };
-    roles.users.push(newUser);
+    const requestedVentures = Array.isArray(body.ventures) ? body.ventures : [];
+    if (existing) {
+      // User already in roles.json — treat add as "extend ventures" since
+      // each BU's add-flow is BU-scoped (Session #19 fix). Role + display_name
+      // + title are kept from the existing record (not overwritten by the
+      // second BU's add form).
+      const have = new Set(existing.ventures || []);
+      const wantsAll = requestedVentures.includes('*');
+      const alreadyHasAll = have.has('*');
+      const alreadyCoveredAll = alreadyHasAll
+        || requestedVentures.every(v => have.has(v));
+      if (alreadyCoveredAll && !wantsAll) {
+        return jsonResponse(409, {
+          ok: false,
+          message: `${email} already has access to the requested venture(s).`,
+        });
+      }
+      if (wantsAll) {
+        existing.ventures = ['*'];
+      } else {
+        const merged = new Set(existing.ventures || []);
+        for (const v of requestedVentures) merged.add(v);
+        existing.ventures = Array.from(merged);
+      }
+      roles.users[existingIdx] = existing;
+    } else {
+      const newUser = {
+        email,
+        role: targetRole || 'member',
+        ventures: requestedVentures,
+        display_name: (body.display_name || email).toString(),
+        title: (body.title || '').toString() || undefined,
+      };
+      roles.users.push(newUser);
+    }
   } else if (action === 'edit') {
     if (!existing) return jsonResponse(404, { ok: false, message: `${email} not found` });
     // Demoting an owner — block if last owner
