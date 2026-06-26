@@ -80,18 +80,19 @@ function renderRow(u, viewer) {
 }
 
 function addPersonFlow(allBus) {
+  const currentBu = new URLSearchParams(location.search).get('bu') || localStorage.getItem('genus.currentBu') || 'genus';
   openOverlay({
     title: 'Add a person',
-    subtitle: 'Invite a teammate, advisor, or investor',
+    subtitle: `Will be added to ${currentBu} only`,
     iconHtml: '👤',
     iconTint: '#2f6bff',
-    bodyHtml: personForm({}, allBus, false),
+    bodyHtml: personForm({}, allBus, false, currentBu),
     footerHtml: `
       <button type="button" class="onboard-cancel" id="pp-cancel">Cancel</button>
-      <button type="button" class="onboard-begin" id="pp-save">Add person</button>
+      <button type="button" class="onboard-begin" id="pp-save">Add to ${currentBu}</button>
     `,
   });
-  wireForm({}, 'add');
+  wireForm({}, 'add', currentBu);
 }
 
 function editPersonFlow(email, users, allBus) {
@@ -102,13 +103,13 @@ function editPersonFlow(email, users, allBus) {
     subtitle: 'Change role + venture access',
     iconHtml: '✎',
     iconTint: '#2f6bff',
-    bodyHtml: personForm(u, allBus, true),
+    bodyHtml: personForm(u, allBus, true, null),
     footerHtml: `
       <button type="button" class="onboard-cancel" id="pp-cancel">Cancel</button>
       <button type="button" class="onboard-begin" id="pp-save">Save changes</button>
     `,
   });
-  wireForm(u, 'edit');
+  wireForm(u, 'edit', null);
 }
 
 async function removePersonFlow(email) {
@@ -124,15 +125,34 @@ async function removePersonFlow(email) {
   } catch (e) { alert('Network error: ' + (e.message || e)); }
 }
 
-function personForm(u, allBus, isEdit) {
-  const venturesAll = !u.ventures || (Array.isArray(u.ventures) && u.ventures.includes('*'));
-  const checkboxes = allBus.map(b => `
-    <label style="display:flex;align-items:center;gap:8px;font-size:13px;padding:6px 0;">
-      <input type="checkbox" data-bu="${escapeHtml(b)}" ${(u.ventures || []).includes(b) ? 'checked' : ''} ${venturesAll ? 'disabled' : ''} />
-      ${escapeHtml(b)}
-    </label>
-  `).join('');
+function personForm(u, allBus, isEdit, addToBu) {
   const role = u.role || 'member';
+  // ADD mode: ventures are locked to the current BU only — owner of one BU isn't
+  // necessarily owner of another, so adding people to other BUs is forbidden here.
+  // EDIT mode: keep the per-BU checkbox grid (caller controls who they can add).
+  const venturesAll = !u.ventures || (Array.isArray(u.ventures) && u.ventures.includes('*'));
+  const venturesBlock = isEdit ? `
+    <div style="display:flex;flex-direction:column;gap:6px;">
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;">
+        <input type="checkbox" id="pp-ventures-all" ${venturesAll ? 'checked' : ''} />
+        All ventures (* — implicit for Owner)
+      </label>
+      <div id="pp-ventures-box" style="display:flex;flex-direction:column;gap:0;padding-left:24px;">
+        ${allBus.map(b => `
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;padding:6px 0;">
+            <input type="checkbox" data-bu="${escapeHtml(b)}" ${(u.ventures || []).includes(b) ? 'checked' : ''} ${venturesAll ? 'disabled' : ''} />
+            ${escapeHtml(b)}
+          </label>
+        `).join('')}
+      </div>
+    </div>
+  ` : `
+    <div style="padding:12px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;font-size:13px;">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-faint);font-weight:600;margin-bottom:4px;">Adding to venture</div>
+      <strong style="font-size:14px;">${escapeHtml(addToBu)}</strong>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:6px;line-height:1.5;">This person will only see ${escapeHtml(addToBu)}. The owner of another venture must add them separately for that venture — owners of one BU aren't automatically authorized to grant access to others.</div>
+    </div>
+  `;
   return `
     <div style="display:flex;flex-direction:column;gap:14px;">
       <label style="display:flex;flex-direction:column;gap:6px;">
@@ -153,39 +173,34 @@ function personForm(u, allBus, isEdit) {
       <label style="display:flex;flex-direction:column;gap:6px;">
         <span style="font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-faint);font-weight:600;">Role</span>
         <select id="pp-role" style="padding:10px 12px;font-size:14px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-family:inherit;outline:none;">
-          <option value="owner" ${role === 'owner' ? 'selected' : ''}>Owner — full access, can manage users + runtimes</option>
-          <option value="admin" ${role === 'admin' ? 'selected' : ''}>Admin — write access within ventures</option>
-          <option value="member" ${role === 'member' ? 'selected' : ''}>Member — limited write within ventures</option>
+          ${isEdit ? `<option value="owner" ${role === 'owner' ? 'selected' : ''}>Owner — full access, can manage users + runtimes</option>` : ''}
+          <option value="admin" ${role === 'admin' ? 'selected' : ''}>Admin — write access within this venture</option>
+          <option value="member" ${role === 'member' ? 'selected' : ''}>Member — limited write within this venture</option>
           <option value="observer" ${role === 'observer' ? 'selected' : ''}>Observer — read-only</option>
         </select>
       </label>
-      <div style="display:flex;flex-direction:column;gap:6px;">
-        <label style="display:flex;align-items:center;gap:8px;font-size:13px;">
-          <input type="checkbox" id="pp-ventures-all" ${venturesAll ? 'checked' : ''} />
-          All ventures (* — implicit for Owner)
-        </label>
-        <div id="pp-ventures-box" style="display:flex;flex-direction:column;gap:0;padding-left:24px;">
-          ${checkboxes}
-        </div>
-      </div>
+      ${venturesBlock}
       <div id="pp-error" style="display:none;padding:10px 12px;background:var(--red-bg);color:var(--red-fg);border-radius:6px;font-size:12px;"></div>
     </div>
   `;
 }
 
-function wireForm(u, action) {
+function wireForm(u, action, addToBu) {
   const $cancel = document.getElementById('pp-cancel');
   const $save = document.getElementById('pp-save');
   const $err = document.getElementById('pp-error');
-  const $all = document.getElementById('pp-ventures-all');
   const $role = document.getElementById('pp-role');
+  // Ventures controls only exist in edit mode
+  const $all = document.getElementById('pp-ventures-all');
 
-  $all.addEventListener('change', () => {
-    document.querySelectorAll('#pp-ventures-box input[type=checkbox]').forEach(cb => { cb.disabled = $all.checked; });
-  });
-  $role.addEventListener('change', () => {
-    if ($role.value === 'owner') { $all.checked = true; $all.dispatchEvent(new Event('change')); }
-  });
+  if ($all) {
+    $all.addEventListener('change', () => {
+      document.querySelectorAll('#pp-ventures-box input[type=checkbox]').forEach(cb => { cb.disabled = $all.checked; });
+    });
+    $role.addEventListener('change', () => {
+      if ($role.value === 'owner') { $all.checked = true; $all.dispatchEvent(new Event('change')); }
+    });
+  }
 
   $cancel.addEventListener('click', closeOverlay);
   $save.addEventListener('click', async () => {
@@ -193,8 +208,14 @@ function wireForm(u, action) {
     const display_name = document.getElementById('pp-name').value.trim();
     const title = document.getElementById('pp-title').value.trim();
     const role = $role.value;
-    const venturesAll = $all.checked;
-    const ventures = venturesAll ? ['*'] : Array.from(document.querySelectorAll('#pp-ventures-box input[type=checkbox]:checked')).map(cb => cb.dataset.bu);
+    let ventures;
+    if (action === 'add') {
+      // Always scoped to the currently-open BU
+      ventures = [addToBu];
+    } else {
+      const venturesAll = $all && $all.checked;
+      ventures = venturesAll ? ['*'] : Array.from(document.querySelectorAll('#pp-ventures-box input[type=checkbox]:checked')).map(cb => cb.dataset.bu);
+    }
     $err.style.display = 'none';
     if (!email) { $err.textContent = 'Email is required.'; $err.style.display = 'block'; return; }
 
@@ -207,14 +228,14 @@ function wireForm(u, action) {
       const result = await res.json();
       if (!res.ok || !result.ok) {
         $err.textContent = result.message || `HTTP ${res.status}`; $err.style.display = 'block';
-        $save.disabled = false; $save.textContent = action === 'add' ? 'Add person' : 'Save changes';
+        $save.disabled = false; $save.textContent = action === 'add' ? `Add to ${addToBu}` : 'Save changes';
         return;
       }
       closeOverlay();
       renderPeople({ viewer: {} });
     } catch (e) {
       $err.textContent = 'Network error: ' + (e.message || e); $err.style.display = 'block';
-      $save.disabled = false; $save.textContent = action === 'add' ? 'Add person' : 'Save changes';
+      $save.disabled = false; $save.textContent = action === 'add' ? `Add to ${addToBu}` : 'Save changes';
     }
   });
 }
