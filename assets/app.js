@@ -103,7 +103,7 @@ let BU = 'genus';
 // Populated at boot from /api/identity, then passed through to every view via
 // the render ctx so write actions can gate on viewer.role.
 let viewer = null;
-function viewerIsAdmin() { return viewer && viewer.role === 'admin'; }
+function viewerIsAdmin() { return viewer && (viewer.role === 'admin' || viewer.role === 'owner'); }
 
 // Preview-as override: an admin can append ?viewAs=observer (or unknown /
 // unauthenticated) to the URL to simulate that role end-to-end. We persist
@@ -222,7 +222,9 @@ function applyViewerToShell(v) {
   document.body.classList.toggle('viewer-observer', v.role === 'observer');
   document.body.classList.toggle('viewer-unauthenticated', v.role === 'unauthenticated');
   document.body.classList.toggle('viewer-unknown', v.role === 'unknown');
-  document.body.classList.toggle('viewer-admin', v.role === 'admin');
+  document.body.classList.toggle('viewer-admin', v.role === 'admin' || v.role === 'owner');
+  document.body.classList.toggle('viewer-owner', v.role === 'owner');
+  document.body.classList.toggle('viewer-member', v.role === 'member');
   document.body.classList.toggle('viewer-dev-fallback', !!v.dev_fallback);
 
   // Operator chip bottom-left of sidebar — was hardcoded "Alessio Tixi /
@@ -231,8 +233,12 @@ function applyViewerToShell(v) {
   if (chip) {
     const display = v.display_name || v.email || 'Unknown';
     const initial = (display.charAt(0) || '?').toUpperCase();
-    const rolePill = v.role === 'admin'
+    const rolePill = v.role === 'owner'
+      ? '<span class="role-pill role-pill--admin">Owner</span>'
+      : v.role === 'admin'
       ? '<span class="role-pill role-pill--admin">Admin</span>'
+      : v.role === 'member'
+      ? '<span class="role-pill role-pill--observer">Member</span>'
       : v.role === 'observer'
       ? '<span class="role-pill role-pill--observer">Observer</span>'
       : v.role === 'unknown'
@@ -251,7 +257,7 @@ function applyViewerToShell(v) {
   // isn't admin. Keeps the operator-mental-model honest: "you're in read-only
   // mode, write attempts will be rejected."
   const existing = document.getElementById('observer-banner');
-  if (v.role !== 'admin') {
+  if (v.role !== 'admin' && v.role !== 'owner') {
     const previewSuffix = v.preview_as
       ? ` <a href="?viewAs=off" class="observer-banner-exit">Exit preview ←</a>`
       : '';
