@@ -148,7 +148,7 @@ function openRuntimeForm(existing, users, ctx, opts) {
   const r = existing || { kind: 'paperclip-local', status: 'active' };
   openOverlay({
     title: isEdit ? `Edit runtime — ${r.display_name || r.id}` : 'Add a runtime',
-    subtitle: 'Where an agent's tasks run + whose Claude account is billed',
+    subtitle: "Where an agent's tasks run + whose Claude account is billed",
     iconHtml: '⚙',
     iconTint: '#8a5cf6',
     bodyHtml: runtimeFormBody(r, users, isEdit),
