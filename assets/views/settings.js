@@ -10,6 +10,7 @@
 
 import { escapeHtml, ago, icon } from '../utils.js';
 import { ACCENT_OPTIONS, DENSITY_OPTIONS, loadAppearance, saveAppearance } from '../appearance.js';
+import { openOverlay, closeOverlay } from '../overlay.js';
 
 let activeSubTab = 'profile';
 
@@ -17,7 +18,7 @@ export function renderSettings(ctx, opts = {}) {
   const queryStr = (window.location.hash || '').split('?')[1] || '';
   const tab = new URLSearchParams(queryStr).get('tab');
   // Modules moved out of Settings — it's a top-level nav route now per v0.7 IA.
-  if (['profile', 'governance', 'wiring', 'appearance'].includes(tab)) activeSubTab = tab;
+  if (['profile', 'governance', 'wiring', 'runtimes', 'appearance'].includes(tab)) activeSubTab = tab;
   if (activeSubTab === 'modules') activeSubTab = 'profile';  // legacy URL → profile
 
   const root = document.getElementById('route-settings');
@@ -26,6 +27,7 @@ export function renderSettings(ctx, opts = {}) {
       ${renderSubTab('profile', 'BU profile')}
       ${renderSubTab('governance', 'Governance')}
       ${renderSubTab('wiring', 'Wiring')}
+      ${renderSubTab('runtimes', 'Runtimes')}
       ${renderSubTab('appearance', 'Appearance')}
     </nav>
     <div id="settings-subtab-body"></div>
@@ -46,10 +48,217 @@ export function renderSettings(ctx, opts = {}) {
     wireGovernanceControls(ctx, opts.onChange);
   }
   else if (activeSubTab === 'wiring') body.innerHTML = renderWiringSubTab(ctx);
+  else if (activeSubTab === 'runtimes') { body.innerHTML = '<div class="card"><div class="card-body">Loading runtimes…</div></div>'; renderRuntimesSubTab(ctx, opts); }
   else if (activeSubTab === 'appearance') {
     body.innerHTML = renderAppearanceSubTab(ctx);
     wireAppearanceControls(ctx);
   }
+}
+
+// ============ Runtimes sub-tab (Session #19 multi-user Q1=C completion) ============
+//
+// Lists runtimes from /api/admin-state. Add / Edit / Remove via overlay forms.
+// Owner-only — non-owners get the polite click-gate toast.
+
+const RUNTIME_KIND_LABELS = {
+  'paperclip-local': 'Paperclip — local',
+  'paperclip-cloud': 'Paperclip — cloud',
+  'n8n': 'n8n',
+  'custom': 'Custom',
+};
+
+async function renderRuntimesSubTab(ctx, opts) {
+  const body = document.getElementById('settings-subtab-body');
+  if (!body) return;
+  const viewer = ctx?.viewer || {};
+  let state;
+  try {
+    const res = await fetch('/api/admin-state');
+    state = await res.json();
+    if (!state.ok) throw new Error(state.message || `HTTP ${res.status}`);
+  } catch (e) {
+    body.innerHTML = `<div class="card"><div class="card-body">Could not load runtimes: ${escapeHtml(e.message || String(e))}</div></div>`;
+    return;
+  }
+  const runtimes = state.runtimes || [];
+  const users = state.users || [];
+  const bindings = state.bindings || [];
+  const isOwner = viewer.role === 'owner';
+
+  const usageCount = (rid) => bindings.filter(b => b.runtime_id === rid).length;
+
+  body.innerHTML = `
+    <div class="card">
+      <div class="card-header-row">
+        <div class="card-header-left">
+          <span class="card-title">Runtimes</span>
+          <p class="card-sub">${runtimes.length} runtime${runtimes.length === 1 ? '' : 's'} registered. Each agent binding picks one — that's whose Claude account is billed when the agent runs.</p>
+        </div>
+        ${isOwner ? '<button type="button" class="onboard-begin" id="rt-add-btn">Add a runtime</button>' : ''}
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-top:14px;">
+        ${runtimes.length === 0
+          ? '<div class="finance-note">No runtimes configured.</div>'
+          : runtimes.map(r => renderRuntimeRow(r, usageCount(r.id), isOwner, users)).join('')}
+      </div>
+    </div>
+  `;
+
+  if (isOwner) {
+    document.getElementById('rt-add-btn')?.addEventListener('click', () => openRuntimeForm(null, users, ctx, opts));
+    body.querySelectorAll('[data-rt-edit]').forEach(btn => btn.addEventListener('click', () => {
+      const id = btn.dataset.rtEdit;
+      const r = runtimes.find(x => x.id === id);
+      if (r) openRuntimeForm(r, users, ctx, opts);
+    }));
+    body.querySelectorAll('[data-rt-remove]').forEach(btn => btn.addEventListener('click', () => removeRuntimeFlow(btn.dataset.rtRemove, ctx, opts)));
+  }
+}
+
+function renderRuntimeRow(r, usage, isOwner, users) {
+  const owner = users.find(u => (u.email || '').toLowerCase() === (r.owner_email || '').toLowerCase());
+  const ownerLabel = owner ? (owner.display_name + ' · ' + owner.email) : r.owner_email;
+  const statusColor = r.status === 'active' ? 'var(--green)' : 'var(--text-faint)';
+  return `
+    <div style="display:flex;align-items:start;gap:14px;padding:12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;">
+      <div style="flex:1;min-width:0;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <strong style="font-size:14px;">${escapeHtml(r.display_name)}</strong>
+          <span style="font-size:10px;padding:1px 7px;background:${statusColor};color:#fff;border-radius:8px;font-weight:600;">${(r.status || 'active').toUpperCase()}</span>
+        </div>
+        <div style="font-size:11px;color:var(--text-faint);font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;margin-top:2px;">${escapeHtml(r.id)} · ${escapeHtml(RUNTIME_KIND_LABELS[r.kind] || r.kind)}</div>
+        <div style="font-size:12px;color:var(--text-dim);margin-top:6px;">Endpoint: <code>${escapeHtml(r.endpoint)}</code></div>
+        <div style="font-size:12px;color:var(--text-dim);margin-top:2px;">Billed to: <strong>${escapeHtml(ownerLabel)}</strong></div>
+        ${r.description ? `<div style="font-size:11px;color:var(--text-faint);margin-top:6px;line-height:1.55;">${escapeHtml(r.description)}</div>` : ''}
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:end;gap:6px;">
+        <div style="font-size:11px;color:var(--text-faint);">Used by ${usage} binding${usage === 1 ? '' : 's'}</div>
+        ${isOwner ? `
+          <div style="display:flex;gap:6px;">
+            <button type="button" class="onboard-cancel" data-rt-edit="${escapeHtml(r.id)}" style="padding:6px 12px;font-size:11px;">Edit</button>
+            <button type="button" class="onboard-cancel" data-rt-remove="${escapeHtml(r.id)}" style="padding:6px 12px;font-size:11px;border-color:var(--red);color:var(--red-fg);" ${usage > 0 ? 'title="Rebind agents first"' : ''}>Remove</button>
+          </div>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+function openRuntimeForm(existing, users, ctx, opts) {
+  const isEdit = !!existing;
+  const r = existing || { kind: 'paperclip-local', status: 'active' };
+  openOverlay({
+    title: isEdit ? `Edit runtime — ${r.display_name || r.id}` : 'Add a runtime',
+    subtitle: 'Where an agent's tasks run + whose Claude account is billed',
+    iconHtml: '⚙',
+    iconTint: '#8a5cf6',
+    bodyHtml: runtimeFormBody(r, users, isEdit),
+    footerHtml: `
+      <button type="button" class="onboard-cancel" id="rt-cancel">Cancel</button>
+      <button type="button" class="onboard-begin" id="rt-save">${isEdit ? 'Save changes' : 'Add runtime'}</button>
+    `,
+  });
+  document.getElementById('rt-cancel').addEventListener('click', closeOverlay);
+  document.getElementById('rt-save').addEventListener('click', () => submitRuntime(r, isEdit, ctx, opts));
+}
+
+function runtimeFormBody(r, users, isEdit) {
+  const userOpts = users.map(u => `<option value="${escapeHtml(u.email)}" ${(u.email || '').toLowerCase() === (r.owner_email || '').toLowerCase() ? 'selected' : ''}>${escapeHtml(u.display_name || u.email)} · ${escapeHtml(u.email)}</option>`).join('');
+  return `
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <label style="display:flex;flex-direction:column;gap:6px;">
+        <span style="font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-faint);font-weight:600;">ID</span>
+        <input id="rt-id" type="text" value="${escapeHtml(r.id || '')}" placeholder="e.g. cloud-paperclip-prod" ${isEdit ? 'readonly' : ''}
+               style="padding:10px 12px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:${isEdit ? 'var(--surface2)' : 'var(--surface)'};color:var(--text);font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;outline:none;" />
+        <span style="font-size:11px;color:var(--text-faint);">Lowercase letters, digits, hyphens. Immutable once created.</span>
+      </label>
+      <label style="display:flex;flex-direction:column;gap:6px;">
+        <span style="font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-faint);font-weight:600;">Display name</span>
+        <input id="rt-name" type="text" value="${escapeHtml(r.display_name || '')}" placeholder="e.g. Cloud Paperclip (prod)"
+               style="padding:10px 12px;font-size:14px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-family:inherit;outline:none;" />
+      </label>
+      <label style="display:flex;flex-direction:column;gap:6px;">
+        <span style="font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-faint);font-weight:600;">Kind</span>
+        <select id="rt-kind" style="padding:10px 12px;font-size:14px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-family:inherit;outline:none;">
+          ${Object.entries(RUNTIME_KIND_LABELS).map(([k, l]) => `<option value="${k}" ${k === r.kind ? 'selected' : ''}>${l}</option>`).join('')}
+        </select>
+      </label>
+      <label style="display:flex;flex-direction:column;gap:6px;">
+        <span style="font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-faint);font-weight:600;">Endpoint</span>
+        <input id="rt-endpoint" type="text" value="${escapeHtml(r.endpoint || '')}" placeholder="e.g. http://127.0.0.1:3100 or https://paperclip.example.com"
+               style="padding:10px 12px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;outline:none;" />
+      </label>
+      <label style="display:flex;flex-direction:column;gap:6px;">
+        <span style="font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-faint);font-weight:600;">Billed to (Claude account owner)</span>
+        <select id="rt-owner" style="padding:10px 12px;font-size:14px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-family:inherit;outline:none;">
+          ${userOpts}
+        </select>
+        <span style="font-size:11px;color:var(--text-faint);">When this runtime executes an agent, this person's Claude API credits are consumed.</span>
+      </label>
+      <label style="display:flex;flex-direction:column;gap:6px;">
+        <span style="font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-faint);font-weight:600;">Description (optional)</span>
+        <textarea id="rt-desc" rows="2" placeholder="What is this runtime for?"
+                  style="padding:10px 12px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-family:inherit;outline:none;resize:vertical;">${escapeHtml(r.description || '')}</textarea>
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;">
+        <input type="checkbox" id="rt-active" ${(r.status || 'active') === 'active' ? 'checked' : ''} />
+        Active (can be selected in agent bindings)
+      </label>
+      <div id="rt-error" style="display:none;padding:10px 12px;background:var(--red-bg);color:var(--red-fg);border-radius:6px;font-size:12px;"></div>
+    </div>
+  `;
+}
+
+async function submitRuntime(prev, isEdit, ctx, opts) {
+  const $err = document.getElementById('rt-error');
+  const $save = document.getElementById('rt-save');
+  const id = document.getElementById('rt-id').value.trim().toLowerCase();
+  const payload = {
+    action: isEdit ? 'edit' : 'add',
+    id,
+    display_name: document.getElementById('rt-name').value.trim(),
+    kind: document.getElementById('rt-kind').value,
+    endpoint: document.getElementById('rt-endpoint').value.trim(),
+    owner_email: document.getElementById('rt-owner').value,
+    description: document.getElementById('rt-desc').value.trim(),
+    status: document.getElementById('rt-active').checked ? 'active' : 'disabled',
+  };
+  $err.style.display = 'none';
+  $save.disabled = true; $save.textContent = 'Saving…';
+  try {
+    const res = await fetch('/api/runtime-edit', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const result = await res.json();
+    if (!res.ok || !result.ok) {
+      $err.textContent = result.message || `HTTP ${res.status}`; $err.style.display = 'block';
+      $save.disabled = false; $save.textContent = isEdit ? 'Save changes' : 'Add runtime';
+      return;
+    }
+    closeOverlay();
+    renderRuntimesSubTab(ctx, opts);
+  } catch (e) {
+    $err.textContent = 'Network error: ' + (e.message || e); $err.style.display = 'block';
+    $save.disabled = false; $save.textContent = isEdit ? 'Save changes' : 'Add runtime';
+  }
+}
+
+async function removeRuntimeFlow(id, ctx, opts) {
+  if (!confirm(`Remove runtime '${id}'? This refuses if any agent is bound to it; rebind those first.`)) return;
+  try {
+    const res = await fetch('/api/runtime-edit', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'remove', id }),
+    });
+    const result = await res.json();
+    if (!res.ok || !result.ok) {
+      const msg = result.message || `HTTP ${res.status}`;
+      const refs = (result.referring_bindings || []).map(b => `${b.bu}/${b.module_id}`).join(', ');
+      alert(refs ? `${msg}\n\nReferring bindings: ${refs}` : msg);
+      return;
+    }
+    renderRuntimesSubTab(ctx, opts);
+  } catch (e) { alert('Network error: ' + (e.message || e)); }
 }
 
 function wireAppearanceControls(ctx) {
