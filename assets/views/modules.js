@@ -26,6 +26,14 @@ export async function renderModules(_ctx) {
   const installed = new Set(buEntry?.modules_installed || []);
   const available = registry.available_modules || [];
 
+  // Pull admin state for bindings + runtimes + users (best-effort — admin-gated)
+  let adminState = { runtimes: [], bindings: [], users: [] };
+  try {
+    const res = await fetch('/api/admin-state');
+    const j = await res.json();
+    if (j.ok) adminState = j;
+  } catch (_) { /* viewer not admin — skip binding chips */ }
+
   if (available.length === 0) {
     root.innerHTML = `
       <div class="card">
@@ -48,7 +56,7 @@ export async function renderModules(_ctx) {
       </div>
     </div>
     <div class="modules-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
-      ${available.map(m => renderModuleCard(m, installed.has(m.id))).join('')}
+      ${available.map(m => renderModuleCard(m, installed.has(m.id), bindingFor(adminState, currentBu, m.id), adminState)).join('')}
     </div>
   `;
 
@@ -60,17 +68,36 @@ export async function renderModules(_ctx) {
     btn.addEventListener('click', () => installModuleFlow(btn.dataset.modUninstall, currentBu, false));
   });
   root.querySelectorAll('[data-mod-preview]').forEach(btn => {
-    btn.addEventListener('click', () => openModulePreview(btn.dataset.modPreview, available, installed.has(btn.dataset.modPreview), currentBu));
+    btn.addEventListener('click', () => openModulePreview(btn.dataset.modPreview, available, installed.has(btn.dataset.modPreview), currentBu, adminState));
+  });
+  root.querySelectorAll('[data-mod-binding]').forEach(btn => {
+    btn.addEventListener('click', () => openBindingEdit(btn.dataset.modBinding, currentBu, adminState));
   });
 }
 
-function renderModuleCard(m, isInstalled) {
+function bindingFor(adminState, bu, module_id) {
+  return (adminState.bindings || []).find(b => b.bu === bu && b.module_id === module_id) || null;
+}
+
+function renderModuleCard(m, isInstalled, binding, adminState) {
   const installedTag = isInstalled
     ? '<span class="finance-pill" style="background:var(--green);">INSTALLED</span>'
     : '';
   const actionBtn = isInstalled
     ? `<button type="button" class="onboard-cancel" data-mod-uninstall="${escapeHtml(m.id)}">Uninstall</button>`
     : `<button type="button" class="onboard-begin" data-mod-install="${escapeHtml(m.id)}">Install</button>`;
+
+  let bindingChip = '';
+  if (isInstalled && binding) {
+    const runtime = (adminState.runtimes || []).find(r => r.id === binding.runtime_id);
+    const hitl = (adminState.users || []).find(u => (u.email || '').toLowerCase() === (binding.hitl_owner_email || '').toLowerCase());
+    bindingChip = `
+      <div style="display:flex;flex-direction:column;gap:4px;padding:10px 12px;background:var(--surface2);border-radius:6px;font-size:12px;">
+        <div><span style="color:var(--text-faint);">Runtime:</span> <strong>${escapeHtml(runtime?.display_name || binding.runtime_id || 'unbound')}</strong></div>
+        <div><span style="color:var(--text-faint);">HITL owner:</span> <strong>${escapeHtml(hitl?.display_name || binding.hitl_owner_email || 'unbound')}</strong></div>
+        <button type="button" data-mod-binding="${escapeHtml(m.id)}" style="align-self:flex-start;margin-top:4px;padding:4px 10px;font-size:11px;background:none;border:1px solid var(--border);border-radius:4px;color:var(--accent);cursor:pointer;">Edit binding</button>
+      </div>`;
+  }
   return `
     <div class="card" style="display:flex;flex-direction:column;gap:10px;">
       <div style="display:flex;align-items:start;gap:14px;">
@@ -84,6 +111,7 @@ function renderModuleCard(m, isInstalled) {
         </div>
       </div>
       <p style="font-size:13px;color:var(--text-dim);line-height:1.55;margin:0;">${escapeHtml(m.summary || '')}</p>
+      ${bindingChip}
       <div style="display:flex;gap:8px;margin-top:6px;justify-content:flex-end;">
         <button type="button" class="onboard-cancel" data-mod-preview="${escapeHtml(m.id)}">Details</button>
         ${actionBtn}
@@ -92,7 +120,72 @@ function renderModuleCard(m, isInstalled) {
   `;
 }
 
-function openModulePreview(modId, available, isInstalled, currentBu) {
+function openBindingEdit(modId, bu, adminState) {
+  const binding = bindingFor(adminState, bu, modId);
+  if (!binding) { alert('No binding found for this module on this BU.'); return; }
+  const runtimes = adminState.runtimes || [];
+  const users = adminState.users || [];
+  const bodyHtml = `
+    <p style="font-size:13px;color:var(--text-dim);line-height:1.6;margin:0 0 18px;">
+      Determines which Paperclip instance executes the agent (= whose Claude account is billed) + who reviews approvals.
+    </p>
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <label style="display:flex;flex-direction:column;gap:6px;">
+        <span style="font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-faint);font-weight:600;">Runtime</span>
+        <select id="bind-runtime" style="padding:10px 12px;font-size:14px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-family:inherit;outline:none;">
+          ${runtimes.map(r => `<option value="${escapeHtml(r.id)}" ${r.id === binding.runtime_id ? 'selected' : ''}>${escapeHtml(r.display_name)} (${escapeHtml(r.kind)})</option>`).join('')}
+        </select>
+        <span style="font-size:11px;color:var(--text-faint);">Cloud Paperclip + multi-runtime CRUD = follow-up. v1 lists local Paperclip only.</span>
+      </label>
+      <label style="display:flex;flex-direction:column;gap:6px;">
+        <span style="font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-faint);font-weight:600;">Human-in-the-loop owner</span>
+        <select id="bind-hitl" style="padding:10px 12px;font-size:14px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-family:inherit;outline:none;">
+          ${users.map(u => `<option value="${escapeHtml(u.email)}" ${(u.email || '').toLowerCase() === (binding.hitl_owner_email || '').toLowerCase() ? 'selected' : ''}>${escapeHtml(u.display_name || u.email)} · ${escapeHtml(u.email)}</option>`).join('')}
+        </select>
+        <span style="font-size:11px;color:var(--text-faint);">Reviews approvals + gets surfacing for this agent.</span>
+      </label>
+      <div style="padding:10px 12px;background:var(--surface2);border-radius:6px;font-size:11px;color:var(--text-faint);font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;">
+        Installed by: ${escapeHtml(binding.installer_email)} · Installed at: ${escapeHtml(binding.installed_at)}
+      </div>
+      <div id="bind-error" style="display:none;padding:10px 12px;background:var(--red-bg);color:var(--red-fg);border-radius:6px;font-size:12px;"></div>
+    </div>
+  `;
+  openOverlay({
+    title: `Edit binding — ${modId} for ${bu}`,
+    subtitle: 'Runtime + Human-in-the-loop owner',
+    iconHtml: '🔗',
+    iconTint: '#8a5cf6',
+    bodyHtml,
+    footerHtml: `
+      <button type="button" class="onboard-cancel" id="bind-cancel">Cancel</button>
+      <button type="button" class="onboard-begin" id="bind-save">Save</button>
+    `,
+  });
+  document.getElementById('bind-cancel').addEventListener('click', closeOverlay);
+  document.getElementById('bind-save').addEventListener('click', async () => {
+    const runtime_id = document.getElementById('bind-runtime').value;
+    const hitl_owner_email = document.getElementById('bind-hitl').value;
+    const $err = document.getElementById('bind-error');
+    $err.style.display = 'none';
+    try {
+      const res = await fetch('/api/agent-binding-edit', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bu, module_id: modId, runtime_id, hitl_owner_email }),
+      });
+      const result = await res.json();
+      if (!res.ok || !result.ok) {
+        $err.textContent = result.message || `HTTP ${res.status}`; $err.style.display = 'block';
+        return;
+      }
+      closeOverlay();
+      renderModules({});
+    } catch (e) {
+      $err.textContent = 'Network error: ' + (e.message || e); $err.style.display = 'block';
+    }
+  });
+}
+
+function openModulePreview(modId, available, isInstalled, currentBu, _adminState) {
   const m = available.find(x => x.id === modId);
   if (!m) return;
   openOverlay({
