@@ -431,6 +431,14 @@ async function boot() {
       // Add-a-* actions are disabled (v0.8) — their disabled attribute
       // blocks clicks. Manage-people still navigates.
       wsMenu.querySelector('[data-action="manage-people"]')?.addEventListener('click', () => { wsMenu.hidden = true; window.location.hash = '#people'; });
+      // Add a person → jump to People & permissions (which has the working add flow)
+      wsMenu.querySelector('[data-action="add-human"]')?.addEventListener('click', () => {
+        wsMenu.hidden = true;
+        wsBtn.setAttribute('aria-expanded', 'false');
+        window.location.hash = '#people';
+        // Open the add-person modal once the People view has rendered
+        setTimeout(() => document.getElementById('people-add-btn')?.click(), 250);
+      });
       // Add a venture → minimal modal flow (Session #18 Initiative #2 v1)
       wsMenu.querySelector('[data-action="add-venture"]')?.addEventListener('click', async () => {
         wsMenu.hidden = true;
@@ -789,9 +797,9 @@ function renderWsMenu(identity) {
     <div class="ws-menu-section-label mono">Ventures</div>
     ${ventureRows}
     <div class="ws-menu-divider"></div>
-    <button type="button" class="ws-menu-action btn-soon" data-action="add-human" disabled title="Add-a-person flow ships in v0.8">
+    <button type="button" class="ws-menu-action" data-action="add-human" title="Go to People & permissions">
       <span class="ws-menu-action-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg></span>
-      Add a person<span class="soon-tag">soon</span>
+      Add a person
     </button>
     <button type="button" class="ws-menu-action" data-action="add-venture" title="Create a new BU (empty install)">
       <span class="ws-menu-action-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/></svg></span>
