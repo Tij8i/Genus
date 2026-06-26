@@ -37,49 +37,64 @@ export async function syncAccessEmails(env, emails) {
   const token = env.CLOUDFLARE_API_TOKEN;
   const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
 
-  // 1) Fetch existing policy to preserve fields we don't touch
-  let current;
-  try {
-    const r = await fetch(`${CF_API}/accounts/${acct}/access/apps/${app}/policies/${pol}`, { headers });
-    const j = await r.json();
-    if (!r.ok || !j.success) {
-      return { ok: false, status: r.status, message: 'Could not GET policy: ' + JSON.stringify(j.errors || j) };
+  // Cloudflare has two policy shapes:
+  //   - App-scoped:    /accounts/{acct}/access/apps/{app}/policies/{pol}
+  //   - Reusable:      /accounts/{acct}/access/policies/{pol}  (account-level)
+  // Newer Zero Trust setups use reusable policies referenced by apps. Try the
+  // reusable endpoint first; fall back to app-scoped if it 404s.
+  const reusableUrl = `${CF_API}/accounts/${acct}/access/policies/${pol}`;
+  const appScopedUrl = `${CF_API}/accounts/${acct}/access/apps/${app}/policies/${pol}`;
+
+  let current, baseUrl;
+  for (const url of [reusableUrl, appScopedUrl]) {
+    try {
+      const r = await fetch(url, { headers });
+      const j = await r.json();
+      if (r.ok && j.success) {
+        current = j.result;
+        baseUrl = url;
+        break;
+      }
+      // 404 = wrong shape, try the other endpoint silently
+      if (r.status !== 404) {
+        return { ok: false, status: r.status, message: 'Could not GET policy: ' + JSON.stringify(j.errors || j) };
+      }
+    } catch (e) {
+      return { ok: false, message: 'Network GET policy: ' + (e.message || String(e)) };
     }
-    current = j.result;
-  } catch (e) {
-    return { ok: false, message: 'Network GET policy: ' + (e.message || String(e)) };
+  }
+  if (!current || !baseUrl) {
+    return { ok: false, status: 404, message: 'Policy not found at either reusable or app-scoped endpoint — check CLOUDFLARE_ACCESS_POLICY_UUID (and CLOUDFLARE_ACCESS_APP_UUID if app-scoped).' };
   }
 
-  // 2) Build new include list — one { email: { email } } per address
+  // Build new include list — one { email: { email } } per address
   const cleaned = Array.from(new Set(emails.map(e => (e || '').toString().trim().toLowerCase()).filter(Boolean)));
   const newInclude = cleaned.map(e => ({ email: { email: e } }));
 
-  // 3) PUT updated policy
+  // Reusable policies require `name` + `decision` at minimum. App-scoped accept
+  // a superset. Same payload works for both.
   const payload = {
     name: current.name || 'Genus dashboard allow',
     decision: current.decision || 'allow',
     include: newInclude,
     exclude: current.exclude || [],
     require: current.require || [],
-    precedence: current.precedence,
-    session_duration: current.session_duration,
-    approval_required: current.approval_required,
-    isolation_required: current.isolation_required,
-    purpose_justification_required: current.purpose_justification_required,
-    purpose_justification_prompt: current.purpose_justification_prompt,
   };
-  // Strip undefined keys (Cloudflare API rejects unknown nulls in some places)
-  Object.keys(payload).forEach(k => payload[k] === undefined && delete payload[k]);
+  // Preserve only fields that exist (app-scoped has more; reusable rejects some)
+  for (const k of ['session_duration', 'approval_required', 'isolation_required',
+                   'purpose_justification_required', 'purpose_justification_prompt']) {
+    if (current[k] !== undefined && current[k] !== null) payload[k] = current[k];
+  }
 
   try {
-    const r = await fetch(`${CF_API}/accounts/${acct}/access/apps/${app}/policies/${pol}`, {
+    const r = await fetch(baseUrl, {
       method: 'PUT', headers, body: JSON.stringify(payload),
     });
     const j = await r.json();
     if (!r.ok || !j.success) {
-      return { ok: false, status: r.status, message: 'Could not PUT policy: ' + JSON.stringify(j.errors || j) };
+      return { ok: false, status: r.status, message: 'Could not PUT policy: ' + JSON.stringify(j.errors || j), endpoint: baseUrl };
     }
-    return { ok: true, synced: cleaned.length };
+    return { ok: true, synced: cleaned.length, endpoint_kind: baseUrl === reusableUrl ? 'reusable' : 'app-scoped' };
   } catch (e) {
     return { ok: false, message: 'Network PUT policy: ' + (e.message || String(e)) };
   }
