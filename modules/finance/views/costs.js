@@ -14,8 +14,8 @@ export async function renderCosts(_ctx) {
   root.innerHTML = '<div class="card"><div class="card-body">Loading Costs…</div></div>';
 
   const [snap, conf] = await Promise.all([
-    fetchSubstrateJson(baseRel('snapshots/costs.json'), null),
-    fetchSubstrateJson(baseRel('CONFIDENCE_STATE.json'), { per_figure: {} }),
+    fetchSubstrateJson(baseRel('snapshots/costs.json'), null).catch(() => null),
+    fetchSubstrateJson(baseRel('CONFIDENCE_STATE.json'), { per_figure: {} }).catch(() => ({ per_figure: {} })),
   ]);
 
   if (!snap) {

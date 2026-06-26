@@ -13,7 +13,7 @@ export async function renderInvoices(_ctx) {
   if (!root) return;
   root.innerHTML = '<div class="card"><div class="card-body">Loading Revenue + Invoices…</div></div>';
 
-  const snap = await fetchSubstrateJson(baseRel('snapshots/revenue.json'), null);
+  const snap = await fetchSubstrateJson(baseRel('snapshots/revenue.json'), null).catch(() => null);
   if (!snap) {
     root.innerHTML = `
       <div class="card"><div class="card-body">

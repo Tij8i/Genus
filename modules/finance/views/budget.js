@@ -14,12 +14,15 @@ export async function renderBudget(_ctx) {
   if (!root) return;
   root.innerHTML = '<div class="card"><div class="card-body">Loading Finance Stewart of ' + escapeHtml(CURRENT_BU) + '…</div></div>';
 
+  // Note: fetchSubstrateJson throws when fallback is null and file is missing.
+  // Wrap each with .catch(()=>null) so Promise.all always resolves even if
+  // the substrate hasn't been seeded yet (newly-installed Finance for this BU).
   const [cash, runway, recs, conf, onboarding] = await Promise.all([
-    fetchSubstrateJson(baseRel('snapshots/cash.json'), null),
-    fetchSubstrateJson(baseRel('snapshots/runway.json'), null),
-    fetchSubstrateJsonl(baseRel('RECOMMENDATION_LEDGER.jsonl')),
-    fetchSubstrateJson(baseRel('CONFIDENCE_STATE.json'), { per_figure: {} }),
-    fetchSubstrateJson(baseRel('ONBOARDING_STATE.json'), null),
+    fetchSubstrateJson(baseRel('snapshots/cash.json'), null).catch(() => null),
+    fetchSubstrateJson(baseRel('snapshots/runway.json'), null).catch(() => null),
+    fetchSubstrateJsonl(baseRel('RECOMMENDATION_LEDGER.jsonl')).catch(() => []),
+    fetchSubstrateJson(baseRel('CONFIDENCE_STATE.json'), { per_figure: {} }).catch(() => ({ per_figure: {} })),
+    fetchSubstrateJson(baseRel('ONBOARDING_STATE.json'), null).catch(() => null),
   ]);
 
   if (!cash && !runway) {
