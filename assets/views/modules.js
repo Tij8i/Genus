@@ -212,27 +212,58 @@ function openModulePreview(modId, available, isInstalled, currentBu, _adminState
 }
 
 async function installModuleFlow(modId, bu, install) {
+  // Two-phase: install-module is fast (registry write only), then module-init
+  // does the slow follow-up (substrate seed + agent binding) in the background.
+  // Splitting prevents Pages Function timeouts.
   try {
-    const res = await fetch('/api/install-module', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bu, module_id: modId, action: install ? 'install' : 'uninstall' }),
+    const res = await fetchJsonOrText('/api/install-module', {
+      bu, module_id: modId, action: install ? 'install' : 'uninstall',
     });
-    const result = await res.json();
-    if (!res.ok || !result.ok) {
-      alert((install ? 'Install' : 'Uninstall') + ' failed: ' + (result.message || `HTTP ${res.status}`));
+    if (!res.ok) {
+      alert((install ? 'Install' : 'Uninstall') + ' failed: ' + (res.message || 'unknown'));
       return;
     }
+    // Fire-and-forget the second-phase init (substrate seed + binding). Don't
+    // block the user on it — if it fails, they can re-trigger via re-install.
+    fetchJsonOrText('/api/module-init', {
+      bu, module_id: modId, action: install ? 'install' : 'uninstall',
+    }).catch(() => { /* best-effort */ });
     if (install) {
-      // Genus Agent onboarding overlay — drives the post-install setup.
       openGenusAgentOnboarding(modId, bu);
     } else {
-      // Uninstall: just reload so nav filter re-applies.
       location.reload();
     }
   } catch (e) {
-    alert('Network error: ' + (e.message || e));
+    alert((install ? 'Install' : 'Uninstall') + ' failed: ' + (e.message || e));
   }
+}
+
+// Helper: POST JSON and parse the response, but tolerate HTML error pages
+// (Cloudflare timeout/error pages) by returning a graceful error object.
+async function fetchJsonOrText(url, body) {
+  let res;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    return { ok: false, message: 'network: ' + (e.message || e) };
+  }
+  const text = await res.text();
+  let parsed;
+  try { parsed = JSON.parse(text); }
+  catch {
+    return {
+      ok: res.ok,
+      message: res.ok
+        ? null
+        : `server returned ${res.status} (non-JSON, likely Cloudflare timeout — but the write may still have succeeded; reload to confirm)`,
+      _raw: text.slice(0, 200),
+    };
+  }
+  return parsed;
 }
 
 // Genus Agent onboarding flow — fires after a module install completes.

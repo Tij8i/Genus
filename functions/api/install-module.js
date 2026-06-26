@@ -60,7 +60,10 @@ export async function onRequestPost({ request, env }) {
   }
   buEntry.modules_installed = Array.from(installed);
 
-  // 3) Write registry back
+  // 3) Write registry back. Keep this endpoint LEAN — only the registry write.
+  //    Substrate seed + agent binding now happen via /api/module-init which the
+  //    client fires after a successful install. Splitting these prevents the
+  //    Cloudflare Pages Function from timing out + returning HTML.
   const newContent = JSON.stringify(parsed, null, 2) + '\n';
   const action_verb = action === 'install' ? 'install' : 'uninstall';
   try {
@@ -69,20 +72,7 @@ export async function onRequestPost({ request, env }) {
     return jsonResponse(e.status || 500, { ok: false, message: 'Could not write registry: ' + (e.message || String(e)) });
   }
 
-  // 4) On install of `finance`, seed per-BU substrate stubs so the views can
-  //    render an honest "onboarding pending" state instead of "Loading…" forever.
-  //    Failure here is non-fatal — registry is the source of truth.
-  let seeded = null;
-  if (action === 'install' && module_id === 'finance') {
-    seeded = await seedFinanceSubstrate(env.GITHUB_PAT, bu);
-  }
-
-  // 5) Create or remove the agent binding entry in agent_bindings.json so the
-  //    Settings → Modules surface shows the default runtime + HITL owner.
-  //    Best-effort — non-fatal.
-  const binding_result = await mutateAgentBinding(env.GITHUB_PAT, bu, module_id, action, viewer.email);
-
-  return jsonResponse(200, { ok: true, action, bu: buEntry, seeded, binding: binding_result });
+  return jsonResponse(200, { ok: true, action, bu: buEntry });
 }
 
 // Add a default binding on install, remove on uninstall. Defaults: runtime_id =
