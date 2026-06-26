@@ -27,6 +27,7 @@ import { renderKpis as renderKpisView } from './views/kpis.js';
 import { renderOutputs as renderOutputsView } from './views/outputs.js';
 import { renderSettings as renderSettingsView } from './views/settings.js';
 import { renderLearning as renderLearningView } from './views/learning.js';
+import { renderLayers as renderLayersView } from './views/layers.js';
 import { renderModules as renderModulesView } from './views/modules.js';
 import { renderPeople as renderPeopleView } from './views/people.js';
 // Finance views migrated to the Finance Module folder (GEN-127). When the
@@ -518,6 +519,7 @@ function renderRoute(route) {
   else if (route === 'inputs') safeRender('inputs', renderInputs);
   else if (route === 'outputs') safeRender('outputs', renderOutputs);
   else if (route === 'learning') safeRender('learning', renderLearning);
+  else if (route === 'layers') safeRender('layers', renderLayers);
   else if (route === 'modules') safeRender('modules', renderModules);
   else if (route === 'people') safeRender('people', renderPeople);
   else if (route === 'settings') safeRender('settings', renderSettings);
@@ -568,6 +570,9 @@ function renderLearning() {
   renderLearningView({ identity, viewer, plans, initiatives, tasks, meetings, memos, kpis, governance, connectors, documentation });
 }
 
+function renderLayers() {
+  renderLayersView({ identity, viewer });
+}
 function renderModules() {
   renderModulesView({ identity, viewer, plans, initiatives, tasks, meetings, memos, kpis, governance, connectors, documentation });
 }
