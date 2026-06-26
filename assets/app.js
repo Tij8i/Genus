@@ -209,9 +209,15 @@ function installObserverClickGate() {
     if (!target) return;
     e.preventDefault();
     e.stopPropagation();
-    showObserverToast(viewer && viewer.role === 'unknown'
-      ? 'No access — your email is not in roles.json'
-      : 'Observer mode — read-only');
+    const role = viewer && viewer.role;
+    const msg = role === 'unknown'
+      ? "Your email isn't authorized for this dashboard yet. Ask the owner to add you."
+      : role === 'member'
+      ? "You don't have permission for this action. Ask the venture owner to upgrade your role."
+      : role === 'observer'
+      ? 'Observer mode — read-only.'
+      : "You don't have permission for this action.";
+    showObserverToast(msg);
   }, true); // capture: true so we run before any view handler
 }
 
@@ -257,7 +263,10 @@ function applyViewerToShell(v) {
   // isn't admin. Keeps the operator-mental-model honest: "you're in read-only
   // mode, write attempts will be rejected."
   const existing = document.getElementById('observer-banner');
-  if (v.role !== 'admin' && v.role !== 'owner') {
+  // Member is a legitimate role (limited write within ventures) — no banner needed.
+  // Banner only for unknown / unauthenticated / observer (legacy read-only).
+  const showBanner = v.role === 'observer' || v.role === 'unknown' || v.role === 'unauthenticated';
+  if (showBanner) {
     const previewSuffix = v.preview_as
       ? ` <a href="?viewAs=off" class="observer-banner-exit">Exit preview ←</a>`
       : '';

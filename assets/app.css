@@ -4012,6 +4012,8 @@ body.viewer-unknown        .observer-banner { background: #ffd6d6; color: #7a121
 .role-pill--observer  { background: #fff4c2; color: #6b4f00; }
 .role-pill--unknown   { background: #ffd6d6; color: #7a1212; }
 .role-pill--unauth    { background: #ffd6d6; color: #7a1212; }
+.role-pill--member    { background: #eafaf1; color: #0c8a4f; }
+.role-pill--owner     { background: #1a1a1a; color: #fff; }
 
 /* Observer mode visual gate. Dims buttons that mutate state when the viewer
    isn't admin. We KEEP pointer-events live (no `pointer-events: none`) so the
@@ -4021,14 +4023,19 @@ body.viewer-unknown        .observer-banner { background: #ffd6d6; color: #7a121
 body.viewer-observer [data-write-action],
 body.viewer-unknown [data-write-action],
 body.viewer-unauthenticated [data-write-action],
+body.viewer-member [data-write-action],
 body.viewer-observer .primary-btn-pill:not(.btn-soon):not([disabled]),
 body.viewer-unknown .primary-btn-pill:not(.btn-soon):not([disabled]),
+body.viewer-member .primary-btn-pill:not(.btn-soon):not([disabled]),
 body.viewer-observer .kpi-log-btn,
 body.viewer-unknown .kpi-log-btn,
+body.viewer-member .kpi-log-btn,
 body.viewer-observer .approve-btn,
 body.viewer-unknown .approve-btn,
+body.viewer-member .approve-btn,
 body.viewer-observer .reject-btn,
-body.viewer-unknown .reject-btn {
+body.viewer-unknown .reject-btn,
+body.viewer-member .reject-btn {
   opacity: 0.45;
   cursor: not-allowed;
   filter: grayscale(0.4);
