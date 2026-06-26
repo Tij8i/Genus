@@ -7,6 +7,7 @@
 
 import { getFile, putFile, jsonResponse } from './_gh.js';
 import { requireAdmin } from './_identity.js';
+import { syncAccessEmails } from './_cf_access.js';
 
 const ROLES_PATH = 'dashboard/public/data/system/roles.json';
 const VALID_ROLES = new Set(['owner', 'admin', 'member', 'observer']);
@@ -95,5 +96,11 @@ export async function onRequestPost({ request, env }) {
     return jsonResponse(e.status || 500, { ok: false, message: 'Could not write roles: ' + (e.message || String(e)) });
   }
 
-  return jsonResponse(200, { ok: true, action, email, users_total: roles.users.length });
+  // Cloudflare Access auto-sync — best-effort, non-fatal. Mirrors roles.json
+  // emails to the Access policy's include list so the OTP gets sent only to
+  // authorized addresses. Skipped silently if env vars not configured.
+  const allEmails = roles.users.map(u => u.email).filter(Boolean);
+  const accessSync = await syncAccessEmails(env, allEmails);
+
+  return jsonResponse(200, { ok: true, action, email, users_total: roles.users.length, access_sync: accessSync });
 }
