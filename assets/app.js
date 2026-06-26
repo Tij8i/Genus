@@ -197,6 +197,10 @@ const WRITE_ACTION_SELECTORS = [
   '.kpi-log-btn',
   '.approve-btn',
   '.reject-btn',
+  // Suggestion card actions (Inputs view)
+  '.sugg-accept',
+  '.sugg-dismiss',
+  '.sugg-discuss',
 ].join(',');
 
 // Install a single document-level capture-phase click listener that gates

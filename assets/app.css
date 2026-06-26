@@ -4035,7 +4035,10 @@ body.viewer-unknown .approve-btn,
 body.viewer-member .approve-btn,
 body.viewer-observer .reject-btn,
 body.viewer-unknown .reject-btn,
-body.viewer-member .reject-btn {
+body.viewer-member .reject-btn,
+body.viewer-observer .sugg-accept, body.viewer-observer .sugg-dismiss, body.viewer-observer .sugg-discuss,
+body.viewer-unknown .sugg-accept, body.viewer-unknown .sugg-dismiss, body.viewer-unknown .sugg-discuss,
+body.viewer-member .sugg-accept, body.viewer-member .sugg-dismiss, body.viewer-member .sugg-discuss {
   opacity: 0.45;
   cursor: not-allowed;
   filter: grayscale(0.4);
