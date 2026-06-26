@@ -53,7 +53,6 @@ export async function renderPeople(ctx) {
           <span class="card-title">People &amp; permissions — ${escapeHtml(currentBuName)}</span>
           <p class="card-sub">${users.length} ${users.length === 1 ? 'user' : 'users'} with access to this venture. Each BU is permission-isolated; switch ventures to see other rosters.</p>
         </div>
-        ${isAdminLike ? `<button type="button" class="onboard-begin" id="people-add-btn">Add a person</button>` : ''}
       </div>
       <div class="people-list" style="display:flex;flex-direction:column;gap:8px;margin-top:14px;">
         ${users.map(u => renderRow(u, viewer)).join('')}
@@ -61,7 +60,14 @@ export async function renderPeople(ctx) {
     </div>
   `;
 
-  document.getElementById('people-add-btn')?.addEventListener('click', () => addPersonFlow(allBus));
+  // Page-header 'Add a person' button (lives in index.html, not in this view's
+  // body) — wire it up here so it triggers the same flow.
+  const headerBtn = document.getElementById('invite-person-btn');
+  if (headerBtn && !headerBtn._wired) {
+    headerBtn.addEventListener('click', () => addPersonFlow(allBus));
+    headerBtn._wired = true;
+    if (!isAdminLike) headerBtn.disabled = true;
+  }
   root.querySelectorAll('[data-edit-email]').forEach(b => b.addEventListener('click', () => editPersonFlow(b.dataset.editEmail, users, allBus)));
   root.querySelectorAll('[data-remove-email]').forEach(b => b.addEventListener('click', () => removePersonFlow(b.dataset.removeEmail)));
 }

@@ -437,7 +437,7 @@ async function boot() {
         wsBtn.setAttribute('aria-expanded', 'false');
         window.location.hash = '#people';
         // Open the add-person modal once the People view has rendered
-        setTimeout(() => document.getElementById('people-add-btn')?.click(), 250);
+        setTimeout(() => document.getElementById('invite-person-btn')?.click(), 250);
       });
       // Add a venture → minimal modal flow (Session #18 Initiative #2 v1)
       wsMenu.querySelector('[data-action="add-venture"]')?.addEventListener('click', async () => {
