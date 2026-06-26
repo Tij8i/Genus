@@ -15,9 +15,10 @@ export async function renderPeople(ctx) {
   const viewer = ctx?.viewer || {};
   root.innerHTML = '<div class="card"><div class="card-body">Loading roster…</div></div>';
 
+  const currentBu = new URLSearchParams(location.search).get('bu') || localStorage.getItem('genus.currentBu') || 'genus';
   let state;
   try {
-    const res = await fetch('/api/admin-state');
+    const res = await fetch('/api/admin-state?bu=' + encodeURIComponent(currentBu));
     state = await res.json();
     if (!state.ok) throw new Error(state.message || `HTTP ${res.status}`);
   } catch (e) {
@@ -28,14 +29,15 @@ export async function renderPeople(ctx) {
 
   const registry = await fetchSubstrateJson('dashboard/public/data/bus/_registry.json', null);
   const allBus = (registry?.business_units || []).map(b => b.id);
+  const currentBuName = (registry?.business_units || []).find(b => b.id === currentBu)?.display_name || currentBu;
 
   const isAdminLike = viewer.role === 'owner' || viewer.role === 'admin';
   root.innerHTML = `
     <div class="card">
       <div class="card-header-row">
         <div class="card-header-left">
-          <span class="card-title">People &amp; permissions</span>
-          <p class="card-sub">${users.length} ${users.length === 1 ? 'user' : 'users'} · global tier (Owner / Admin / Member / Observer) + per-BU access list.</p>
+          <span class="card-title">People &amp; permissions — ${escapeHtml(currentBuName)}</span>
+          <p class="card-sub">${users.length} ${users.length === 1 ? 'user' : 'users'} with access to this venture. Each BU is permission-isolated; switch ventures to see other rosters.</p>
         </div>
         ${isAdminLike ? `<button type="button" class="onboard-begin" id="people-add-btn">Add a person</button>` : ''}
       </div>

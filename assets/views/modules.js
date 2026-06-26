@@ -26,10 +26,12 @@ export async function renderModules(_ctx) {
   const installed = new Set(buEntry?.modules_installed || []);
   const available = registry.available_modules || [];
 
-  // Pull admin state for bindings + runtimes + users (best-effort — admin-gated)
+  // Pull admin state for bindings + runtimes + users (best-effort — admin-gated).
+  // Scope by current BU so the HITL-owner picker only lists users authorized
+  // for this venture.
   let adminState = { runtimes: [], bindings: [], users: [] };
   try {
-    const res = await fetch('/api/admin-state');
+    const res = await fetch('/api/admin-state?bu=' + encodeURIComponent(currentBu));
     const j = await res.json();
     if (j.ok) adminState = j;
   } catch (_) { /* viewer not admin — skip binding chips */ }
