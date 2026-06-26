@@ -19,6 +19,10 @@
 import { getFile, jsonResponse } from './_gh.js';
 
 const ROLES_PATH = 'dashboard/public/data/system/roles.json';
+
+function titleForRole(r) {
+  return ({ owner: 'Owner', admin: 'Admin', member: 'Member', observer: 'Observer' })[r] || (r ? r.charAt(0).toUpperCase() + r.slice(1) : 'Member');
+}
 const CF_ACCESS_HEADER = 'cf-access-authenticated-user-email';
 const VIEW_AS_HEADER = 'x-genus-view-as';
 const VIEW_AS_QUERY = 'viewAs';
@@ -87,7 +91,7 @@ export async function getViewerIdentity(request, env) {
   const email = readCfAccessEmail(request);
   let actual;
   if (!email) {
-    const firstAdmin = roles.users.find(u => u.role === 'admin');
+    const firstAdmin = roles.users.find(u => u.role === 'owner' || u.role === 'admin');
     if (!firstAdmin) {
       actual = { email: null, role: 'unauthenticated', ventures: [], dev_fallback: true };
     } else {
@@ -110,7 +114,7 @@ export async function getViewerIdentity(request, env) {
         role: match.role,
         ventures: match.ventures || [],
         display_name: match.display_name || match.email,
-        title: match.title || (match.role === 'admin' ? 'Admin' : 'Observer'),
+        title: match.title || titleForRole(match.role),
       };
     }
   }
@@ -122,7 +126,7 @@ export async function getViewerIdentity(request, env) {
   // preview environments without needing a second test email + CF Access
   // policy edit.
   const previewAs = readPreviewAs(request);
-  if (previewAs && actual.role === 'admin') {
+  if (previewAs && (actual.role === 'admin' || actual.role === 'owner')) {
     return {
       ...actual,
       role: previewAs,
@@ -161,8 +165,8 @@ export async function requireAdmin(request, env, { bu } = {}) {
   if (viewer.role === 'unknown') {
     return jsonResponse(403, { ok: false, message: `${viewer.email} is not in roles.json — contact the operator.` });
   }
-  if (viewer.role !== 'admin') {
-    return jsonResponse(403, { ok: false, message: `Observer mode — write actions are read-only. (role=${viewer.role})` });
+  if (viewer.role !== 'admin' && viewer.role !== 'owner') {
+    return jsonResponse(403, { ok: false, message: `Insufficient role for this action. (role=${viewer.role}; need owner or admin)` });
   }
   if (bu && Array.isArray(viewer.ventures) && !viewer.ventures.includes('*') && !viewer.ventures.includes(bu)) {
     return jsonResponse(403, { ok: false, message: `${viewer.email} does not have access to venture "${bu}".` });

@@ -11,6 +11,7 @@ import { getFile, putFile, jsonResponse } from './_gh.js';
 import { requireAdmin } from './_identity.js';
 
 const REGISTRY_PATH = 'dashboard/public/data/bus/_registry.json';
+const BINDINGS_PATH = 'dashboard/public/data/system/agent_bindings.json';
 
 export async function onRequestPost({ request, env }) {
   if (!env.GITHUB_PAT) return jsonResponse(500, { ok: false, message: 'GITHUB_PAT not set' });
@@ -76,7 +77,51 @@ export async function onRequestPost({ request, env }) {
     seeded = await seedFinanceSubstrate(env.GITHUB_PAT, bu);
   }
 
-  return jsonResponse(200, { ok: true, action, bu: buEntry, seeded });
+  // 5) Create or remove the agent binding entry in agent_bindings.json so the
+  //    Settings → Modules surface shows the default runtime + HITL owner.
+  //    Best-effort — non-fatal.
+  const binding_result = await mutateAgentBinding(env.GITHUB_PAT, bu, module_id, action, viewer.email);
+
+  return jsonResponse(200, { ok: true, action, bu: buEntry, seeded, binding: binding_result });
+}
+
+// Add a default binding on install, remove on uninstall. Defaults: runtime_id =
+// first runtime in runtimes.json (v1: single local Paperclip); hitl_owner_email
+// = the user who installed.
+async function mutateAgentBinding(pat, bu, module_id, action, viewer_email) {
+  try {
+    const file = await getFile(pat, BINDINGS_PATH);
+    const data = JSON.parse(file.content);
+    data.bindings = data.bindings || [];
+    const idx = data.bindings.findIndex(b => b.bu === bu && b.module_id === module_id);
+    if (action === 'install') {
+      if (idx !== -1) return { status: 'exists' };
+      // Read first runtime as default
+      let default_runtime = 'local-paperclip-alessio';
+      try {
+        const rt = await getFile(pat, 'dashboard/public/data/system/runtimes.json');
+        const rtData = JSON.parse(rt.content);
+        if (rtData.runtimes && rtData.runtimes.length > 0) default_runtime = rtData.runtimes[0].id;
+      } catch (_) { /* keep fallback */ }
+      data.bindings.push({
+        bu,
+        module_id,
+        agent_id: `${module_id}-stewart-of-${bu}`,
+        runtime_id: default_runtime,
+        hitl_owner_email: viewer_email,
+        installer_email: viewer_email,
+        installed_at: new Date().toISOString(),
+      });
+    } else {
+      if (idx === -1) return { status: 'absent' };
+      data.bindings.splice(idx, 1);
+    }
+    const newContent = JSON.stringify(data, null, 2) + '\n';
+    await putFile(pat, BINDINGS_PATH, newContent, file.sha, `bindings: ${action} ${bu}/${module_id} default`);
+    return { status: action === 'install' ? 'created' : 'removed' };
+  } catch (e) {
+    return { status: 'failed', error: e.message || String(e) };
+  }
 }
 
 // Seed bus/<bu>/finance/ with the 5 per-BU memory files in pending-onboarding state.
