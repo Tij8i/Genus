@@ -747,10 +747,26 @@ function applyBuNavFilter(currentBu, registry) {
   });
 }
 
+// Filter the BU list shown in the WS switcher by the viewer's ventures (per Q2=C
+// hybrid role model). Owners see everything; admins/members/observers see only
+// the BUs in their `ventures` list (or all if ventures === ['*']).
+function visibleBusForViewer(registry, viewer) {
+  if (!registry) return [];
+  const all = registry.business_units || [];
+  if (!viewer || viewer.role === 'owner') return all;
+  if (Array.isArray(viewer.ventures) && viewer.ventures.includes('*')) return all;
+  const allowed = new Set(viewer.ventures || []);
+  return all.filter(b => allowed.has(b.id));
+}
+
 function renderWsMenu(identity) {
   const registry = BU_REGISTRY;
   const currentBu = BU;
-  const list = (registry?.business_units || [{ id: currentBu, display_name: currentBu, avatar_initial: currentBu.charAt(0).toUpperCase(), color: 'var(--accent)' }]);
+  // Filter to BUs the current viewer is allowed to see (per Q2=C role × ventures)
+  const filtered = visibleBusForViewer(registry, viewer);
+  const list = filtered.length > 0
+    ? filtered
+    : [{ id: currentBu, display_name: currentBu, avatar_initial: currentBu.charAt(0).toUpperCase(), color: 'var(--accent)' }];
   const ventureRows = list.map(b => {
     const isCurrent = b.id === currentBu;
     const checkOrSwitch = isCurrent
