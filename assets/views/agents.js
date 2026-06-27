@@ -91,7 +91,7 @@ export async function renderAgents(ctx) {
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(240px, 1fr));gap:10px;margin-top:14px;">
         ${renderArchetypeCard('Stewart', 'Operating steward', 'One per BU per module. Owns the planning loop + recommendations for that domain.', ARCHETYPE_TINTS.Stewart)}
-        ${renderArchetypeCard('Mason', 'Task executor', 'Generic executor agent. Doesn\\'t plan — runs tasks delegated by a Stewart. Bind to any area.', ARCHETYPE_TINTS.Mason)}
+        ${renderArchetypeCard('Mason', 'Task executor', 'Generic executor agent. Does not plan — runs tasks delegated by a Stewart. Bind to any area.', ARCHETYPE_TINTS.Mason)}
         ${renderArchetypeCard('Genus Agent', 'Admin (auto)', 'Models the business + proposes area changes. One per BU, auto-instantiated.', ARCHETYPE_TINTS.Admin)}
       </div>
     </div>
@@ -184,7 +184,7 @@ function renderArchetypeCard(name, label, desc, tint) {
         <strong style="font-size:13.5px;color:#1d2026;">${escapeHtml(name)}</strong>
       </div>
       <div style="font:600 10px 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#9aa1ae;letter-spacing:.05em;margin-bottom:6px;">${escapeHtml(label.toUpperCase())}</div>
-      <div style="font-size:12px;color:#5b6270;line-height:1.5;">${desc.replace(/\\'/g, "'")}</div>
+      <div style="font-size:12px;color:#5b6270;line-height:1.5;">${escapeHtml(desc)}</div>
     </div>
   `;
 }
