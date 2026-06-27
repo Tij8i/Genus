@@ -90,9 +90,10 @@ export async function renderAgents(ctx) {
         </div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(240px, 1fr));gap:10px;margin-top:14px;">
+        ${renderArchetypeCard('Genus Agent', 'Admin (auto)', 'Models the business + proposes area changes. One per BU, auto-instantiated.', ARCHETYPE_TINTS.Admin)}
         ${renderArchetypeCard('Stewart', 'Operating steward', 'One per BU per module. Owns the planning loop + recommendations for that domain.', ARCHETYPE_TINTS.Stewart)}
         ${renderArchetypeCard('Mason', 'Task executor', 'Generic executor agent. Does not plan — runs tasks delegated by a Stewart. Bind to any area.', ARCHETYPE_TINTS.Mason)}
-        ${renderArchetypeCard('Genus Agent', 'Admin (auto)', 'Models the business + proposes area changes. One per BU, auto-instantiated.', ARCHETYPE_TINTS.Admin)}
+        ${renderArchetypeCard('Custom agent', 'Bring your own', 'Import an agent built elsewhere (your own Claude instance, a Mason from another fork). Registers a runtime + auth scope.', '#475569')}
       </div>
     </div>
   `;
@@ -136,8 +137,11 @@ export async function renderAgents(ctx) {
 
 function agentDisplayName(b) {
   if (b.display_name) return b.display_name;
-  if (b.module_id) return `${capitalize(b.module_id)} ${b.archetype || 'Stewart'} of ${b.bu}`;
-  return `${b.archetype || 'Agent'} ${b.agent_id}`;
+  // Within the current BU instance, "of <bu>" is implicit — it's the
+  // installation. Drop it for legibility. Used by both Agents list rows and
+  // Layers detail panel.
+  if (b.module_id) return `${capitalize(b.module_id)} ${b.archetype || 'Stewart'}`;
+  return `${b.archetype || 'Agent'}`;
 }
 
 function capitalize(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }

@@ -847,7 +847,13 @@ async function startGenusAgentMeeting(bu, mode = 'areas') {
 // ============ Helpers ============
 
 function agentShortName(a) {
-  return `${a.archetype} of ${a.module_id || '—'}`;
+  // Within a BU instance "of <bu>" is implicit. Use module + archetype.
+  if (a.display_name) return a.display_name;
+  if (a.module_id) {
+    const mod = a.module_id.charAt(0).toUpperCase() + a.module_id.slice(1);
+    return `${mod} ${a.archetype || 'Stewart'}`;
+  }
+  return `${a.archetype || 'Agent'}`;
 }
 
 function badgeIcon(kind) {
