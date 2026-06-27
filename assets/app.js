@@ -34,6 +34,15 @@ import { renderAgents as renderAgentsView, openAddAgentOverlay } from './views/a
 import { renderRoster as renderRosterView } from './views/roster.js';
 import { renderAgentDetail as renderAgentDetailView } from './views/agent-detail.js';
 import { renderArchetype as renderArchetypeView } from './views/archetype-detail.js';
+import { renderProducts as renderProductsView } from './views/product/products.js';
+import { renderVision as renderVisionView } from './views/product/vision.js';
+import { renderRoadmap as renderRoadmapView } from './views/product/roadmap.js';
+import { renderBacklog as renderBacklogView } from './views/product/backlog.js';
+import { renderReleases as renderReleasesView } from './views/product/releases.js';
+import { renderReleaseDetail as renderReleaseDetailView } from './views/product/releases.js';
+import { renderDesignSystem as renderDesignSystemView } from './views/product/design-system.js';
+import { renderDecisions as renderDecisionsView } from './views/product/decisions.js';
+import { renderDecisionDetail as renderDecisionDetailView } from './views/product/decisions.js';
 // Finance views migrated to the Finance Module folder (GEN-127). When the
 // module loader (GEN-113) ships, these direct imports are replaced by dynamic
 // resolution via `modules/finance/module.json` → `views.dashboard[*].component_ref`.
@@ -530,6 +539,15 @@ function renderRoute(route) {
   else if (route === 'roster') safeRender('roster', renderRoster);
   else if (route === 'agent-detail') safeRender('agent-detail', renderAgentDetail);
   else if (route === 'archetype') safeRender('archetype', renderArchetype);
+  else if (route === 'products') safeRender('products', renderProducts);
+  else if (route === 'vision') safeRender('vision', renderVision);
+  else if (route === 'roadmap') safeRender('roadmap', renderRoadmap);
+  else if (route === 'backlog') safeRender('backlog', renderBacklog);
+  else if (route === 'releases') safeRender('releases', renderReleases);
+  else if (route === 'release-detail') safeRender('release-detail', renderReleaseDetail);
+  else if (route === 'design-system') safeRender('design-system', renderDesignSystem);
+  else if (route === 'decisions') safeRender('decisions', renderDecisions);
+  else if (route === 'decision-detail') safeRender('decision-detail', renderDecisionDetail);
   else if (route === 'settings') safeRender('settings', renderSettings);
   else if (route === 'budget') safeRender('budget', renderBudget);
   else if (route === 'costs') safeRender('costs', renderCosts);
@@ -593,6 +611,15 @@ function renderAgentDetail() {
 function renderArchetype() {
   renderArchetypeView({ identity, viewer });
 }
+function renderProducts()      { renderProductsView({ identity, viewer }); }
+function renderVision()        { renderVisionView({ identity, viewer }); }
+function renderRoadmap()       { renderRoadmapView({ identity, viewer }); }
+function renderBacklog()       { renderBacklogView({ identity, viewer }); }
+function renderReleases()      { renderReleasesView({ identity, viewer }); }
+function renderReleaseDetail() { renderReleaseDetailView({ identity, viewer }); }
+function renderDesignSystem()  { renderDesignSystemView({ identity, viewer }); }
+function renderDecisions()     { renderDecisionsView({ identity, viewer }); }
+function renderDecisionDetail(){ renderDecisionDetailView({ identity, viewer }); }
 function renderModules() {
   renderModulesView({ identity, viewer, plans, initiatives, tasks, meetings, memos, kpis, governance, connectors, documentation });
 }
