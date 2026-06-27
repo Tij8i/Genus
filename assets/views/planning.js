@@ -1,12 +1,5 @@
 // Planning view — locked-in plan, grouped Initiative timeline, sub-tabs for
-// Active / Backlog / Retrospective / Routines.
-//
-// Routines split (Session #22, 2026-06-27):
-//   tasks.json#items[].kind ∈ 'task' | 'routine' (default 'task' if missing).
-//   Routines have schedule + streak + last_run + next_run + adherence fields.
-//   At runtime they're just tasks the heartbeat processes; at Genus they get
-//   their own surface (this Routines tab) with adherence/cadence metrics
-//   instead of cycle-time.
+// Active / Backlog / Retrospective.
 //
 // Per operator feedback 2026-06-19:
 //   1. Active plan card on TOP
@@ -31,12 +24,12 @@ export function renderPlanning(ctx, { onChange }) {
   const queryStr = (window.location.hash || '').split('?')[1] || '';
   const params = new URLSearchParams(queryStr);
   const tab = params.get('tab');
-  if (['active', 'backlog', 'retrospective', 'routines'].includes(tab)) activeSubTab = tab;
+  if (['active', 'backlog', 'retrospective'].includes(tab)) activeSubTab = tab;
 
   const root = document.getElementById('route-planning');
   root.innerHTML = `
     <nav class="subtab-nav">
-      ${['active', 'backlog', 'retrospective', 'routines'].map(t => `
+      ${['active', 'backlog', 'retrospective'].map(t => `
         <button type="button" class="subtab-link ${activeSubTab === t ? 'current' : ''}" data-subtab="${t}">
           ${t.charAt(0).toUpperCase() + t.slice(1)}
         </button>
@@ -59,7 +52,6 @@ export function renderPlanning(ctx, { onChange }) {
   if (activeSubTab === 'active') body.innerHTML = renderActiveSubTab(ctx);
   else if (activeSubTab === 'backlog') body.innerHTML = renderBacklogSubTab(ctx);
   else if (activeSubTab === 'retrospective') body.innerHTML = renderRetrospectiveSubTab(ctx);
-  else if (activeSubTab === 'routines') body.innerHTML = renderRoutinesSubTab(ctx);
 
   // Wire clickable Initiative bars in the timeline (replaces the old row click)
   body.querySelectorAll('[data-init-id]').forEach(el => {
@@ -1054,109 +1046,4 @@ function renderEditPlanOverlay(ctx, onChange) {
       saveBtn.textContent = `✗ ${(e.message || 'failed').slice(0, 80)}`;
     }
   });
-}
-
-// ============ Sub-tab: Routines ============
-//
-// Routines = tasks with kind='routine'. At runtime the heartbeat treats them
-// identically to one-off tasks. At Genus level they get a different surface
-// with adherence/cadence metrics instead of cycle-time.
-//
-// Schema of a routine task in tasks.json:
-//   { id, bu, title, description, kind: 'routine', status,
-//     schedule: { cadence: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'custom', day?: 'mon'..'sun' | <iso>, time?: 'HH:MM' },
-//     last_run: ISO timestamp | null,
-//     next_run: ISO timestamp | null,
-//     streak: integer (consecutive on-time runs),
-//     adherence_pct: number 0..1 (rolling, last N runs),
-//     owner_agent?: string (agent_id),
-//     owner_email?: string,
-//     created_at, ... }
-
-function renderRoutinesSubTab(ctx) {
-  const routines = (ctx.tasks || []).filter(t => t.kind === 'routine');
-  if (routines.length === 0) {
-    return `
-      <div style="margin-top:14px;border:1.5px dashed rgba(20,22,28,.14);border-radius:16px;padding:48px 32px;display:flex;flex-direction:column;align-items:center;text-align:center;background:#fbfbfc;">
-        <span style="width:54px;height:54px;border-radius:14px;background:rgba(47,107,255,.10);color:#2f6bff;display:flex;align-items:center;justify-content:center;margin-bottom:16px;">
-          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 4v5h5"/></svg>
-        </span>
-        <h3 style="font-size:17px;font-weight:700;letter-spacing:-.01em;margin:0;">No routines yet</h3>
-        <p style="margin:7px 0 14px;font-size:13.5px;color:#6b7280;max-width:440px;line-height:1.5;">
-          Routines are ongoing operations — work that happens on a schedule, not a deadline. Weekly heartbeats, monthly invoice runs, quarterly reviews. Different from one-off tasks (those still live in the Active + Backlog tabs).
-        </p>
-        <p style="margin:0 0 18px;font-size:12.5px;color:#9aa1ae;max-width:440px;line-height:1.5;">
-          Mark any existing task as a routine by setting <code style="background:rgba(20,22,28,.05);padding:2px 6px;border-radius:5px;font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;font-size:11.5px;">kind: "routine"</code> in tasks.json + adding a <code style="background:rgba(20,22,28,.05);padding:2px 6px;border-radius:5px;font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;font-size:11.5px;">schedule</code> object.
-        </p>
-        <button type="button" id="routines-learn-more" class="onboard-cancel" style="font-size:13px;padding:8px 16px;">How routines work</button>
-      </div>
-    `;
-  }
-  // Populated state — table-like list with cadence + last/next run + streak + adherence
-  const rows = routines.map(r => renderRoutineRow(r)).join('');
-  const summary = renderRoutinesSummary(routines);
-  return `
-    ${summary}
-    <div style="margin-top:18px;display:flex;flex-direction:column;gap:8px;">
-      ${rows}
-    </div>
-  `;
-}
-
-function renderRoutinesSummary(routines) {
-  const total = routines.length;
-  const healthy = routines.filter(r => (r.adherence_pct ?? 1) >= 0.85).length;
-  const overdue = routines.filter(r => r.next_run && new Date(r.next_run) < new Date()).length;
-  return `
-    <div style="display:flex;gap:14px;font-size:13px;color:#6b7280;align-items:center;margin-top:10px;">
-      <strong style="color:#1d2026;font-weight:700;">${total} routine${total === 1 ? '' : 's'}</strong>
-      <span style="display:inline-flex;align-items:center;gap:5px;"><span style="width:8px;height:8px;border-radius:50%;background:#0e9f6e;"></span> ${healthy} healthy</span>
-      ${overdue > 0 ? `<span style="display:inline-flex;align-items:center;gap:5px;color:#c0392b;"><span style="width:8px;height:8px;border-radius:50%;background:#c0392b;"></span> ${overdue} overdue</span>` : ''}
-    </div>
-  `;
-}
-
-function renderRoutineRow(r) {
-  const schedule = r.schedule || {};
-  const cadence = schedule.cadence || 'unscheduled';
-  const cadenceLabel = cadence === 'unscheduled' ? '—' : cadence.charAt(0).toUpperCase() + cadence.slice(1);
-  const scheduleHint = schedule.day || schedule.time ? `${schedule.day || ''}${schedule.time ? ' · ' + schedule.time : ''}`.trim() : '';
-  const lastRun = r.last_run ? ago(r.last_run) : '—';
-  const nextRunDate = r.next_run ? new Date(r.next_run) : null;
-  const overdue = nextRunDate && nextRunDate < new Date();
-  const nextRun = nextRunDate ? (overdue ? `overdue ${ago(r.next_run)}` : `in ${ago(r.next_run)}`) : '—';
-  const streak = r.streak ?? 0;
-  const adherence = r.adherence_pct != null ? Math.round(r.adherence_pct * 100) : null;
-  const adherenceColor = adherence == null ? '#9aa1ae' : adherence >= 85 ? '#0e9f6e' : adherence >= 60 ? '#c98a16' : '#c0392b';
-
-  return `
-    <div style="background:#fff;border:1px solid rgba(20,22,28,.08);border-radius:13px;padding:14px 16px;display:flex;align-items:center;gap:14px;box-shadow:0 1px 2px rgba(16,18,28,.04);">
-      <span style="width:38px;height:38px;flex:none;border-radius:10px;background:rgba(47,107,255,.10);color:#2f6bff;display:flex;align-items:center;justify-content:center;">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 4v5h5"/></svg>
-      </span>
-      <div style="flex:1;min-width:0;">
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-          <strong style="font-size:14.5px;color:#1d2026;">${escapeHtml(r.title)}</strong>
-          <span style="font:600 9.5px 'JetBrains Mono',ui-monospace,Menlo,monospace;letter-spacing:.08em;color:#2f6bff;background:rgba(47,107,255,.08);border-radius:5px;padding:2px 6px;">${escapeHtml(cadenceLabel.toUpperCase())}${scheduleHint ? ' · ' + escapeHtml(scheduleHint) : ''}</span>
-        </div>
-        <div style="font:500 11.5px 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#9aa1ae;margin-top:3px;">${escapeHtml(r.owner_agent || r.owner_email || 'unassigned')}</div>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:3px;width:140px;flex:none;">
-        <span style="font:500 9.5px 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#bcc1cb;letter-spacing:.06em;">LAST RUN</span>
-        <span style="font-size:12.5px;font-weight:600;color:#5b6270;">${escapeHtml(lastRun)}</span>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:3px;width:140px;flex:none;">
-        <span style="font:500 9.5px 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#bcc1cb;letter-spacing:.06em;">NEXT RUN</span>
-        <span style="font-size:12.5px;font-weight:600;color:${overdue ? '#c0392b' : '#5b6270'};">${escapeHtml(nextRun)}</span>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:3px;width:80px;flex:none;text-align:right;">
-        <span style="font:500 9.5px 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#bcc1cb;letter-spacing:.06em;">STREAK</span>
-        <span style="font-size:14px;font-weight:800;color:#1d2026;">${streak}</span>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:3px;width:80px;flex:none;text-align:right;">
-        <span style="font:500 9.5px 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#bcc1cb;letter-spacing:.06em;">ADHERENCE</span>
-        <span style="font-size:14px;font-weight:800;color:${adherenceColor};">${adherence == null ? '—' : adherence + '%'}</span>
-      </div>
-    </div>
-  `;
 }
