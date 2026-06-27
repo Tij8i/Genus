@@ -40,12 +40,24 @@ export function currentBu() {
   return new URLSearchParams(location.search).get('bu') || localStorage.getItem('genus.currentBu') || 'medivara';
 }
 
+// Use NON-NULL fallback so substrate-client returns the fallback on 404
+// instead of throwing. The throw-on-null-fallback path is documented
+// (see substrate-client.js comment) and bit us when a BU without
+// workflows seeded was rendered. We tolerate missing files by treating
+// them as empty.
+const EMPTY_WORKFLOWS = { workflows: [] };
+const EMPTY_TASKS = { tasks: [] };
+
 export async function loadWorkflows(bu) {
-  return fetchSubstrateJson(`dashboard/public/data/bus/${bu}/workflows.json`, null).catch(() => null);
+  try {
+    return await fetchSubstrateJson(`dashboard/public/data/bus/${bu}/workflows.json`, EMPTY_WORKFLOWS);
+  } catch { return EMPTY_WORKFLOWS; }
 }
 
 export async function loadWorkflowTasks(bu) {
-  return fetchSubstrateJson(`dashboard/public/data/bus/${bu}/workflow_tasks.json`, null).catch(() => null);
+  try {
+    return await fetchSubstrateJson(`dashboard/public/data/bus/${bu}/workflow_tasks.json`, EMPTY_TASKS);
+  } catch { return EMPTY_TASKS; }
 }
 
 export function escapeHtml(s) {
