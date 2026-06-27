@@ -31,6 +31,9 @@ import { renderLayers as renderLayersView } from './views/layers.js';
 import { renderModules as renderModulesView } from './views/modules.js';
 import { renderPeople as renderPeopleView } from './views/people.js';
 import { renderAgents as renderAgentsView, openAddAgentOverlay } from './views/agents.js';
+import { renderRoster as renderRosterView } from './views/roster.js';
+import { renderAgentDetail as renderAgentDetailView } from './views/agent-detail.js';
+import { renderArchetype as renderArchetypeView } from './views/archetype-detail.js';
 // Finance views migrated to the Finance Module folder (GEN-127). When the
 // module loader (GEN-113) ships, these direct imports are replaced by dynamic
 // resolution via `modules/finance/module.json` → `views.dashboard[*].component_ref`.
@@ -524,6 +527,9 @@ function renderRoute(route) {
   else if (route === 'modules') safeRender('modules', renderModules);
   else if (route === 'agents') safeRender('agents', renderAgents);
   else if (route === 'people') safeRender('people', renderPeople);
+  else if (route === 'roster') safeRender('roster', renderRoster);
+  else if (route === 'agent-detail') safeRender('agent-detail', renderAgentDetail);
+  else if (route === 'archetype') safeRender('archetype', renderArchetype);
   else if (route === 'settings') safeRender('settings', renderSettings);
   else if (route === 'budget') safeRender('budget', renderBudget);
   else if (route === 'costs') safeRender('costs', renderCosts);
@@ -577,6 +583,15 @@ function renderLayers() {
 }
 function renderAgents() {
   renderAgentsView({ identity, viewer });
+}
+function renderRoster() {
+  renderRosterView({ identity, viewer });
+}
+function renderAgentDetail() {
+  renderAgentDetailView({ identity, viewer });
+}
+function renderArchetype() {
+  renderArchetypeView({ identity, viewer });
 }
 function renderModules() {
   renderModulesView({ identity, viewer, plans, initiatives, tasks, meetings, memos, kpis, governance, connectors, documentation });

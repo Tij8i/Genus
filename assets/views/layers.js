@@ -629,6 +629,16 @@ function openDetail(coverage, areaId, bu, ctx) {
     });
   });
 
+  // Layers → Roster chain: "Open in Roster" on agent cards inside the detail panel
+  document.querySelectorAll('[data-agent-open-in-roster]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const aid = btn.dataset.agentOpenInRoster;
+      closeDetail();
+      location.hash = `#agent-detail/${encodeURIComponent(aid)}`;
+    });
+  });
+
   // Tool add (edit mode)
   document.querySelectorAll('.tool-add-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -712,7 +722,8 @@ function renderAgentCard(a, bu) {
           <div style="font:500 11px 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#9aa1ae;margin-top:4px;">${escapeHtml(a.archetype)} · ${escapeHtml(a.runtime_display_name)}</div>
         </div>
       </div>
-      <div style="display:flex;gap:6px;margin-top:10px;">
+      <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;">
+        <button type="button" class="onboard-begin" style="padding:4px 10px;font-size:11px;" data-agent-open-in-roster="${escapeHtml(a.agent_id)}">Open in Roster →</button>
         <button type="button" class="onboard-cancel" style="padding:4px 10px;font-size:11px;" data-agent-edit="${escapeHtml(a.agent_id)}">Edit binding</button>
         ${isPaperclip ? `<a href="http://127.0.0.1:3100" target="_blank" rel="noopener" class="onboard-cancel" style="padding:4px 10px;font-size:11px;text-decoration:none;display:inline-flex;align-items:center;gap:4px;">View in Paperclip <span style="font-size:10px;">↗</span></a>` : ''}
       </div>
