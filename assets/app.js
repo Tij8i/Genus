@@ -43,6 +43,11 @@ import { renderReleaseDetail as renderReleaseDetailView } from './views/product/
 import { renderDesignSystem as renderDesignSystemView } from './views/product/design-system.js';
 import { renderDecisions as renderDecisionsView } from './views/product/decisions.js';
 import { renderDecisionDetail as renderDecisionDetailView } from './views/product/decisions.js';
+import { renderFunctionOverview as renderFnOverviewView } from './views/workflows/function-overview.js';
+import { renderFunctionWorkflows as renderFnWorkflowsView } from './views/workflows/function-workflows.js';
+import { renderFunctionTasks as renderFnTasksView } from './views/workflows/function-tasks.js';
+import { renderWorkflowDetail as renderWorkflowDetailView } from './views/workflows/workflow-detail.js';
+import { loadWorkflowTasks, updateTaskBadges } from './views/workflows/_shared.js';
 // Finance views migrated to the Finance Module folder (GEN-127). When the
 // module loader (GEN-113) ships, these direct imports are replaced by dynamic
 // resolution via `modules/finance/module.json` → `views.dashboard[*].component_ref`.
@@ -352,6 +357,9 @@ async function boot() {
   BU = resolveCurrentBu(BU_REGISTRY);
   localStorage.setItem('genus.currentBu', BU);
   applyBuNavFilter(BU, BU_REGISTRY);
+  // Fire-and-forget: populate sidebar Tasks badges from substrate so they
+  // surface before the user navigates into a workflow page.
+  loadWorkflowTasks(BU).then(d => updateTaskBadges(d?.tasks || [])).catch(() => {});
 
   // Wire sidebar nav-group collapse (GEN-99) BEFORE substrate fetch so the
   // sidebar still toggles even if substrate is unreachable (e.g. local file
@@ -548,6 +556,13 @@ function renderRoute(route) {
   else if (route === 'design-system') safeRender('design-system', renderDesignSystem);
   else if (route === 'decisions') safeRender('decisions', renderDecisions);
   else if (route === 'decision-detail') safeRender('decision-detail', renderDecisionDetail);
+  else if (route === 'finance-overview')  safeRender('finance-overview',  () => renderFnOverviewView('finance'));
+  else if (route === 'finance-workflows') safeRender('finance-workflows', () => renderFnWorkflowsView('finance'));
+  else if (route === 'finance-tasks')     safeRender('finance-tasks',     () => renderFnTasksView('finance'));
+  else if (route === 'strategy-overview') safeRender('strategy-overview', () => renderFnOverviewView('strategy'));
+  else if (route === 'strategy-workflows')safeRender('strategy-workflows',() => renderFnWorkflowsView('strategy'));
+  else if (route === 'strategy-tasks')    safeRender('strategy-tasks',    () => renderFnTasksView('strategy'));
+  else if (route === 'workflow-detail')   safeRender('workflow-detail',   renderWorkflowDetailView);
   else if (route === 'settings') safeRender('settings', renderSettings);
   else if (route === 'budget') safeRender('budget', renderBudget);
   else if (route === 'costs') safeRender('costs', renderCosts);
