@@ -48,6 +48,7 @@ const LAYER_COLORS = {
 // View state — persists across re-renders within the session.
 let VIEW_STATE = {
   cardStyle: 'A',       // 'A' | 'B' | 'C'
+  editMode: false,
   openAreaId: null,
   openToolKey: null,    // composite areaId:toolKey
 };
@@ -146,24 +147,35 @@ function renderPopulated(coverage, bu) {
     ${overlap}
 
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:14px;">
-      <div style="font-size:13px;color:#6b7280;display:flex;gap:18px;flex-wrap:wrap;">
+      <div style="font-size:13px;color:#6b7280;display:flex;gap:18px;flex-wrap:wrap;align-items:center;">
         <strong style="color:#1d2026;font-weight:700;">${s.total} area${s.total === 1 ? '' : 's'}</strong>
         ${dots}
       </div>
-      <div class="layers-segctrl" style="display:inline-flex;background:#fff;border:1px solid var(--border);border-radius:10px;padding:3px;font-size:11.5px;font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;">
-        ${['A','B','C'].map(k => `<button type="button" class="seg-btn ${VIEW_STATE.cardStyle === k ? 'active' : ''}" data-style="${k}" style="border:none;background:${VIEW_STATE.cardStyle === k ? 'var(--accent)' : 'transparent'};color:${VIEW_STATE.cardStyle === k ? '#fff' : '#6b7280'};padding:6px 14px;border-radius:7px;cursor:pointer;font-weight:600;letter-spacing:.03em;">${k === 'A' ? 'Layer stack' : k === 'B' ? 'Coverage bar' : 'Ledger'}</button>`).join('')}
+      <div style="display:flex;gap:10px;align-items:center;">
+        <button type="button" id="layers-edit-toggle" class="${VIEW_STATE.editMode ? 'onboard-begin' : 'onboard-cancel'}" style="padding:7px 14px;font-size:12px;display:inline-flex;align-items:center;gap:6px;">
+          ${VIEW_STATE.editMode
+            ? '✓ Done editing'
+            : `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Edit business model`}
+        </button>
+        <div class="layers-segctrl" style="display:inline-flex;background:#fff;border:1px solid var(--border);border-radius:10px;padding:3px;font-size:11.5px;font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;">
+          ${['A','B','C'].map(k => `<button type="button" class="seg-btn ${VIEW_STATE.cardStyle === k ? 'active' : ''}" data-style="${k}" style="border:none;background:${VIEW_STATE.cardStyle === k ? 'var(--accent)' : 'transparent'};color:${VIEW_STATE.cardStyle === k ? '#fff' : '#6b7280'};padding:6px 14px;border-radius:7px;cursor:pointer;font-weight:600;letter-spacing:.03em;">${k === 'A' ? 'Layer stack' : k === 'B' ? 'Coverage bar' : 'Ledger'}</button>`).join('')}
+        </div>
       </div>
     </div>
 
     <div id="layers-grid" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(290px, 1fr));gap:16px;">
       ${coverage.areas.map(a => renderAreaCard(a, VIEW_STATE.cardStyle)).join('')}
+      ${VIEW_STATE.editMode ? renderAddAreaTile() : ''}
     </div>
+  `;
+}
 
-    <div style="display:flex;gap:10px;margin-top:24px;flex-wrap:wrap;">
-      <button type="button" class="onboard-cancel" id="add-area-btn">+ Add a business area</button>
-      <button type="button" class="onboard-cancel" id="add-mason-btn">+ Add a Mason</button>
-      <button type="button" class="onboard-cancel" id="assign-human-btn">+ Assign a human</button>
-    </div>
+function renderAddAreaTile() {
+  return `
+    <button type="button" id="add-area-tile" style="background:transparent;border:2px dashed rgba(47,107,255,.3);border-radius:15px;padding:30px 16px;cursor:pointer;color:#2f6bff;font-size:14px;font-weight:600;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-height:170px;transition:background .12s, border-color .12s;" onmouseover="this.style.background='rgba(47,107,255,.04)';this.style.borderColor='rgba(47,107,255,.6)';" onmouseout="this.style.background='transparent';this.style.borderColor='rgba(47,107,255,.3)';">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Add a business area
+    </button>
   `;
 }
 
@@ -185,10 +197,10 @@ function renderAreaCard(area, style) {
   return `
     <div class="layer-card" data-area-id="${escapeHtml(area.id)}" style="background:${cardBg};border:${cardBorder};border-radius:15px;padding:15px 16px;box-shadow:${shadow};cursor:pointer;transition:transform .13s, box-shadow .13s;overflow:hidden;">
       <div style="display:flex;justify-content:space-between;align-items:start;gap:10px;margin-bottom:12px;">
-        <strong style="font-size:15.5px;font-weight:700;letter-spacing:-0.01em;flex:1;min-width:0;color:#1d2026;">${escapeHtml(area.display_name)}</strong>
-        <span style="display:inline-flex;align-items:center;gap:5px;border-radius:99px;padding:3px 10px;font:600 11px 'JetBrains Mono',ui-monospace,Menlo,monospace;letter-spacing:.01em;color:${st.fg};background:${st.bg};border:1px solid ${st.border};flex:none;">
-          ${badgeSvg} ${st.label}
-        </span>
+        <strong class="${VIEW_STATE.editMode ? 'area-name-editable' : ''}" data-area-id="${escapeHtml(area.id)}" style="font-size:15.5px;font-weight:700;letter-spacing:-0.01em;flex:1;min-width:0;color:#1d2026;${VIEW_STATE.editMode ? 'cursor:text;border-bottom:1.5px dotted rgba(47,107,255,.4);' : ''}" title="${VIEW_STATE.editMode ? 'Click to rename' : ''}">${escapeHtml(area.display_name)}</strong>
+        ${VIEW_STATE.editMode
+          ? `<button type="button" class="area-delete-btn" data-area-id="${escapeHtml(area.id)}" aria-label="Delete area" title="Delete area" style="background:transparent;border:1px solid #f6cfca;color:#c12525;border-radius:6px;width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex:none;font-size:13px;line-height:1;">×</button>`
+          : `<span style="display:inline-flex;align-items:center;gap:5px;border-radius:99px;padding:3px 10px;font:600 11px 'JetBrains Mono',ui-monospace,Menlo,monospace;letter-spacing:.01em;color:${st.fg};background:${st.bg};border:1px solid ${st.border};flex:none;">${badgeSvg} ${st.label}</span>`}
       </div>
       ${body}
       ${renderCardToolsRow(area)}
@@ -298,6 +310,12 @@ function wirePopulated(coverage, bu, ctx) {
   // Header CTA
   document.getElementById('layers-talk-btn')?.addEventListener('click', () => startGenusAgentMeeting(bu));
 
+  // Edit-mode toggle
+  document.getElementById('layers-edit-toggle')?.addEventListener('click', () => {
+    VIEW_STATE.editMode = !VIEW_STATE.editMode;
+    renderLayers(ctx);
+  });
+
   // Segmented control
   document.querySelectorAll('.layers-segctrl .seg-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -306,9 +324,12 @@ function wirePopulated(coverage, bu, ctx) {
     });
   });
 
-  // Card click → open detail panel
+  // Card click → open detail panel (delete button intercepts before this)
   document.querySelectorAll('.layer-card').forEach(card => {
-    card.addEventListener('click', () => openDetail(coverage, card.dataset.areaId, bu, ctx));
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('.area-delete-btn')) return;
+      openDetail(coverage, card.dataset.areaId, bu, ctx);
+    });
     card.addEventListener('mouseenter', () => {
       card.style.transform = 'translateY(-2px)';
       card.style.boxShadow = '0 10px 26px rgba(16,18,28,.10)';
@@ -320,6 +341,74 @@ function wirePopulated(coverage, bu, ctx) {
     });
   });
 
+  // Edit-mode: inline rename
+  document.querySelectorAll('.area-name-editable').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const area_id = el.dataset.areaId;
+      const current = el.textContent;
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.value = current;
+      input.style.cssText = 'font-size:15.5px;font-weight:700;letter-spacing:-0.01em;flex:1;min-width:0;color:#1d2026;background:#fff;border:1.5px solid #2f6bff;border-radius:6px;padding:2px 8px;outline:none;width:100%;';
+      el.replaceWith(input);
+      input.focus();
+      input.select();
+      const finish = async (commit) => {
+        const newName = (input.value || '').trim();
+        if (!commit || newName === '' || newName === current) {
+          renderLayers(ctx);
+          return;
+        }
+        try {
+          const r = await fetch('/api/business-areas-edit', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ bu, action: 'edit_area', area_id, fields: { display_name: newName } }),
+          });
+          const j = await r.json();
+          if (!r.ok || !j.ok) throw new Error(j.message || `HTTP ${r.status}`);
+        } catch (err) {
+          alert(`Rename failed: ${err.message}`);
+        }
+        renderLayers(ctx);
+      };
+      input.addEventListener('blur', () => finish(true));
+      input.addEventListener('keydown', (ke) => {
+        if (ke.key === 'Enter') { ke.preventDefault(); input.blur(); }
+        else if (ke.key === 'Escape') { ke.preventDefault(); finish(false); }
+      });
+    });
+  });
+
+  // Edit-mode: delete-area buttons
+  document.querySelectorAll('.area-delete-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const area_id = btn.dataset.areaId;
+      const area = coverage.areas.find(a => a.id === area_id);
+      if (!area) return;
+      if (!window.confirm(`Delete the area "${area.display_name}"? This will remove it from this BU's business model.`)) return;
+      btn.disabled = true;
+      btn.textContent = '…';
+      try {
+        const r = await fetch('/api/business-areas-edit', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bu, action: 'delete_area', area_id }),
+        });
+        const j = await r.json();
+        if (!r.ok || !j.ok) throw new Error(j.message || `HTTP ${r.status}`);
+        renderLayers(ctx);
+      } catch (err) {
+        alert(`Could not delete: ${err.message}`);
+        btn.disabled = false;
+        btn.textContent = '×';
+      }
+    });
+  });
+
+  // Edit-mode: add-area tile
+  document.getElementById('add-area-tile')?.addEventListener('click', () => openAddAreaDialog(bu, ctx));
+
   // Ribbons
   document.querySelectorAll('.layers-ribbon').forEach(rib => {
     rib.addEventListener('click', () => {
@@ -327,11 +416,114 @@ function wirePopulated(coverage, bu, ctx) {
       if (firstId) openDetail(coverage, firstId, bu, ctx);
     });
   });
+}
 
-  // Bottom actions
-  document.getElementById('add-area-btn')?.addEventListener('click', () => startGenusAgentMeeting(bu, 'add-area'));
-  document.getElementById('add-mason-btn')?.addEventListener('click', () => alert('Add a Mason — ships in a follow-up Initiative once the Mason install flow is built. For now, register Masons by hand in agent_bindings.json.'));
-  document.getElementById('assign-human-btn')?.addEventListener('click', () => { location.hash = '#people'; });
+function openAddToolDialog(bu, area_id, ctx) {
+  const toolOptions = Object.keys(TOOL_TOKENS);
+  const bodyHtml = `
+    <div style="padding:6px 0;">
+      <label style="display:block;margin-bottom:14px;">
+        <span style="font:600 10px 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#6b7280;letter-spacing:.06em;display:block;margin-bottom:5px;">TOOL</span>
+        <select id="add-tool-name" style="width:100%;padding:9px 12px;font-size:14px;border:1px solid var(--border);border-radius:8px;outline:none;background:#fff;">
+          ${toolOptions.map(k => `<option value="${escapeHtml(k)}">${escapeHtml(TOOL_TOKENS[k].label)}</option>`).join('')}
+        </select>
+      </label>
+      <p style="font-size:12px;color:#6b7280;margin:8px 0 0;">You can add resources (specific docs, boards, dashboards) inside the tool after it's wired.</p>
+      <div id="add-tool-error" style="display:none;margin-top:12px;padding:8px 12px;background:#fdebe9;color:#c12525;border-radius:8px;font-size:12px;"></div>
+    </div>
+  `;
+  const footerHtml = `
+    <button type="button" class="onboard-cancel" id="add-tool-cancel">Cancel</button>
+    <button type="button" class="onboard-begin" id="add-tool-create">Add tool</button>
+  `;
+  openOverlay({
+    title: 'Add a tool to this area',
+    subtitle: `${bu} · ${area_id}`,
+    iconHtml: '🔧',
+    iconTint: '#475569',
+    bodyHtml,
+    footerHtml,
+  });
+  document.getElementById('add-tool-cancel')?.addEventListener('click', closeOverlay);
+  document.getElementById('add-tool-create')?.addEventListener('click', async () => {
+    const tool = document.getElementById('add-tool-name')?.value;
+    const errEl = document.getElementById('add-tool-error');
+    const btn = document.getElementById('add-tool-create');
+    btn.disabled = true; btn.textContent = '…';
+    try {
+      const r = await fetch('/api/business-areas-edit', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bu, action: 'add_tool', area_id, tool: { tool, resources: [] } }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j.ok) throw new Error(j.message || `HTTP ${r.status}`);
+      closeOverlay();
+      closeDetail();
+      renderLayers(ctx);
+    } catch (e) {
+      if (errEl) { errEl.style.display = 'block'; errEl.textContent = e.message; }
+      btn.disabled = false; btn.textContent = 'Add tool';
+    }
+  });
+}
+
+function openAddAreaDialog(bu, ctx) {
+  const bodyHtml = `
+    <div style="padding:6px 0;">
+      <label style="display:block;margin-bottom:14px;">
+        <span style="font:600 10px 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#6b7280;letter-spacing:.06em;display:block;margin-bottom:5px;">DISPLAY NAME</span>
+        <input id="add-area-name" type="text" placeholder="e.g. Customer Support" style="width:100%;padding:9px 12px;font-size:14px;border:1px solid var(--border);border-radius:8px;outline:none;" />
+      </label>
+      <label style="display:block;margin-bottom:14px;">
+        <span style="font:600 10px 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#6b7280;letter-spacing:.06em;display:block;margin-bottom:5px;">DESCRIPTION (optional)</span>
+        <textarea id="add-area-desc" rows="2" placeholder="One sentence on what this area covers" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;outline:none;resize:vertical;font-family:inherit;"></textarea>
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#1d2026;">
+        <input id="add-area-critical" type="checkbox" />
+        Mark as critical (red ribbon when uncovered)
+      </label>
+      <div id="add-area-error" style="display:none;margin-top:12px;padding:8px 12px;background:#fdebe9;color:#c12525;border-radius:8px;font-size:12px;"></div>
+    </div>
+  `;
+  const footerHtml = `
+    <button type="button" class="onboard-cancel" id="add-area-cancel">Cancel</button>
+    <button type="button" class="onboard-begin" id="add-area-create">Add area</button>
+  `;
+  openOverlay({
+    title: 'Add a business area',
+    subtitle: `${bu} · will write to business_areas.json`,
+    iconHtml: '⊕',
+    iconTint: '#2f6bff',
+    bodyHtml,
+    footerHtml,
+  });
+  setTimeout(() => document.getElementById('add-area-name')?.focus(), 30);
+  document.getElementById('add-area-cancel')?.addEventListener('click', closeOverlay);
+  document.getElementById('add-area-create')?.addEventListener('click', async () => {
+    const name = (document.getElementById('add-area-name')?.value || '').trim();
+    const desc = (document.getElementById('add-area-desc')?.value || '').trim();
+    const critical = !!document.getElementById('add-area-critical')?.checked;
+    const errEl = document.getElementById('add-area-error');
+    if (!name) {
+      if (errEl) { errEl.style.display = 'block'; errEl.textContent = 'Name is required.'; }
+      return;
+    }
+    const btn = document.getElementById('add-area-create');
+    btn.disabled = true; btn.textContent = '…';
+    try {
+      const r = await fetch('/api/business-areas-edit', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bu, action: 'add_area', area: { display_name: name, description: desc, critical } }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j.ok) throw new Error(j.message || `HTTP ${r.status}`);
+      closeOverlay();
+      renderLayers(ctx);
+    } catch (e) {
+      if (errEl) { errEl.style.display = 'block'; errEl.textContent = e.message; }
+      btn.disabled = false; btn.textContent = 'Add area';
+    }
+  });
 }
 
 // ============ Detail panel ============
@@ -367,17 +559,21 @@ function openDetail(coverage, areaId, bu, ctx) {
           : emptyLayerCTA('Install a module', 'modules'))}
         ${renderSection('AGENTS', LAYER_COLORS.agent, area.agents.length, area.agents.length > 0
           ? area.agents.map(a => renderAgentCard(a, bu)).join('')
-          : emptyLayerCTA('Add a Mason', 'add-mason'))}
+          : emptyLayerCTA('Add an agent', 'add-agent'))}
         ${renderSection('HUMAN (HITL)', LAYER_COLORS.human, area.humans.length, area.humans.length > 0
           ? area.humans.map(h => renderHumanCard(h)).join('')
           : emptyLayerCTA('Assign a human', 'people'))}
         ${renderSection('CONNECTED TOOLS', LAYER_COLORS.tools, area.tools.length,
-          area.tools.length > 0 ? renderToolsExpandable(area) : `<div style="color:#9aa1ae;font-size:13px;padding:8px 0;">No tools wired for this area yet.</div>`)}
+          area.tools.length > 0
+            ? renderToolsExpandable(area)
+            : (VIEW_STATE.editMode
+                ? `<button type="button" class="tool-add-btn" data-area-id="${escapeHtml(area.id)}" style="background:transparent;border:1.5px dashed rgba(47,107,255,.3);color:#2f6bff;font-size:12.5px;font-weight:600;padding:10px;border-radius:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;width:100%;">+ Add a tool</button>`
+                : `<div style="color:#9aa1ae;font-size:13px;padding:8px 0;">No tools wired for this area yet.</div>`))}
       </div>
       <div style="padding:14px 22px;border-top:1px solid rgba(20,22,28,.06);background:#fbfbfc;display:flex;gap:8px;justify-content:flex-end;">
         <button type="button" class="onboard-cancel" data-panel-action="assign-human" style="padding:8px 14px;font-size:12px;">Assign a human</button>
         ${area.modules.length === 0 ? '<button type="button" class="onboard-cancel" data-panel-action="install-module" style="padding:8px 14px;font-size:12px;">Install a module</button>' : ''}
-        <button type="button" class="onboard-begin" data-panel-action="add-mason" style="padding:8px 14px;font-size:12px;">+ Add a Mason</button>
+        <button type="button" class="onboard-begin" data-panel-action="add-agent" style="padding:8px 14px;font-size:12px;">+ Add an agent</button>
       </div>
     </aside>
   `;
@@ -419,7 +615,39 @@ function openDetail(coverage, areaId, bu, ctx) {
       const act = btn.dataset.panelAction;
       if (act === 'install-module') { closeDetail(); location.hash = '#modules'; }
       else if (act === 'assign-human') { closeDetail(); location.hash = '#people'; }
-      else if (act === 'add-mason') alert('Add a Mason — ships in a follow-up Initiative. For now, register Masons in agent_bindings.json directly.');
+      else if (act === 'add-agent') alert('Add an agent — opens the agent registry (ships next). For now, install a module that brings the Stewart you need, or write agent_bindings.json directly.');
+    });
+  });
+
+  // Tool add (edit mode)
+  document.querySelectorAll('.tool-add-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const area_id = btn.dataset.areaId;
+      openAddToolDialog(bu, area_id, ctx);
+    });
+  });
+
+  // Tool remove (edit mode)
+  document.querySelectorAll('.tool-remove-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const area_id = btn.dataset.areaId;
+      const tool_name = btn.dataset.toolName;
+      if (!window.confirm(`Remove ${tool_name} from this area?`)) return;
+      btn.disabled = true;
+      try {
+        const r = await fetch('/api/business-areas-edit', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bu, action: 'remove_tool', area_id, tool_name }),
+        });
+        const j = await r.json();
+        if (!r.ok || !j.ok) throw new Error(j.message || `HTTP ${r.status}`);
+        closeDetail();
+        renderLayers(ctx);
+      } catch (err) {
+        alert(`Remove failed: ${err.message}`);
+        btn.disabled = false;
+      }
     });
   });
 
@@ -454,8 +682,8 @@ function renderSection(label, color, count, bodyHtml) {
 }
 
 function emptyLayerCTA(label, route) {
-  const cta = route === 'add-mason'
-    ? `<button type="button" data-panel-action="add-mason" style="background:none;border:none;color:#2f6bff;font-weight:600;font-size:12px;cursor:pointer;text-decoration:underline;">+ ${escapeHtml(label)}</button>`
+  const cta = route === 'add-agent'
+    ? `<button type="button" data-panel-action="add-agent" style="background:none;border:none;color:#2f6bff;font-weight:600;font-size:12px;cursor:pointer;text-decoration:underline;">+ ${escapeHtml(label)}</button>`
     : `<button type="button" data-panel-action="${escapeHtml(route === 'modules' ? 'install-module' : 'assign-human')}" style="background:none;border:none;color:#2f6bff;font-weight:600;font-size:12px;cursor:pointer;text-decoration:underline;">+ ${escapeHtml(label)}</button>`;
   return `<div style="background:#faf8f4;border:1px dashed rgba(20,22,28,.16);border-radius:12px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;"><span style="font-size:13px;color:#9c7a4f;">(none)</span>${cta}</div>`;
 }
@@ -496,7 +724,7 @@ function renderHumanCard(h) {
 }
 
 function renderToolsExpandable(area) {
-  return area.tools.map(t => {
+  const toolRows = area.tools.map(t => {
     const tok = TOOL_TOKENS[t.tool] || { bg: '#475569', fg: '#fff', initial: '?', label: t.tool };
     const key = area.id + ':' + t.tool;
     return `
@@ -507,7 +735,9 @@ function renderToolsExpandable(area) {
             <strong style="font-size:13px;color:#1d2026;">${escapeHtml(tok.label)}</strong>
             <div style="font-size:11px;color:#9aa1ae;">${(t.resources || []).length} location${(t.resources || []).length === 1 ? '' : 's'}</div>
           </div>
-          <span class="tool-row-caret" style="display:inline-block;transition:transform .15s;color:#9aa1ae;">▸</span>
+          ${VIEW_STATE.editMode
+            ? `<button type="button" class="tool-remove-btn" data-area-id="${escapeHtml(area.id)}" data-tool-name="${escapeHtml(t.tool)}" title="Remove tool" style="background:transparent;border:1px solid #f6cfca;color:#c12525;border-radius:6px;width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font-size:13px;line-height:1;">×</button>`
+            : `<span class="tool-row-caret" style="display:inline-block;transition:transform .15s;color:#9aa1ae;">▸</span>`}
         </div>
         <div class="tool-row-body" data-tool-key="${escapeHtml(key)}" style="display:none;background:#fafbfc;padding:4px 14px 12px;">
           ${(t.resources || []).map(r => `
@@ -524,6 +754,10 @@ function renderToolsExpandable(area) {
       </div>
     `;
   }).join('');
+  const addRow = VIEW_STATE.editMode
+    ? `<button type="button" class="tool-add-btn" data-area-id="${escapeHtml(area.id)}" style="background:transparent;border:1.5px dashed rgba(47,107,255,.3);color:#2f6bff;font-size:12.5px;font-weight:600;padding:10px;border-radius:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">+ Add a tool</button>`
+    : '';
+  return toolRows + addRow;
 }
 
 function renderResolver(area, bu) {
