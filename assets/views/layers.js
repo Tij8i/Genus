@@ -9,11 +9,15 @@
 //   B. Coverage bar (3-cell pill grid)
 //   C. Ledger (dense rows with dots)
 //
-// Initiative #4 Session #19. v1 = no real Genus Agent chat — the CTA opens
-// the existing meeting infrastructure (or a placeholder until that's wired).
+// Initiative #4 Session #19 + Session #20. Wired to real Genus Agent via the
+// local meeting server (/meeting/new with agent_id=genus-agent). The top
+// banner reflects the Genus Agent's current take on the BU model — either
+// "wired up" or a specific suggestion — read from
+// bus/<bu>/business_areas.json#genus_agent_state.
 
 import { escapeHtml } from '../utils.js';
 import { openOverlay, closeOverlay } from '../overlay.js';
+import { startMeeting } from '../meeting.js';
 
 const TOOL_TOKENS = {
   notion:        { bg: '#16181d', fg: '#fff',    initial: 'N', label: 'Notion' },
@@ -78,23 +82,45 @@ export async function renderLayers(ctx) {
 
 function renderHeader(bu) {
   return `
-    <header class="page-header" style="display:flex;justify-content:space-between;align-items:start;gap:20px;margin-bottom:18px;">
-      <div>
-        <h1 class="page-title" style="font-size:29px;font-weight:800;letter-spacing:-0.025em;margin:0;">Business layers</h1>
-        <p class="page-sub" style="max-width:560px;color:#6b7280;margin:6px 0 0;font-size:14px;line-height:1.55;">
-          Top-down coverage of the business — what's covered by modules, agents, and humans; what isn't; where there's overlap.
-        </p>
-      </div>
-      <button type="button" id="layers-talk-btn" class="primary-btn-pill" title="Open a meeting with the Genus Agent on business areas">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-        Talk to Genus Agent about my areas
-      </button>
+    <header class="page-header" style="margin-bottom:14px;">
+      <h1 class="page-title" style="font-size:29px;font-weight:800;letter-spacing:-0.025em;margin:0;">Business layers</h1>
+      <p class="page-sub" style="max-width:620px;color:#6b7280;margin:6px 0 0;font-size:14px;line-height:1.55;">
+        Top-down coverage of the business — what's covered by modules, agents, and humans; what isn't; where there's overlap.
+      </p>
     </header>
+  `;
+}
+
+function renderGenusAgentBanner(state) {
+  const status = (state && state.status) || 'unknown';
+  const isWired = status === 'wired';
+  const isSuggestion = status === 'suggestion';
+  const bg = isWired ? '#e9f7f0' : isSuggestion ? '#f3f6ff' : '#f0f1f4';
+  const border = isWired ? '#c9ebda' : isSuggestion ? '#d9e4ff' : 'var(--border)';
+  const fg = isWired ? '#0e7e58' : isSuggestion ? '#2f6bff' : '#6b7280';
+  const tagText = isWired ? '✓ WIRED UP' : isSuggestion ? '⊹ GENUS AGENT' : '⊹ GENUS AGENT';
+  const message = (state && state.message)
+    ? state.message
+    : (isWired
+        ? 'All areas confirmed. No drift detected.'
+        : 'No model yet. Open a meeting to map this business.');
+  return `
+    <div class="genus-agent-banner" style="display:flex;align-items:center;gap:16px;background:${bg};border:1px solid ${border};border-radius:13px;padding:14px 16px;margin-bottom:18px;">
+      <div style="flex:1;min-width:0;">
+        <div style="font:600 10px 'JetBrains Mono',ui-monospace,Menlo,monospace;color:${fg};letter-spacing:.07em;margin-bottom:4px;">${tagText}</div>
+        <div style="font-size:13.5px;color:#1d2026;line-height:1.5;">${escapeHtml(message)}</div>
+      </div>
+      <button type="button" id="layers-talk-btn" class="primary-btn-pill" title="Open a meeting with the Genus Agent to modify your business modelling" style="flex-shrink:0;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        Modify my business modelling
+      </button>
+    </div>
   `;
 }
 
 function renderPopulated(coverage, bu) {
   const s = coverage.summary;
+  const banner = renderGenusAgentBanner(coverage.genus_agent_state);
   const dots = `
     <span style="display:inline-flex;align-items:center;gap:5px;"><span style="width:8px;height:8px;border-radius:50%;background:${STATE_TOKENS.fully.dot};"></span> ${s.fully} fully</span>
     ${s.overlap ? `<span style="display:inline-flex;align-items:center;gap:5px;"><span style="width:8px;height:8px;border-radius:50%;background:${STATE_TOKENS.overlap.dot};"></span> ${s.overlap} overlap</span>` : ''}
@@ -115,6 +141,7 @@ function renderPopulated(coverage, bu) {
     </div>` : '';
 
   return `
+    ${banner}
     ${critical}
     ${overlap}
 
@@ -524,16 +551,22 @@ function closeDetail() {
   if (host) host.innerHTML = '';
 }
 
-// ============ Genus Agent meeting (uses existing meeting infrastructure) ============
+// ============ Genus Agent meeting (real chat via local meeting server) ============
 
 async function startGenusAgentMeeting(bu, mode = 'areas') {
-  // Per Session #19: don't build a special chat overlay. Use the existing
-  // meeting primitive. v1 placeholder — when meeting-request API is wired
-  // for Genus BU, this fires it; until then, surface that it's queued.
-  const topic = mode === 'add-area'
-    ? `Business areas — add an area to ${bu}`
-    : `Business areas — ${bu}`;
-  alert(`Meeting requested with Genus Agent\n\nTopic: "${topic}"\n\nThis would open in the existing meeting chat overlay (built Session #15 for Tuto). For BU=${bu}, the meeting-request endpoint isn't wired up yet — that's a follow-up Initiative. For now, write business_areas.json directly in the substrate.`);
+  const title = mode === 'add-area'
+    ? `Business modelling — add an area to ${bu}`
+    : `Business modelling — ${bu}`;
+  const opening = mode === 'add-area'
+    ? `The operator wants to add a new business area to ${bu}. Ask what's missing from the current model — a recurring theme, a new revenue line, a stage shift — and propose the area's name + description.`
+    : `The operator opened a meeting to review the business model for ${bu}. Read the current business_areas.json and your genus_agent_state. Lead with the current state (wired or suggestion) and ask what they want to refine.`;
+  await startMeeting({
+    bu,
+    agent_id: 'genus-agent',
+    title,
+    purpose: 'business-modelling',
+    opening_prompt: opening,
+  });
 }
 
 // ============ Helpers ============

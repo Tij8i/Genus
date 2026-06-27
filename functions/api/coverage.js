@@ -59,8 +59,10 @@ export async function onRequestGet({ request, env }) {
   const [businessAreas, registry, bindingsData, rolesData, runtimesData] = reads;
 
   if (!businessAreas || !Array.isArray(businessAreas.areas)) {
-    return jsonResponse(200, { ok: true, bu, empty: true, areas: [], summary: emptySummary() });
+    return jsonResponse(200, { ok: true, bu, empty: true, areas: [], summary: emptySummary(), genus_agent_state: null });
   }
+
+  const genus_agent_state = businessAreas.genus_agent_state || null;
 
   const allBindings = (bindingsData?.bindings || []).filter(b => b.bu === bu);
   const allUsers = rolesData?.users || [];
@@ -169,7 +171,7 @@ export async function onRequestGet({ request, env }) {
     overlapping_area_ids: areas.filter(a => a.state === 'overlap').map(a => a.id),
   };
 
-  return jsonResponse(200, { ok: true, bu, areas, summary });
+  return jsonResponse(200, { ok: true, bu, areas, summary, genus_agent_state });
 }
 
 function emptySummary() {
