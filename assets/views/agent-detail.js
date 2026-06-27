@@ -9,6 +9,7 @@
 import { escapeHtml } from '../utils.js';
 import { fetchSubstrateJson } from '../substrate-client.js';
 import { getPathSegment } from '../router.js';
+import { openEditAgentOverlay } from './agents.js';
 
 const GH_BASE = 'https://github.com/Tij8i/Orchestrator/blob/main/';
 
@@ -161,6 +162,10 @@ export async function renderAgentDetail(ctx) {
     return;
   }
 
+  // Areas for the Edit binding overlay's covers_areas picker
+  const areasFile = await fetchSubstrateJson(`dashboard/public/data/bus/${currentBu}/business_areas.json`, null).catch(() => null);
+  const areas = (areasFile && areasFile.areas) || [];
+
   if (external) {
     root.innerHTML = renderExternalDetail(external, users, currentBu);
   } else {
@@ -171,6 +176,42 @@ export async function renderAgentDetail(ctx) {
     location.hash = external ? '#roster?tab=external' : '#roster?tab=agents';
   }));
   document.querySelectorAll('[data-area-chip]').forEach(c => c.addEventListener('click', () => location.hash = '#layers'));
+
+  // Edit binding → reuses the overlay from the legacy Agents view
+  if (binding) {
+    document.getElementById('edit-binding-btn')?.addEventListener('click', () => {
+      openEditAgentOverlay({ bu: currentBu, binding, runtimes, users, areas, ctx });
+    });
+
+    document.getElementById('pause-btn')?.addEventListener('click', () => {
+      // Pause/resume requires Paperclip runtime control — surface intent
+      // until the API integration ships.
+      alert(`${binding.status === 'paused' ? 'Resume' : 'Pause'} would wire through the Paperclip runtime API. Not connected yet.`);
+    });
+  }
+
+  // External: wire the Revoke button in the right rail
+  if (external) {
+    document.querySelectorAll('[data-ext-revoke]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.extRevoke;
+        if (!window.confirm(`Revoke access for ${external.display_name}? Their token stops working immediately.`)) return;
+        btn.disabled = true;
+        try {
+          const r = await fetch('/api/external-access-edit', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ bu: currentBu, action: 'remove', id }),
+          });
+          const j = await r.json();
+          if (!r.ok || !j.ok) throw new Error(j.message || `HTTP ${r.status}`);
+          location.hash = '#roster?tab=external';
+        } catch (e) {
+          alert(`Revoke failed: ${e.message}`);
+          btn.disabled = false;
+        }
+      });
+    });
+  }
 }
 
 function renderBindingDetail(b, runtimes, users, availableModules) {
@@ -209,6 +250,11 @@ function renderBindingDetail(b, runtimes, users, availableModules) {
         <div style="display:flex;align-items:center;gap:8px;flex:none;">
           ${isPaperclip ? `<a href="http://127.0.0.1:3100" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:7px;padding:9px 14px;border:1px solid rgba(20,22,28,.12);border-radius:10px;background:#fff;color:#16181d;font-size:13px;font-weight:600;text-decoration:none;">Open in Paperclip <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M9 7h8v8"/></svg></a>` : ''}
           <button type="button" id="edit-binding-btn" style="padding:9px 14px;border:1px solid rgba(20,22,28,.12);border-radius:10px;background:#fff;color:#16181d;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;">Edit binding</button>
+          <button type="button" id="pause-btn" title="${b.status === 'paused' ? 'Resume' : 'Pause'}" style="width:38px;height:38px;border:1px solid rgba(20,22,28,.12);border-radius:10px;background:#fff;color:#5b6270;cursor:pointer;display:flex;align-items:center;justify-content:center;">
+            ${b.status === 'paused'
+              ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M7 4v16l13-8z"/></svg>'
+              : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>'}
+          </button>
         </div>
       </div>
 

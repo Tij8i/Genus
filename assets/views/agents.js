@@ -303,7 +303,7 @@ export function openAddAgentOverlay({ bu, runtimes, users, areas, installedModul
   });
 }
 
-function openEditAgentOverlay({ bu, binding, runtimes, users, areas, ctx }) {
+export function openEditAgentOverlay({ bu, binding, runtimes, users, areas, ctx }) {
   const bodyHtml = `
     <div style="padding:6px 0;display:flex;flex-direction:column;gap:14px;">
       <div style="font:600 10px 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#9aa1ae;letter-spacing:.06em;">${escapeHtml(binding.agent_id)}</div>
