@@ -18,6 +18,8 @@
 import { escapeHtml } from '../utils.js';
 import { openOverlay, closeOverlay } from '../overlay.js';
 import { startMeeting } from '../meeting.js';
+import { openAddAgentOverlay } from './agents.js';
+import { fetchSubstrateJson } from '../substrate-client.js';
 
 const TOOL_TOKENS = {
   notion:        { bg: '#16181d', fg: '#fff',    initial: 'N', label: 'Notion' },
@@ -53,9 +55,17 @@ let VIEW_STATE = {
   openToolKey: null,    // composite areaId:toolKey
 };
 
+let layersListenerWired = false;
+
 export async function renderLayers(ctx) {
   const root = document.getElementById('route-layers');
   if (!root) return;
+  if (!layersListenerWired) {
+    window.addEventListener('genus:agents-changed', () => {
+      if (location.hash.replace(/^#/, '') === 'layers') renderLayers(ctx);
+    });
+    layersListenerWired = true;
+  }
   const currentBu = new URLSearchParams(location.search).get('bu') || localStorage.getItem('genus.currentBu') || 'genus';
   root.innerHTML = renderHeader(currentBu) + '<div class="layers-skeleton" style="padding:40px 0;color:var(--text-faint);text-align:center;">Loading coverage…</div>';
 
@@ -615,7 +625,7 @@ function openDetail(coverage, areaId, bu, ctx) {
       const act = btn.dataset.panelAction;
       if (act === 'install-module') { closeDetail(); location.hash = '#modules'; }
       else if (act === 'assign-human') { closeDetail(); location.hash = '#people'; }
-      else if (act === 'add-agent') alert('Add an agent — opens the agent registry (ships next). For now, install a module that brings the Stewart you need, or write agent_bindings.json directly.');
+      else if (act === 'add-agent') openAddAgentFromLayers(bu, area.id, ctx);
     });
   });
 
@@ -783,6 +793,37 @@ function renderResolver(area, bu) {
 function closeDetail() {
   const host = document.getElementById('overlay-host');
   if (host) host.innerHTML = '';
+}
+
+// ============ Add an agent (delegates to agents view's overlay) ============
+
+async function openAddAgentFromLayers(bu, area_id, ctx) {
+  try {
+    const [stateRes, registryFile] = await Promise.all([
+      fetch('/api/admin-state?bu=' + encodeURIComponent(bu)).then(r => r.json()),
+      fetchSubstrateJson('dashboard/public/data/bus/_registry.json', null).catch(() => null),
+    ]);
+    if (!stateRes.ok) throw new Error(stateRes.message || 'admin-state failed');
+    const areasFile = await fetchSubstrateJson(`dashboard/public/data/bus/${bu}/business_areas.json`, null).catch(() => null);
+    const areas = (areasFile && areasFile.areas) || [];
+    const availableModules = (registryFile && registryFile.available_modules) || [];
+    const installedModuleIds = new Set(
+      (registryFile?.business_units || []).find(b => b.id === bu)?.modules_installed || []
+    );
+    closeDetail();
+    openAddAgentOverlay({
+      bu,
+      runtimes: stateRes.runtimes || [],
+      users: stateRes.users || [],
+      areas,
+      installedModuleIds,
+      availableModules,
+      presetArea: area_id,
+      ctx,
+    });
+  } catch (e) {
+    alert(`Could not open Add agent: ${e.message}`);
+  }
 }
 
 // ============ Genus Agent meeting (real chat via local meeting server) ============

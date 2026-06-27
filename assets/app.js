@@ -30,6 +30,7 @@ import { renderLearning as renderLearningView } from './views/learning.js';
 import { renderLayers as renderLayersView } from './views/layers.js';
 import { renderModules as renderModulesView } from './views/modules.js';
 import { renderPeople as renderPeopleView } from './views/people.js';
+import { renderAgents as renderAgentsView, openAddAgentOverlay } from './views/agents.js';
 // Finance views migrated to the Finance Module folder (GEN-127). When the
 // module loader (GEN-113) ships, these direct imports are replaced by dynamic
 // resolution via `modules/finance/module.json` → `views.dashboard[*].component_ref`.
@@ -521,6 +522,7 @@ function renderRoute(route) {
   else if (route === 'learning') safeRender('learning', renderLearning);
   else if (route === 'layers') safeRender('layers', renderLayers);
   else if (route === 'modules') safeRender('modules', renderModules);
+  else if (route === 'agents') safeRender('agents', renderAgents);
   else if (route === 'people') safeRender('people', renderPeople);
   else if (route === 'settings') safeRender('settings', renderSettings);
   else if (route === 'budget') safeRender('budget', renderBudget);
@@ -572,6 +574,9 @@ function renderLearning() {
 
 function renderLayers() {
   renderLayersView({ identity, viewer });
+}
+function renderAgents() {
+  renderAgentsView({ identity, viewer });
 }
 function renderModules() {
   renderModulesView({ identity, viewer, plans, initiatives, tasks, meetings, memos, kpis, governance, connectors, documentation });

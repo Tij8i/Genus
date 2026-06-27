@@ -20,9 +20,22 @@ export async function onRequestPost({ request, env }) {
   try { body = await request.json(); } catch { return jsonResponse(400, { ok: false, message: 'Invalid JSON' }); }
 
   const bu = (body.bu || '').toString().trim();
+  const action = (body.action || 'upsert').toString().trim(); // upsert | add | remove
   const module_id = (body.module_id || '').toString().trim();
+  const agent_id_in = (body.agent_id || '').toString().trim();
   if (!bu) return jsonResponse(400, { ok: false, message: 'bu is required' });
-  if (!module_id) return jsonResponse(400, { ok: false, message: 'module_id is required' });
+  if (action !== 'remove' && action !== 'add' && action !== 'upsert' && action !== 'edit') {
+    return jsonResponse(400, { ok: false, message: `Unknown action: ${action}` });
+  }
+  if ((action === 'upsert' || action === 'add') && !module_id && !agent_id_in) {
+    return jsonResponse(400, { ok: false, message: 'module_id or agent_id is required' });
+  }
+  if (action === 'remove' && !agent_id_in) {
+    return jsonResponse(400, { ok: false, message: 'agent_id is required for remove' });
+  }
+  if (action === 'edit' && !agent_id_in && !module_id) {
+    return jsonResponse(400, { ok: false, message: 'agent_id or module_id is required for edit' });
+  }
 
   // Gate (BU-scoped if admin/member)
   const gate = await requireAdmin(request, env, { bu });
@@ -63,34 +76,89 @@ export async function onRequestPost({ request, env }) {
   catch { return jsonResponse(500, { ok: false, message: 'agent_bindings.json not valid JSON' }); }
   data.bindings = data.bindings || [];
 
-  const idx = data.bindings.findIndex(b => b.bu === bu && b.module_id === module_id);
   const now = new Date().toISOString();
-  if (idx === -1) {
+  let commitSummary;
+  let resultBinding;
+
+  if (action === 'remove') {
+    const before = data.bindings.length;
+    data.bindings = data.bindings.filter(b => !(b.bu === bu && b.agent_id === agent_id_in));
+    if (data.bindings.length === before) {
+      return jsonResponse(404, { ok: false, message: `No binding found for bu=${bu} agent_id=${agent_id_in}` });
+    }
+    commitSummary = `remove ${bu}/${agent_id_in}`;
+    resultBinding = null;
+  } else if (action === 'add') {
+    const archetype = (body.archetype || 'Stewart').toString();
+    const agent_id = agent_id_in || `${module_id}-stewart-of-${bu}`;
+    if (data.bindings.some(b => b.bu === bu && b.agent_id === agent_id)) {
+      return jsonResponse(409, { ok: false, message: `Binding for agent_id '${agent_id}' already exists in bu '${bu}'` });
+    }
     const fresh = {
       bu,
-      module_id,
-      agent_id: `${module_id}-stewart-of-${bu}`,
+      module_id: module_id || null,
+      agent_id,
+      archetype,
+      display_name: (body.display_name || '').toString() || null,
       runtime_id: body.runtime_id || null,
       hitl_owner_email: body.hitl_owner_email || viewer.email,
+      covers_areas: Array.isArray(body.covers_areas) ? body.covers_areas : [],
+      lead: typeof body.lead === 'boolean' ? body.lead : false,
       installer_email: viewer.email,
       installed_at: now,
     };
     data.bindings.push(fresh);
+    commitSummary = `add ${bu}/${agent_id}`;
+    resultBinding = fresh;
   } else {
-    const upd = { ...data.bindings[idx] };
-    if (body.runtime_id !== undefined) upd.runtime_id = body.runtime_id || null;
-    if (body.hitl_owner_email !== undefined) upd.hitl_owner_email = body.hitl_owner_email || viewer.email;
-    upd.edited_at = now;
-    upd.edited_by = viewer.email;
-    data.bindings[idx] = upd;
+    // 'upsert' (back-compat) and 'edit' (explicit)
+    let idx;
+    if (agent_id_in) {
+      idx = data.bindings.findIndex(b => b.bu === bu && b.agent_id === agent_id_in);
+    } else {
+      idx = data.bindings.findIndex(b => b.bu === bu && b.module_id === module_id);
+    }
+    if (idx === -1) {
+      if (action === 'edit') {
+        return jsonResponse(404, { ok: false, message: `No binding found to edit for bu=${bu} ${agent_id_in ? 'agent_id=' + agent_id_in : 'module_id=' + module_id}` });
+      }
+      const fresh = {
+        bu,
+        module_id: module_id || null,
+        agent_id: agent_id_in || `${module_id}-stewart-of-${bu}`,
+        archetype: (body.archetype || 'Stewart').toString(),
+        runtime_id: body.runtime_id || null,
+        hitl_owner_email: body.hitl_owner_email || viewer.email,
+        covers_areas: Array.isArray(body.covers_areas) ? body.covers_areas : [],
+        lead: typeof body.lead === 'boolean' ? body.lead : false,
+        installer_email: viewer.email,
+        installed_at: now,
+      };
+      data.bindings.push(fresh);
+      commitSummary = `add ${bu}/${fresh.agent_id} (upsert)`;
+      resultBinding = fresh;
+    } else {
+      const upd = { ...data.bindings[idx] };
+      if (body.runtime_id !== undefined) upd.runtime_id = body.runtime_id || null;
+      if (body.hitl_owner_email !== undefined) upd.hitl_owner_email = body.hitl_owner_email || viewer.email;
+      if (Array.isArray(body.covers_areas)) upd.covers_areas = body.covers_areas;
+      if (typeof body.lead === 'boolean') upd.lead = body.lead;
+      if (typeof body.archetype === 'string') upd.archetype = body.archetype;
+      if (typeof body.display_name === 'string') upd.display_name = body.display_name || null;
+      upd.edited_at = now;
+      upd.edited_by = viewer.email;
+      data.bindings[idx] = upd;
+      commitSummary = `edit ${bu}/${upd.agent_id}`;
+      resultBinding = upd;
+    }
   }
 
   const newContent = JSON.stringify(data, null, 2) + '\n';
   try {
-    await putFile(env.GITHUB_PAT, BINDINGS_PATH, newContent, file.sha, `bindings: edit ${bu}/${module_id} (by ${viewer.email})`);
+    await putFile(env.GITHUB_PAT, BINDINGS_PATH, newContent, file.sha, `bindings: ${commitSummary} (by ${viewer.email})`);
   } catch (e) {
     return jsonResponse(e.status || 500, { ok: false, message: 'Could not write bindings: ' + (e.message || String(e)) });
   }
 
-  return jsonResponse(200, { ok: true, bu, module_id, binding: data.bindings.find(b => b.bu === bu && b.module_id === module_id) });
+  return jsonResponse(200, { ok: true, bu, action, binding: resultBinding });
 }
