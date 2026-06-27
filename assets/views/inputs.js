@@ -54,7 +54,7 @@ export function renderInputs(ctx, { onChange }) {
   const meetingsBadge = meetings.filter(m => m.status === 'requested_by_agent').length;
   const suggestionsBadge = tasks.filter(t => ['awaiting_approval', 'proposed'].includes((t.status || '').toLowerCase())).length;
 
-  const root = document.getElementById('route-inputs');
+  const root = (document.getElementById('subtab-host') || document.getElementById('route-inputs'));
   root.innerHTML = `
     <nav class="subtab-nav">
       ${renderSubTab('suggestions', 'Suggestions', suggestionsBadge)}

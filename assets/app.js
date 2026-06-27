@@ -361,6 +361,22 @@ async function boot() {
   // surface before the user navigates into a workflow page.
   loadWorkflowTasks(BU).then(d => updateTaskBadges(d?.tasks || [])).catch(() => {});
 
+  // Expose the leaf renderers globally so the Function Overview view can
+  // dispatch into them with the right ctx (identity / viewer / substrate
+  // slices) instead of re-fetching everything from scratch.
+  window.__renderLeaf = (key) => {
+    const dispatch = {
+      budget: renderBudget, costs: renderCosts, invoices: renderInvoices,
+      planning: renderPlanning, kpis: renderKpis, learning: renderLearning,
+      inputs: renderInputs, outputs: renderOutputs,
+      products: renderProducts, vision: renderVision, roadmap: renderRoadmap,
+      backlog: renderBacklog, releases: renderReleases,
+      'design-system': renderDesignSystem, decisions: renderDecisions,
+    };
+    const fn = dispatch[key];
+    if (fn) try { fn(); } catch (e) { console.error('leaf render', key, e); }
+  };
+
   // Wire sidebar nav-group collapse (GEN-99) BEFORE substrate fetch so the
   // sidebar still toggles even if substrate is unreachable (e.g. local file
   // serve without Pages Functions, or auth failure).
@@ -556,13 +572,19 @@ function renderRoute(route) {
   else if (route === 'design-system') safeRender('design-system', renderDesignSystem);
   else if (route === 'decisions') safeRender('decisions', renderDecisions);
   else if (route === 'decision-detail') safeRender('decision-detail', renderDecisionDetail);
-  else if (route === 'finance-overview')  safeRender('finance-overview',  () => renderFnOverviewView('finance'));
-  else if (route === 'finance-workflows') safeRender('finance-workflows', () => renderFnWorkflowsView('finance'));
-  else if (route === 'finance-tasks')     safeRender('finance-tasks',     () => renderFnTasksView('finance'));
-  else if (route === 'strategy-overview') safeRender('strategy-overview', () => renderFnOverviewView('strategy'));
-  else if (route === 'strategy-workflows')safeRender('strategy-workflows',() => renderFnWorkflowsView('strategy'));
-  else if (route === 'strategy-tasks')    safeRender('strategy-tasks',    () => renderFnTasksView('strategy'));
-  else if (route === 'workflow-detail')   safeRender('workflow-detail',   renderWorkflowDetailView);
+  else if (route === 'finance-overview')    safeRender('finance-overview',    () => renderFnOverviewView('finance'));
+  else if (route === 'finance-workflows')   safeRender('finance-workflows',   () => renderFnWorkflowsView('finance'));
+  else if (route === 'finance-tasks')       safeRender('finance-tasks',       () => renderFnTasksView('finance'));
+  else if (route === 'strategy-overview')   safeRender('strategy-overview',   () => renderFnOverviewView('strategy'));
+  else if (route === 'strategy-workflows')  safeRender('strategy-workflows',  () => renderFnWorkflowsView('strategy'));
+  else if (route === 'strategy-tasks')      safeRender('strategy-tasks',      () => renderFnTasksView('strategy'));
+  else if (route === 'product-overview')    safeRender('product-overview',    () => renderFnOverviewView('product'));
+  else if (route === 'product-workflows')   safeRender('product-workflows',   () => renderFnWorkflowsView('product'));
+  else if (route === 'product-tasks')       safeRender('product-tasks',       () => renderFnTasksView('product'));
+  else if (route === 'operations-overview') safeRender('operations-overview', () => renderFnOverviewView('operations'));
+  else if (route === 'operations-workflows')safeRender('operations-workflows',() => renderFnWorkflowsView('operations'));
+  else if (route === 'operations-tasks')    safeRender('operations-tasks',    () => renderFnTasksView('operations'));
+  else if (route === 'workflow-detail')     safeRender('workflow-detail',     renderWorkflowDetailView);
   else if (route === 'settings') safeRender('settings', renderSettings);
   else if (route === 'budget') safeRender('budget', renderBudget);
   else if (route === 'costs') safeRender('costs', renderCosts);

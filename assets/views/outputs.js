@@ -47,7 +47,7 @@ export function renderOutputs(ctx) {
   const deliverables = memos.filter(m => (m.level || '').toLowerCase() === 'deliverable')
     .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
 
-  const root = document.getElementById('route-outputs');
+  const root = (document.getElementById('subtab-host') || document.getElementById('route-outputs'));
   root.innerHTML = `
     <nav class="subtab-nav">
       ${renderSubTab('trajectory', 'Trajectory')}

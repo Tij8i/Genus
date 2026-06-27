@@ -13,7 +13,7 @@ const OWNERS = {
 };
 
 export async function renderProducts() {
-  const root = document.getElementById('route-products');
+  const root = (document.getElementById('subtab-host') || document.getElementById('route-products'));
   if (!root) return;
   const bu = currentBu();
   root.innerHTML = '<div style="padding:40px;color:#9aa1ae;text-align:center;">Loading products…</div>';

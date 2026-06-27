@@ -8,7 +8,7 @@ let ACTIVE_VERSION = null; // version key to filter columns
 let OPEN_ITEM_ID = null;
 
 export async function renderRoadmap() {
-  const root = document.getElementById('route-roadmap');
+  const root = (document.getElementById('subtab-host') || document.getElementById('route-roadmap'));
   if (!root) return;
   const bu = currentBu();
   root.innerHTML = '<div style="padding:40px;color:#9aa1ae;text-align:center;">Loading roadmap…</div>';

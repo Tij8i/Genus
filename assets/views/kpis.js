@@ -29,7 +29,7 @@ export function renderKpis(ctx, hooks = {}) {
   const tab = new URLSearchParams(queryStr).get('tab');
   if (tab === 'business' || tab === 'sources') activeSubTab = tab;
 
-  const root = document.getElementById('route-kpis');
+  const root = (document.getElementById('subtab-host') || document.getElementById('route-kpis'));
   const kpis = ctx.kpis || [];
   const connectors = ctx.connectors || [];
   const initiatives = ctx.initiatives || [];

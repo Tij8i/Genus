@@ -15,7 +15,7 @@ export function renderLearning(ctx) {
   const tab = new URLSearchParams(queryStr).get('tab');
   if (['hypotheses', 'system'].includes(tab)) activeSubTab = tab;
 
-  const root = document.getElementById('route-learning');
+  const root = (document.getElementById('subtab-host') || document.getElementById('route-learning'));
   root.innerHTML = `
     <nav class="subtab-nav">
       ${renderSubTab('hypotheses', 'Hypotheses & experiments')}

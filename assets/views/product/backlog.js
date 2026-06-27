@@ -10,7 +10,7 @@ const OWNERS = {
 };
 
 export async function renderBacklog() {
-  const root = document.getElementById('route-backlog');
+  const root = (document.getElementById('subtab-host') || document.getElementById('route-backlog'));
   if (!root) return;
   const bu = currentBu();
   root.innerHTML = '<div style="padding:40px;color:#9aa1ae;text-align:center;">Loading backlog…</div>';

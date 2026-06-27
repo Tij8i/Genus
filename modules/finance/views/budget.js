@@ -10,7 +10,7 @@ const CURRENT_BU = new URLSearchParams(location.search).get('bu') || localStorag
 const baseRel = (file) => `dashboard/public/data/bus/${CURRENT_BU}/finance/${file}`;
 
 export async function renderBudget(_ctx) {
-  const root = document.getElementById('route-budget');
+  const root = (document.getElementById('subtab-host') || document.getElementById('route-budget'));
   if (!root) return;
   root.innerHTML = '<div class="card"><div class="card-body">Loading Finance Stewart of ' + escapeHtml(CURRENT_BU) + '…</div></div>';
 

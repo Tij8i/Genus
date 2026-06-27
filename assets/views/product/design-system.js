@@ -20,7 +20,7 @@ const SECTIONS = [
 ];
 
 export async function renderDesignSystem() {
-  const root = document.getElementById('route-design-system');
+  const root = (document.getElementById('subtab-host') || document.getElementById('route-design-system'));
   if (!root) return;
   const bu = currentBu();
   root.innerHTML = '<div style="padding:40px;color:#9aa1ae;text-align:center;">Loading design system…</div>';

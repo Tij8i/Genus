@@ -3,7 +3,7 @@
 import { currentBu, loadProductFile, pageHeader, emptyPanel, escapeHtml, pathSegment, STATUS, RSTATUS, TAG } from './_shared.js';
 
 export async function renderReleases() {
-  const root = document.getElementById('route-releases');
+  const root = (document.getElementById('subtab-host') || document.getElementById('route-releases'));
   if (!root) return;
   const bu = currentBu();
   root.innerHTML = '<div style="padding:40px;color:#9aa1ae;text-align:center;">Loading releases…</div>';
@@ -61,7 +61,7 @@ function renderReleaseCard(r) {
 // ============ Release detail ============
 
 export async function renderReleaseDetail() {
-  const root = document.getElementById('route-release-detail');
+  const root = (document.getElementById('subtab-host') || document.getElementById('route-release-detail'));
   if (!root) return;
   const bu = currentBu();
   const releaseId = pathSegment();

@@ -9,7 +9,7 @@ const CURRENT_BU = new URLSearchParams(location.search).get('bu') || localStorag
 const baseRel = (file) => `dashboard/public/data/bus/${CURRENT_BU}/finance/${file}`;
 
 export async function renderCosts(_ctx) {
-  const root = document.getElementById('route-costs');
+  const root = (document.getElementById('subtab-host') || document.getElementById('route-costs'));
   if (!root) return;
   root.innerHTML = '<div class="card"><div class="card-body">Loading Costs…</div></div>';
 

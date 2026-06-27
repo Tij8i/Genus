@@ -9,7 +9,7 @@ const CURRENT_BU = new URLSearchParams(location.search).get('bu') || localStorag
 const baseRel = (file) => `dashboard/public/data/bus/${CURRENT_BU}/finance/${file}`;
 
 export async function renderInvoices(_ctx) {
-  const root = document.getElementById('route-invoices');
+  const root = (document.getElementById('subtab-host') || document.getElementById('route-invoices'));
   if (!root) return;
   root.innerHTML = '<div class="card"><div class="card-body">Loading Revenue + Invoices…</div></div>';
 

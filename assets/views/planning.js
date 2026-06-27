@@ -26,7 +26,7 @@ export function renderPlanning(ctx, { onChange }) {
   const tab = params.get('tab');
   if (['active', 'backlog', 'retrospective'].includes(tab)) activeSubTab = tab;
 
-  const root = document.getElementById('route-planning');
+  const root = (document.getElementById('subtab-host') || document.getElementById('route-planning'));
   root.innerHTML = `
     <nav class="subtab-nav">
       ${['active', 'backlog', 'retrospective'].map(t => `

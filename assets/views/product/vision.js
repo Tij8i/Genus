@@ -12,7 +12,7 @@ const OWNERS = {
 };
 
 export async function renderVision() {
-  const root = document.getElementById('route-vision');
+  const root = (document.getElementById('subtab-host') || document.getElementById('route-vision'));
   if (!root) return;
   const bu = currentBu();
   root.innerHTML = '<div style="padding:40px;color:#9aa1ae;text-align:center;">Loading vision…</div>';

@@ -73,7 +73,12 @@ body {
   background: var(--sidebar-bg);
   border-right: 1px solid var(--border);
   padding: 16px 14px;
+  overflow-y: auto;
+  min-height: 0;
 }
+.sidebar::-webkit-scrollbar { width: 6px; }
+.sidebar::-webkit-scrollbar-thumb { background: rgba(20,22,28,.14); border-radius: 99px; }
+.sidebar::-webkit-scrollbar-track { background: transparent; }
 .bu-switcher {
   display: flex;
   align-items: center;
