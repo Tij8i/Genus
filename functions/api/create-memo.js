@@ -1,7 +1,15 @@
 // POST /api/create-memo
 // Appends a new memo to data/bus/<bu>/memos.jsonl
 //
-// Body: { bu, level, target?, body }
+// Body: { bu, level, target?, body, type?, area_refs?, source? }
+//
+// Schema-extension fields (Session #22):
+//   type ∈ memo | meeting_note | decision | customer_feedback | interview
+//          (default 'memo' — back-compat with existing callers)
+//   area_refs[] — which Layers areas this memo belongs to. Drives which
+//                 Stewart picks it up at heartbeat. Multiple refs OK.
+//   source — where the memo came from. Drives provenance + dedup later.
+//            ('operator_typed' | 'granola' | 'otter' | 'email' | 'paste' | ...)
 
 import { getFile, putFile, jsonResponse, todayISO, todayDate } from './_gh.js';
 import { requireAdmin } from './_identity.js';
@@ -39,6 +47,10 @@ export async function onRequestPost({ request, env }) {
   const nextNum = String(existingToday.length + 1).padStart(3, '0');
   const id = `memo-${today}-${nextNum}`;
 
+  const type = (body.type || 'memo').toString();
+  const area_refs = Array.isArray(body.area_refs) ? body.area_refs.filter(a => typeof a === 'string') : [];
+  const source = (body.source || 'operator_typed').toString();
+
   const memo = {
     id,
     bu,
@@ -47,6 +59,9 @@ export async function onRequestPost({ request, env }) {
     level,
     target,
     body: memoBody,
+    type,
+    area_refs,
+    source,
     status: 'unprocessed',
     processed_by: null,
     processed_at: null,
