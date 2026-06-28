@@ -10,6 +10,12 @@ import { loadWorkflows, loadWorkflowTasks, workflowRow, dueStyle, updateTaskBadg
 // preserves the All/Live/In dev tab + per-row expanded state.
 const matrixState = { tab: 'all', expanded: new Set() };
 
+const MATRIX_TABS = [
+  { key: 'all',  label: 'All versions' },
+  { key: 'live', label: 'Live' },
+  { key: 'dev',  label: 'In dev' },
+];
+
 export async function renderDevelopmentOverview() {
   const root = document.getElementById('route-development-overview');
   if (!root) return;
@@ -159,51 +165,74 @@ function infoTile(info) {
   </a>`;
 }
 
-// Product × Health matrix.
-// Rows = products. Columns = Active work bar · Tests · Bugs · Deploys · Synthetic.
-// Tab bar at top switches the per-row column source (all / live / dev).
-// Each row is expandable to show the per-version split where applicable.
+// Product × Health matrix ("By product").
+// Rows = products, with a chevron on the LEFT of the product name that
+// expands to per-version sub-rows. Columns: Active work bar (with single
+// total count) · Tests · Bugs · Deploys · Synthetic. Status cells render
+// as "● label" — colored dot + plain label, no background fill.
+// Tabs in the top right switch the per-row slice (All versions / Live / In dev).
 function renderProductMatrix(matrix) {
   const products = matrix?.products || [];
   const aggregate = matrix?.company_aggregate;
-  const tabs = [
-    { key: 'all',  label: 'All' },
-    { key: 'live', label: 'Live (maintenance)' },
-    { key: 'dev',  label: 'In dev' },
-  ];
 
   if (products.length === 0 && !aggregate) return '';
 
-  // If the Product module isn't installed, fall back to the aggregate row.
+  // If the Product module isn't installed, fall back to one aggregate row.
   if (products.length === 0 && aggregate) {
-    return `<div style="background:${C.card};border:1px solid ${C.border};border-radius:14px;padding:18px 20px;box-shadow:0 1px 2px rgba(16,18,28,.04);">
-      <strong style="font-size:14.5px;color:${C.ink};">Build health · company-wide</strong>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:14px;margin-top:14px;">
-        ${matrixCell('Active work', activeWorkBar(aggregate.active))}
-        ${matrixCell('Tests',       chip(aggregate.tests))}
-        ${matrixCell('Bugs',        chip(aggregate.bugs))}
-        ${matrixCell('Deploys',     chip(aggregate.deploys))}
-        ${matrixCell('Synthetic',   chip(aggregate.synthetic))}
-      </div>
+    return `<div style="background:${C.card};border:1px solid ${C.border};border-radius:14px;padding:22px 24px;box-shadow:0 1px 2px rgba(16,18,28,.04);">
+      ${matrixHeader(1)}
+      ${matrixColumnHeader()}
+      ${aggregateRow(aggregate)}
+      ${matrixFooter(1)}
     </div>`;
   }
 
-  return `<div style="background:${C.card};border:1px solid ${C.border};border-radius:14px;padding:18px 20px;box-shadow:0 1px 2px rgba(16,18,28,.04);">
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:14px;">
-      <strong style="font-size:14.5px;color:${C.ink};">Build health · per product</strong>
-      <div id="matrix-tabs" style="display:inline-flex;background:${C.bg};border-radius:9px;padding:3px;gap:2px;">
-        ${tabs.map(t => {
-          const on = matrixState.tab === t.key;
-          return `<button type="button" data-matrix-tab="${t.key}" style="background:${on ? C.card : 'transparent'};border:none;padding:6px 10px;border-radius:7px;font:600 11.5px ${C.mono};color:${on ? C.ink : C.ink3};cursor:pointer;${on ? 'box-shadow:0 1px 2px rgba(16,18,28,.06);' : ''}">${escapeHtml(t.label)}</button>`;
-        }).join('')}
-      </div>
-    </div>
-    <div style="display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1.6fr) 86px 86px 86px 86px 26px;gap:14px;padding:0 4px 8px;font:600 9.5px ${C.mono};letter-spacing:.12em;text-transform:uppercase;color:${C.ink3};border-bottom:1px solid ${C.border};">
-      <span>Product</span><span>Active work</span><span style="text-align:center;">Tests</span><span style="text-align:center;">Bugs</span><span style="text-align:center;">Deploys</span><span style="text-align:center;">Synthetic</span><span></span>
-    </div>
+  return `<div style="background:${C.card};border:1px solid ${C.border};border-radius:14px;padding:22px 24px;box-shadow:0 1px 2px rgba(16,18,28,.04);">
+    ${matrixHeader(products.length)}
+    ${matrixColumnHeader()}
     <div id="matrix-rows" style="display:flex;flex-direction:column;">
       ${products.map(p => productRow(p, matrixState.tab)).join('')}
     </div>
+    ${matrixFooter(products.length)}
+  </div>`;
+}
+
+function matrixHeader(_count) {
+  return `<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:16px;">
+    <div>
+      <strong style="font-size:15px;color:${C.ink};letter-spacing:-.01em;">By product</strong>
+      <p style="font-size:12.5px;color:${C.ink3};margin:4px 0 0;max-width:540px;">Build health across what Genus ships — what's live, what's in dev, and where to look.</p>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
+      <div id="matrix-tabs" style="display:inline-flex;background:${C.bg};border-radius:9px;padding:3px;gap:2px;">
+        ${MATRIX_TABS.map(t => {
+          const on = matrixState.tab === t.key;
+          return `<button type="button" data-matrix-tab="${t.key}" style="background:${on ? C.card : 'transparent'};border:none;padding:6px 12px;border-radius:7px;font:600 11.5px ${C.mono};color:${on ? C.ink : C.ink3};cursor:pointer;${on ? 'box-shadow:0 1px 2px rgba(16,18,28,.06);' : ''}">${escapeHtml(t.label)}</button>`;
+        }).join('')}
+      </div>
+      <div style="display:inline-flex;gap:14px;font:500 11px ${C.mono};color:${C.ink3};">
+        <span style="display:inline-flex;align-items:center;gap:5px;"><span style="width:7px;height:7px;border-radius:99px;background:${DEV.color};"></span>features</span>
+        <span style="display:inline-flex;align-items:center;gap:5px;"><span style="width:7px;height:7px;border-radius:99px;background:#c98a16;"></span>fixes</span>
+        <span style="display:inline-flex;align-items:center;gap:5px;"><span style="width:7px;height:7px;border-radius:99px;background:#9aa1ae;"></span>chores</span>
+      </div>
+    </div>
+  </div>`;
+}
+
+function matrixColumnHeader() {
+  return `<div style="display:grid;grid-template-columns:18px minmax(0,1.4fr) minmax(0,1.7fr) 78px 78px 78px 78px;gap:14px;padding:0 4px 10px;font:600 9.5px ${C.mono};letter-spacing:.12em;text-transform:uppercase;color:${C.ink3};border-bottom:1px solid ${C.border};">
+    <span></span><span>Product</span><span>Active work</span><span>Tests</span><span>Bugs</span><span>Deploys</span><span>Synthetic</span>
+  </div>`;
+}
+
+function matrixFooter(count) {
+  return `<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-top:14px;padding-top:14px;border-top:1px solid ${C.border};font:500 11px ${C.mono};color:${C.ink3};">
+    <span>imported from <a href="#products" style="color:${C.accent};text-decoration:none;font-weight:600;">Product</a> · ${count} product${count === 1 ? '' : 's'}</span>
+    <span style="display:inline-flex;gap:14px;">
+      <span style="display:inline-flex;align-items:center;gap:5px;"><span style="width:7px;height:7px;border-radius:99px;background:#0e9f6e;"></span>healthy</span>
+      <span style="display:inline-flex;align-items:center;gap:5px;"><span style="width:7px;height:7px;border-radius:99px;background:#c98a16;"></span>watch</span>
+      <span style="display:inline-flex;align-items:center;gap:5px;"><span style="width:7px;height:7px;border-radius:99px;background:#c0392b;"></span>attention</span>
+    </span>
   </div>`;
 }
 
@@ -213,25 +242,40 @@ function productRow(p, tab) {
   const expanded = matrixState.expanded.has(p.name);
   const versionsRow = expanded ? expandedSubRow(p, tab) : '';
   return `<div data-product="${escapeHtml(p.name)}">
-    <button type="button" data-matrix-expand="${escapeHtml(p.name)}" style="display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1.6fr) 86px 86px 86px 86px 26px;gap:14px;align-items:center;width:100%;padding:14px 4px;border:none;background:transparent;border-bottom:1px solid ${C.border};cursor:pointer;text-align:left;font:inherit;color:inherit;">
+    <button type="button" data-matrix-expand="${escapeHtml(p.name)}" style="display:grid;grid-template-columns:18px minmax(0,1.4fr) minmax(0,1.7fr) 78px 78px 78px 78px;gap:14px;align-items:center;width:100%;padding:16px 4px;border:none;background:transparent;border-bottom:1px solid ${C.border};cursor:pointer;text-align:left;font:inherit;color:inherit;">
+      <span style="color:${C.ink3};display:flex;justify-content:center;">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="transform:${expanded ? 'rotate(90deg)' : 'rotate(0deg)'};transition:transform .14s;">
+          <path d="m9 6 6 6-6 6"/>
+        </svg>
+      </span>
       <div style="min-width:0;">
-        <strong style="font-size:13.5px;color:${C.ink};">${escapeHtml(p.name)}</strong>
+        <strong style="font-size:14px;color:${C.ink};">${escapeHtml(p.name)}</strong>
         <div style="font:500 11px ${C.mono};color:${C.ink3};margin-top:3px;">${escapeHtml(p.version_label || '')}</div>
       </div>
       ${notShipped
         ? `<span style="font:500 11.5px ${C.mono};color:${C.ink3};">Not yet shipped</span>`
-        : `<div style="display:flex;align-items:center;">${activeWorkBar(slice.active)}</div>`}
-      <div style="display:flex;justify-content:center;">${chip(slice.tests)}</div>
-      <div style="display:flex;justify-content:center;">${chip(slice.bugs)}</div>
-      <div style="display:flex;justify-content:center;">${chip(slice.deploys)}</div>
-      <div style="display:flex;justify-content:center;">${chip(slice.synthetic)}</div>
-      <span style="color:${C.ink3};display:flex;justify-content:flex-end;">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="transform:${expanded ? 'rotate(90deg)' : 'rotate(0deg)'};transition:transform .14s;">
-          <path d="m9 6 6 6-6 6"/>
-        </svg>
-      </span>
+        : activeWorkBar(slice.active)}
+      ${chip(slice.tests)}
+      ${chip(slice.bugs)}
+      ${chip(slice.deploys)}
+      ${chip(slice.synthetic)}
     </button>
     ${versionsRow}
+  </div>`;
+}
+
+function aggregateRow(slice) {
+  return `<div style="display:grid;grid-template-columns:18px minmax(0,1.4fr) minmax(0,1.7fr) 78px 78px 78px 78px;gap:14px;align-items:center;padding:16px 4px;border-bottom:1px solid ${C.border};">
+    <span></span>
+    <div>
+      <strong style="font-size:14px;color:${C.ink};">Company-wide</strong>
+      <div style="font:500 11px ${C.mono};color:${C.ink3};margin-top:3px;">aggregate (Product module not installed)</div>
+    </div>
+    ${activeWorkBar(slice.active)}
+    ${chip(slice.tests)}
+    ${chip(slice.bugs)}
+    ${chip(slice.deploys)}
+    ${chip(slice.synthetic)}
   </div>`;
 }
 
@@ -241,43 +285,47 @@ function expandedSubRow(p, tab) {
   const showLive = (tab === 'all' || tab === 'live') && !liveSlice.not_shipped;
   const showDev  = (tab === 'all' || tab === 'dev')  && p.next_version;
   if (!showLive && !showDev) return '';
-  const cell = (label, slice) => `<div style="display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1.6fr) 86px 86px 86px 86px 26px;gap:14px;align-items:center;padding:10px 4px 10px 22px;background:${C.cardSoft};border-bottom:1px solid ${C.border};">
-    <div style="font:500 11.5px ${C.mono};color:${C.ink2};">${escapeHtml(label)}</div>
-    <div>${activeWorkBar(slice.active)}</div>
-    <div style="display:flex;justify-content:center;">${chip(slice.tests)}</div>
-    <div style="display:flex;justify-content:center;">${chip(slice.bugs)}</div>
-    <div style="display:flex;justify-content:center;">${chip(slice.deploys)}</div>
-    <div style="display:flex;justify-content:center;">${chip(slice.synthetic)}</div>
+  const cell = (label, slice) => `<div style="display:grid;grid-template-columns:18px minmax(0,1.4fr) minmax(0,1.7fr) 78px 78px 78px 78px;gap:14px;align-items:center;padding:11px 4px 11px 4px;background:${C.cardSoft};border-bottom:1px solid ${C.border};">
     <span></span>
+    <div style="font:500 11.5px ${C.mono};color:${C.ink2};padding-left:6px;">${escapeHtml(label)}</div>
+    ${activeWorkBar(slice.active)}
+    ${chip(slice.tests)}
+    ${chip(slice.bugs)}
+    ${chip(slice.deploys)}
+    ${chip(slice.synthetic)}
   </div>`;
   return `${showLive ? cell(`Live · ${p.live_version || 'shipped'}`, liveSlice) : ''}${showDev ? cell(`In dev · ${p.next_version}`, devSlice) : ''}`;
 }
 
+// Status chip: colored dot + label (no background fill). Matches the
+// "● 94% / ● 1 crit / ● stable / ● fresh" pattern from the design.
 function chip(c) {
-  if (!c || c.label == null) return `<span style="font:500 11.5px ${C.mono};color:${C.ink3};">—</span>`;
-  return `<span style="font:600 11px ${C.mono};color:${c.color || C.ink2};background:${(c.color || C.ink2) + '14'};padding:3px 8px;border-radius:6px;white-space:nowrap;">${escapeHtml(c.label)}</span>`;
+  if (!c || c.label == null) {
+    return `<span style="display:inline-flex;align-items:center;gap:6px;font:500 12px ${C.mono};color:${C.ink3};white-space:nowrap;">
+      <span style="width:7px;height:7px;border-radius:99px;background:rgba(20,22,28,.18);flex:none;"></span>—
+    </span>`;
+  }
+  const color = c.color || C.ink2;
+  return `<span style="display:inline-flex;align-items:center;gap:6px;font:600 12px ${C.mono};color:${C.ink};white-space:nowrap;">
+    <span style="width:7px;height:7px;border-radius:99px;background:${color};flex:none;"></span>${escapeHtml(c.label)}
+  </span>`;
 }
 
+// Active work bar: stacked feat/fix/chore segments + single total count.
+// Matches the design's "[bar] 14" pattern (no f/fx/c breakdown).
 function activeWorkBar(active) {
-  if (!active) return `<span style="font:500 11.5px ${C.mono};color:${C.ink3};">—</span>`;
+  if (!active) return `<span style="font:500 12px ${C.mono};color:${C.ink3};">—</span>`;
   const { feat = 0, fix = 0, chore = 0 } = active;
   const total = feat + fix + chore;
-  if (total === 0) return `<span style="font:500 11.5px ${C.mono};color:${C.ink3};">none</span>`;
+  if (total === 0) return `<span style="font:500 12px ${C.mono};color:${C.ink3};">none</span>`;
   const pct = (n) => (n / total) * 100;
-  return `<div style="display:flex;align-items:center;gap:8px;width:100%;min-width:0;">
-    <div style="flex:1;display:flex;height:6px;border-radius:3px;overflow:hidden;background:${C.bg};">
+  return `<div style="display:flex;align-items:center;gap:10px;width:100%;min-width:0;">
+    <div style="flex:1;display:flex;height:7px;border-radius:4px;overflow:hidden;background:${C.bg};max-width:200px;">
       ${feat > 0 ? `<span style="background:${DEV.color};width:${pct(feat)}%;"></span>` : ''}
       ${fix > 0 ? `<span style="background:#c98a16;width:${pct(fix)}%;"></span>` : ''}
       ${chore > 0 ? `<span style="background:#9aa1ae;width:${pct(chore)}%;"></span>` : ''}
     </div>
-    <span style="font:500 11px ${C.mono};color:${C.ink3};white-space:nowrap;">${feat}f · ${fix}fx · ${chore}c</span>
-  </div>`;
-}
-
-function matrixCell(label, body) {
-  return `<div>
-    <div style="font:600 9.5px ${C.mono};letter-spacing:.12em;text-transform:uppercase;color:${C.ink3};margin-bottom:8px;">${escapeHtml(label)}</div>
-    ${body}
+    <span style="font:600 13px ${C.mono};color:${C.ink};">${total}</span>
   </div>`;
 }
 
