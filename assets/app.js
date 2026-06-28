@@ -48,6 +48,11 @@ import { renderFunctionWorkflows as renderFnWorkflowsView } from './views/workfl
 import { renderFunctionTasks as renderFnTasksView } from './views/workflows/function-tasks.js';
 import { renderWorkflowDetail as renderWorkflowDetailView } from './views/workflows/workflow-detail.js';
 import { loadWorkflowTasks, updateTaskBadges } from './views/workflows/_shared.js';
+import { renderDevelopmentOverview } from './views/development/overview.js';
+import { renderDevTests } from './views/development/tests.js';
+import { renderDevBugs } from './views/development/bugs.js';
+import { renderDevDeploys } from './views/development/deploys.js';
+import { renderDevSynthetic } from './views/development/synthetic.js';
 // Finance views migrated to the Finance Module folder (GEN-127). When the
 // module loader (GEN-113) ships, these direct imports are replaced by dynamic
 // resolution via `modules/finance/module.json` → `views.dashboard[*].component_ref`.
@@ -581,6 +586,14 @@ function renderRoute(route) {
   else if (route === 'product-overview')    safeRender('product-overview',    () => renderFnOverviewView('product'));
   else if (route === 'product-workflows')   safeRender('product-workflows',   () => renderFnWorkflowsView('product'));
   else if (route === 'product-tasks')       safeRender('product-tasks',       () => renderFnTasksView('product'));
+  else if (route === 'development-overview') safeRender('development-overview', renderDevelopmentOverview);
+  else if (route === 'development-workflows')safeRender('development-workflows',() => renderFnWorkflowsView('development'));
+  else if (route === 'development-tasks')    safeRender('development-tasks',    () => renderFnTasksView('development'));
+  else if (route === 'dev-tests')            safeRender('dev-tests',            renderDevTests);
+  else if (route === 'dev-bugs')             safeRender('dev-bugs',             renderDevBugs);
+  else if (route === 'dev-deploys')          safeRender('dev-deploys',          renderDevDeploys);
+  else if (route === 'dev-synthetic')        safeRender('dev-synthetic',        renderDevSynthetic);
+  else if (route === 'dev-workflow-detail')  safeRender('dev-workflow-detail',  renderWorkflowDetailView);
   else if (route === 'operations-overview') safeRender('operations-overview', () => renderFnOverviewView('operations'));
   else if (route === 'operations-workflows')safeRender('operations-workflows',() => renderFnWorkflowsView('operations'));
   else if (route === 'operations-tasks')    safeRender('operations-tasks',    () => renderFnTasksView('operations'));

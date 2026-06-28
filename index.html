@@ -112,6 +112,29 @@
         </nav>
       </div>
 
+      <!-- DEVELOPMENT -->
+      <div class="nav-group" data-group="development">
+        <button type="button" class="nav-group-label" data-group-toggle="development" aria-expanded="true">
+          Development
+          <svg class="nav-group-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <nav class="nav-group-items">
+          <a href="#development-overview" class="nav-link" data-route="development-overview">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="m7 14 3-3 3 3 5-6"/></svg>
+            Overview
+          </a>
+          <a href="#development-workflows" class="nav-link" data-route="development-workflows">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 2.1 21 6l-4 3.9"/><path d="M3 12V8a2 2 0 0 1 2-2h14"/><path d="m7 21.9-4-3.9 4-3.9"/><path d="M21 12v4a2 2 0 0 1-2 2H5"/></svg>
+            Workflows
+          </a>
+          <a href="#development-tasks" class="nav-link" data-route="development-tasks">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+            <span style="flex:1;">Tasks</span>
+            <span class="nav-badge" id="nav-development-tasks-badge" hidden></span>
+          </a>
+        </nav>
+      </div>
+
       <!-- OPERATIONS -->
       <div class="nav-group" data-group="operations">
         <button type="button" class="nav-group-label" data-group-toggle="operations" aria-expanded="true">
@@ -286,6 +309,31 @@
         <section class="route" data-route="product-tasks" hidden>
           <div class="route-body" id="route-product-tasks"></div>
         </section>
+        <section class="route" data-route="development-overview" hidden>
+          <div class="route-body" id="route-development-overview"></div>
+        </section>
+        <section class="route" data-route="development-workflows" hidden>
+          <div class="route-body" id="route-development-workflows"></div>
+        </section>
+        <section class="route" data-route="development-tasks" hidden>
+          <div class="route-body" id="route-development-tasks"></div>
+        </section>
+        <section class="route" data-route="dev-tests" hidden>
+          <div class="route-body" id="route-dev-tests"></div>
+        </section>
+        <section class="route" data-route="dev-bugs" hidden>
+          <div class="route-body" id="route-dev-bugs"></div>
+        </section>
+        <section class="route" data-route="dev-deploys" hidden>
+          <div class="route-body" id="route-dev-deploys"></div>
+        </section>
+        <section class="route" data-route="dev-synthetic" hidden>
+          <div class="route-body" id="route-dev-synthetic"></div>
+        </section>
+        <section class="route" data-route="dev-workflow-detail" hidden>
+          <div class="route-body" id="route-dev-workflow-detail"></div>
+        </section>
+
         <section class="route" data-route="operations-overview" hidden>
           <div class="route-body" id="route-operations-overview"></div>
         </section>
