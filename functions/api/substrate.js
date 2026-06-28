@@ -9,9 +9,15 @@
 // Per [[genus-repo-split-substrate]]: substrate stays in Orchestrator.
 // Genus dashboard reads it cross-repo via the GITHUB_PAT env var.
 //
-// Response on success: { ok: true, path, size, content_type, content }
+// Response on success: { ok: true, path, size, content }
 // Response on bad path: 400 { ok: false, message }
-// Response on missing: 404 { ok: false, message }
+// Response on missing: 200 { ok: true, missing: true, path, content: '' }
+//
+// Missing files return 200 (not 404) because the substrate-client treats
+// every missing file as an empty fallback anyway. Returning 404 made the
+// browser log every per-KPI measurement-series 404 in red, drowning the
+// console in noise that wasn't actionable. Callers that genuinely need
+// to know "this file doesn't exist" can check the `missing` flag.
 //
 // The content is returned as a JSON-encoded string (the file's raw bytes
 // decoded as UTF-8). Caller does JSON.parse / JSONL.parse as needed.
@@ -59,6 +65,19 @@ export async function onRequestGet({ request, env }) {
       sha: result.sha,
     });
   } catch (e) {
+    // 404 = file doesn't exist yet (per-BU substrate is sparse — KPIs without
+    // captures, BUs without optional files). Return 200 + missing:true so
+    // the caller's fallback path runs without the browser console logging
+    // it as an error.
+    if (e.status === 404) {
+      return jsonResponse(200, {
+        ok: true,
+        missing: true,
+        path,
+        size: 0,
+        content: '',
+      });
+    }
     return jsonResponse(e.status || 500, {
       ok: false,
       message: e.message || String(e),

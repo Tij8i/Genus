@@ -31,10 +31,13 @@ export async function fetchSubstrate(path) {
 export async function fetchSubstrateJson(path, fallback = null) {
   try {
     const result = await fetchSubstrate(path);
+    // Missing files come back as 200 + missing:true (2026-06-28 substrate
+    // API change to silence console noise from optional/per-KPI 404s).
+    if (result.missing) return fallback;
     return JSON.parse(result.content);
   } catch (e) {
-    // 404 or parse errors fall through to fallback. Other errors throw —
-    // boot's catch will surface them as a boot banner.
+    // Real errors (500, parse failures on a non-empty file) — fall through
+    // to fallback if one was given, else throw so boot's catch surfaces it.
     if (fallback !== null) {
       console.warn(`[substrate] using fallback for ${path}:`, e.message);
       return fallback;
@@ -46,6 +49,7 @@ export async function fetchSubstrateJson(path, fallback = null) {
 export async function fetchSubstrateJsonl(path) {
   try {
     const result = await fetchSubstrate(path);
+    if (result.missing) return [];
     const lines = (result.content || '').split('\n');
     const out = [];
     for (const line of lines) {
