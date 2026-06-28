@@ -1,32 +1,27 @@
-# Auto-deploy the genus-v06 Cloudflare Pages project on every push to main.
+# Manual / emergency deploy of the genus-v06 Cloudflare Pages project.
 #
-# Why this exists instead of Cloudflare's built-in Git auto-deploy:
-# The Cloudflare Pages GitHub App is authorized for Tij8i/Orchestrator only.
-# Auto-deploys to Tij8i/Genus don't fire from the Cloudflare side.
+# As of 2026-06-28 Cloudflare Pages' GitHub App is authorized on Tij8i/Genus
+# directly, so every push (main + branches) auto-deploys on the Cloudflare
+# side — production on `main`, preview on every other branch at
+# <slug>.genus-v06.pages.dev. This workflow no longer needs to fire on push.
 #
-# Why curl instead of cloudflare/wrangler-action: wrangler requires
-# `User Details: Read` on the API token to introspect. Operator's token
-# only has Edit-Workers scopes, no User Details. The Pages deployment
-# endpoint accepts plain HTTP POST without that scope — Cloudflare
-# pulls the latest commit from the connected Git repo on its own.
+# Kept for the rare case where the Cloudflare-side build is broken and we
+# need a manual override. Triggered only via the Actions tab
+# (workflow_dispatch). It hits the Cloudflare Pages deployment endpoint
+# which rebuilds whatever the project's production branch is (main).
 #
 # Required GitHub Actions secret on this repo:
 #   CLOUDFLARE_API_TOKEN — already set via gh CLI
-#
-# Account ID + project name are public-equivalent (identifiers, not credentials).
 
-name: Deploy to Cloudflare Pages
+name: Manual deploy to Cloudflare Pages (emergency only)
 
 on:
-  push:
-    branches: [main]
-  workflow_dispatch:  # manual trigger from the Actions tab
+  workflow_dispatch:  # emergency manual deploy only
     inputs:
-      branch:
-        description: 'Branch to deploy (leave blank for the project default — main). Pass via -f branch=<name>, e.g. feature/GEN-99-sidebar-reorg.'
-        required: false
+      reason:
+        description: 'Why are we doing a manual deploy? (Cloudflare-side build broken? Stuck?)'
+        required: true
         type: string
-        default: ''
 
 jobs:
   deploy:
