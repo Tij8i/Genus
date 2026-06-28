@@ -1,7 +1,7 @@
 // Tiny hash router. Routes are #dashboard / #planning / #kpis / #inputs /
 // #outputs / #settings. Default route used when hash is missing or invalid.
 
-const VALID_ROUTES = ['dashboard', 'planning', 'kpis', 'inputs', 'outputs', 'learning', 'layers', 'modules', 'agents', 'people', 'roster', 'agent-detail', 'archetype', 'settings', 'budget', 'costs', 'invoices', 'products', 'vision', 'roadmap', 'backlog', 'releases', 'release-detail', 'design-system', 'decisions', 'decision-detail', 'finance-overview', 'finance-workflows', 'finance-tasks', 'strategy-overview', 'strategy-workflows', 'strategy-tasks', 'product-overview', 'product-workflows', 'product-tasks', 'operations-overview', 'operations-workflows', 'operations-tasks', 'workflow-detail'];
+const VALID_ROUTES = ['dashboard', 'planning', 'kpis', 'inputs', 'outputs', 'learning', 'layers', 'modules', 'agents', 'people', 'roster', 'agent-detail', 'archetype', 'settings', 'budget', 'costs', 'invoices', 'products', 'vision', 'roadmap', 'backlog', 'releases', 'release-detail', 'design-system', 'decisions', 'decision-detail', 'finance-overview', 'finance-workflows', 'finance-tasks', 'strategy-overview', 'strategy-workflows', 'strategy-tasks', 'product-overview', 'product-workflows', 'product-tasks', 'development-overview', 'development-workflows', 'development-tasks', 'dev-tests', 'dev-bugs', 'dev-deploys', 'dev-synthetic', 'dev-workflow-detail', 'operations-overview', 'operations-workflows', 'operations-tasks', 'workflow-detail'];
 let currentRoute = null;
 let onChangeCb = () => {};
 

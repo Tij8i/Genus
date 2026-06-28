@@ -80,6 +80,7 @@ function taskRow(t) {
           ${escapeHtml(t.wf_title)}
         </a>
         <span style="font:500 10.5px ${C.mono};color:${C.ink3};">step ${escapeHtml(t.step_no)}</span>
+        ${t.drafted_fix ? `<span style="font:600 9.5px ${C.mono};letter-spacing:.10em;color:#7a4dff;background:rgba(122,77,255,.12);padding:2px 7px;border-radius:5px;">DRAFTED FIX</span>` : ''}
       </div>
     </div>
     <span style="font:600 11px ${C.mono};color:${dueColor};background:${dueBg};padding:3px 9px;border-radius:6px;flex:none;">${escapeHtml(dueLabel)}</span>

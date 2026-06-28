@@ -9,6 +9,8 @@ import { fetchSubstrateJson } from '../../substrate-client.js';
 export const MODULES = {
   finance:  { name: 'Finance',  color: '#0e9f6e', bg: 'rgba(14,159,110,.10)' },
   strategy: { name: 'Strategy', color: '#2f6bff', bg: 'rgba(47,107,255,.10)' },
+  product:  { name: 'Product',  color: '#2f6bff', bg: 'rgba(47,107,255,.10)' },
+  development: { name: 'Development', color: '#0d8a8e', bg: 'rgba(13,138,142,.10)' },
   cs:       { name: 'Customer Success', color: '#e0683a', bg: 'rgba(224,104,58,.10)' },
   operations: { name: 'Operations', color: '#5b6270', bg: 'rgba(91,98,112,.10)' },
 };
@@ -182,7 +184,13 @@ export function queryParam(key) {
 // Update sidebar Tasks badges. Called after tasks load. Red when any
 // task in that module has urgency=overdue; neutral otherwise.
 export function updateTaskBadges(tasks) {
-  const byMod = { finance: { count: 0, overdue: false }, strategy: { count: 0, overdue: false } };
+  const byMod = {
+    finance:     { count: 0, overdue: false },
+    strategy:    { count: 0, overdue: false },
+    product:     { count: 0, overdue: false },
+    development: { count: 0, overdue: false },
+    operations:  { count: 0, overdue: false },
+  };
   (tasks || []).forEach(t => {
     if (!byMod[t.mod]) return;
     byMod[t.mod].count += 1;
