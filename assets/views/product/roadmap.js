@@ -5,7 +5,11 @@ import { currentBu, loadProductFile, pageHeader, emptyPanel, ownerAvatar, escape
 
 let VIEW = 'A';            // 'A' = kanban, 'B' = timeline
 let ACTIVE_VERSION = null; // version key to filter columns
+let SHOW_ONLY_OPEN = false; // true = hide shipped + cut; show only planned + in_progress
 let OPEN_ITEM_ID = null;
+
+const OPEN_STATUSES = new Set(['planned', 'in_progress']);
+const isOpen = (it) => OPEN_STATUSES.has(it.status);
 
 export async function renderRoadmap() {
   const root = (document.getElementById('subtab-host') || document.getElementById('route-roadmap'));
@@ -30,16 +34,27 @@ export async function renderRoadmap() {
     return;
   }
 
+  // Filter items by status BEFORE handing off to the renderers — keep
+  // versions intact so empty columns still show + the version totals
+  // reflect "x of N open"
+  const visibleData = SHOW_ONLY_OPEN
+    ? { ...data, items: (data.items || []).filter(isOpen), _totalItems: (data.items || []).length, _hiddenCount: (data.items || []).filter(it => !isOpen(it)).length }
+    : { ...data, _totalItems: (data.items || []).length, _hiddenCount: 0 };
+
   root.innerHTML = pageHeader({
     eyebrow: `${bu.toUpperCase()} · PRODUCT`,
     title: 'Roadmap',
     sub: 'Where this product is going, organised by version.',
     action: renderViewToggle(),
-  }) + renderVersionChips(data.versions) + (VIEW === 'A' ? renderKanban(data) : renderTimeline(data));
+  }) + renderFilterRow(visibleData) + renderVersionChips(data.versions) + (VIEW === 'A' ? renderKanban(visibleData) : renderTimeline(visibleData));
 
   // Wiring
   document.querySelectorAll('[data-view-toggle]').forEach(btn => btn.addEventListener('click', () => {
     VIEW = btn.dataset.viewToggle;
+    renderRoadmap();
+  }));
+  document.querySelectorAll('[data-open-only-toggle]').forEach(btn => btn.addEventListener('click', () => {
+    SHOW_ONLY_OPEN = !SHOW_ONLY_OPEN;
     renderRoadmap();
   }));
   document.querySelectorAll('[data-version-chip]').forEach(btn => btn.addEventListener('click', () => {
@@ -63,6 +78,24 @@ function renderViewToggle() {
   return `<div style="display:inline-flex;background:#fff;border:1px solid rgba(20,22,28,.08);border-radius:10px;padding:3px;">
     ${seg('A', 'Kanban')}
     ${seg('B', 'Timeline')}
+  </div>`;
+}
+
+function renderFilterRow(data) {
+  const total = data._totalItems || 0;
+  const open = (data.items || []).length; // when filter on, this is open-only count
+  const label = SHOW_ONLY_OPEN
+    ? `Open only · ${open} of ${total}`
+    : `All items · ${total}`;
+  const bg = SHOW_ONLY_OPEN ? 'rgba(47,107,255,.10)' : '#fff';
+  const fg = SHOW_ONLY_OPEN ? '#2f6bff' : '#5b6270';
+  const border = SHOW_ONLY_OPEN ? '#2f6bff' : 'rgba(20,22,28,.12)';
+  return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+    <button type="button" data-open-only-toggle="1" style="display:inline-flex;align-items:center;gap:7px;padding:7px 14px;border:1px solid ${border};border-radius:99px;background:${bg};cursor:pointer;font-family:inherit;font-size:12.5px;color:${fg};font-weight:600;transition:all .12s;">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M6 12h12M10 18h4"/></svg>
+      ${label}
+    </button>
+    <span style="font:500 11.5px 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#9aa1ae;">Open = planned + in progress · Closed = shipped + cut</span>
   </div>`;
 }
 
