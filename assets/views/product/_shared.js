@@ -8,7 +8,7 @@ export const STATUS = {
   planned:     { c: '#9aa1ae', l: 'Planned' },
   in_progress: { c: '#2f6bff', l: 'In progress' },
   shipped:     { c: '#0e9f6e', l: 'Shipped' },
-  cut:         { c: '#c0392b', l: 'Cut' },
+  cut:         { c: '#7a4dff', l: 'Cut' },  // purple — categorically different state (decision: not shipping). Was red, read as alarm/broken.
 };
 
 export const VSTATE = {
