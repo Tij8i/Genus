@@ -225,9 +225,19 @@ async function installModuleFlow(modId, bu, install) {
     }
     // Fire-and-forget the second-phase init (substrate seed + binding). Don't
     // block the user on it — if it fails, they can re-trigger via re-install.
+    // After it resolves, kick the local reconcile-now trigger so the Paperclip
+    // agent + heartbeat routine get created in seconds instead of ≤5 min
+    // (roadmap i26). Trigger is optional: if it's not running (e.g. operator
+    // hasn't installed the trigger daemon), we silently fall back to the
+    // periodic reconcile cycle.
     fetchJsonOrText('/api/module-init', {
       bu, module_id: modId, action: install ? 'install' : 'uninstall',
-    }).catch(() => { /* best-effort */ });
+    })
+      .then(res => {
+        const agentId = res?.binding?.agent_id;
+        if (install) return kickReconcileNow(agentId || bu);
+      })
+      .catch(() => { /* best-effort */ });
     if (install) {
       openGenusAgentOnboarding(modId, bu);
     } else {
@@ -235,6 +245,41 @@ async function installModuleFlow(modId, bu, install) {
     }
   } catch (e) {
     alert((install ? 'Install' : 'Uninstall') + ' failed: ' + (e.message || e));
+  }
+}
+
+// Fire the local reconcile-now trigger (roadmap i26). Runs on the operator's
+// Mac at http://127.0.0.1:3101 via a launchd daemon (see
+// Orchestrator/scripts/paperclip_sync/trigger.mjs). Best-effort: if the
+// trigger daemon isn't running, or the browser blocks the private-network
+// fetch, we silently no-op — the periodic 5-min reconciler will pick up
+// the install anyway. When it does work, the Paperclip agent + heartbeat
+// routine are created within ~2-8 seconds instead of up to 5 minutes.
+async function kickReconcileNow(filter) {
+  const TRIGGER_URL = 'http://127.0.0.1:3101/reconcile-now';
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), 45000);
+  try {
+    const res = await fetch(TRIGGER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agent_id: filter || null, timeout_ms: 40000 }),
+      signal: controller.signal,
+    });
+    clearTimeout(t);
+    if (!res.ok) {
+      console.warn('[reconcile-now] trigger returned', res.status);
+      return { ok: false };
+    }
+    const json = await res.json().catch(() => ({}));
+    console.info('[reconcile-now]', json.ok ? 'ok' : 'fail', `${json.elapsed_ms || '?'}ms`);
+    return json;
+  } catch (e) {
+    clearTimeout(t);
+    // Common cases: trigger daemon not installed, blocked by PNA, or Paperclip
+    // itself unreachable. All fall back gracefully to the periodic reconcile.
+    console.info('[reconcile-now] not available — falling back to periodic reconcile:', e.message || e);
+    return { ok: false, fallback: true };
   }
 }
 
