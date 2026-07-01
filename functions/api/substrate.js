@@ -17,6 +17,7 @@
 // decoded as UTF-8). Caller does JSON.parse / JSONL.parse as needed.
 
 import { getFile, jsonResponse } from './_gh.js';
+import { requireExternalRead } from './_external_auth.js';
 
 // Substrate scope allowlist — only paths under these prefixes are readable.
 // Keep tight: this Function is exposed publicly, and any GET goes via the
@@ -24,6 +25,13 @@ import { getFile, jsonResponse } from './_gh.js';
 const ALLOWED_PREFIXES = [
   'dashboard/public/data/bus/',  // primary substrate (per-BU JSON + JSONL)
 ];
+
+// Extract the BU segment from a path like "dashboard/public/data/bus/<bu>/..."
+// Used to enforce BU scoping on external-token reads (roadmap i30).
+function buFromPath(p) {
+  const m = /^dashboard\/public\/data\/bus\/([a-z][a-z0-9-]*)\//.exec(p || '');
+  return m ? m[1] : null;
+}
 
 function pathIsAllowed(path) {
   if (!path || typeof path !== 'string') return false;
@@ -49,6 +57,26 @@ export async function onRequestGet({ request, env }) {
       requested_path: path,
     });
   }
+
+  // Two-path auth (roadmap i30):
+  //   • Dashboard users hit this endpoint with a CF Access header — no
+  //     external gating needed (the substrate is meant to be dashboard-
+  //     visible for all admin/owner viewers).
+  //   • External Claude instances hit with `Authorization: Bearer gns_...` —
+  //     we verify the token against external_access.json for the requested
+  //     BU and gate the read.
+  // requireExternalRead returns null when no Bearer is present (fall through)
+  // or a Response/object as documented in _external_auth.js.
+  const targetBu = buFromPath(path);
+  const external = await requireExternalRead(request, env, {
+    bu: targetBu,
+    scope: 'read',
+    jsonResponse,
+  });
+  if (external instanceof Response) return external;
+  // external === null means no Bearer — dashboard path — proceed unrestricted
+  // external is verified → we already scoped by BU inside requireExternalRead
+
   try {
     const result = await getFile(env.GITHUB_PAT, path);
     return jsonResponse(200, {
@@ -57,6 +85,7 @@ export async function onRequestGet({ request, env }) {
       size: (result.content || '').length,
       content: result.content,
       sha: result.sha,
+      ...(external ? { authed_via: 'external-token', token_id: external.token_id } : {}),
     });
   } catch (e) {
     return jsonResponse(e.status || 500, {
