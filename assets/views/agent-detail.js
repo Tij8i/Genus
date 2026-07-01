@@ -189,6 +189,10 @@ export async function renderAgentDetail(ctx) {
       alert(`${binding.status === 'paused' ? 'Resume' : 'Pause'} would wire through the Paperclip runtime API. Not connected yet.`);
     });
 
+    // Hydrate live counters (last run · 7d done/cancelled/success rate) from
+    // the trigger daemon's /paperclip/agent-status endpoint. Best-effort.
+    wireLiveStateCard({ agentId: binding.agent_id, bu: currentBu, isPaperclip });
+
     // Turn on cron: fires the local trigger daemon with mode='add-cron-trigger'
     // filtered to this agent. Reconciler adds a cron trigger to the heartbeat
     // routine using the module-family default schedule (roadmap i32).
@@ -467,20 +471,22 @@ function renderField(label, value, mono = false) {
 }
 
 function renderLiveStateCard(b, arch, isPaperclip) {
-  // Stub: real numbers come from Paperclip API integration (not yet wired).
+  // Placeholders are em-dashes until hydrated via /paperclip/agent-status
+  // (roadmap i29). The four data-hook spans get updated in place after page
+  // render by wireLiveStateCard(); no full re-render.
   const liveTop = arch === 'external' ? 'Token status' : 'Latest run';
   const liveCta = arch === 'external' ? 'Full audit in logs' : 'See in Paperclip';
   const stat1Label = arch === 'external' ? 'requests / 7d' : 'done / 7d';
-  const stat2Label = arch === 'external' ? 'errors' : 'pending';
-  const stat3Label = 'success';
-  const runStatus = b.status === 'running' ? 'Running' : (arch === 'external' ? 'Healthy' : 'No recent run');
+  const stat2Label = arch === 'external' ? 'errors' : 'cancelled / 7d';
+  const stat3Label = 'success / 7d';
+  const runStatus = b.status === 'running' ? 'Running' : (arch === 'external' ? 'Healthy' : (isPaperclip ? '—' : 'No recent run'));
   const runColor = b.status === 'running' ? '#0e9f6e' : (arch === 'external' ? '#0e9f6e' : '#9aa1ae');
   const runAnim = b.status === 'running' ? 'pulseDot 1.6s infinite' : 'none';
   const runId = b.run_id || '—';
   const done = b.counters?.done ?? '—';
   const pend = b.counters?.pending ?? '—';
   const success = b.counters?.success ?? '—';
-  const writeFile = b.latest_write?.file || '(no recorded writes)';
+  const writeFile = b.latest_write?.file || (isPaperclip ? '—' : '(no recorded writes)');
   const writeWhen = b.latest_write?.when || '—';
 
   return `<section style="background:#fff;border:1px solid rgba(20,22,28,.08);border-radius:15px;padding:20px;">
@@ -488,32 +494,90 @@ function renderLiveStateCard(b, arch, isPaperclip) {
     <div style="display:flex;flex-direction:column;gap:5px;margin-bottom:14px;">
       <span style="font:500 11.5px 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#9aa1ae;">${liveTop}</span>
       <div style="display:flex;align-items:center;gap:8px;">
-        <span style="width:7px;height:7px;border-radius:99px;background:${runColor};animation:${runAnim};"></span>
-        <span style="font-size:14px;font-weight:600;">${runStatus}</span>
+        <span data-livestate="run-dot" style="width:7px;height:7px;border-radius:99px;background:${runColor};animation:${runAnim};"></span>
+        <span data-livestate="run-status" style="font-size:14px;font-weight:600;">${runStatus}</span>
       </div>
-      <span style="font:500 11.5px 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#9aa1ae;">${escapeHtml(String(runId))}</span>
+      <span data-livestate="run-id" style="font:500 11.5px 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#9aa1ae;">${escapeHtml(String(runId))}</span>
     </div>
     <div style="display:flex;gap:8px;margin-bottom:14px;">
       <div style="flex:1;background:#fbfbfc;border:1px solid rgba(20,22,28,.06);border-radius:11px;padding:11px 10px;text-align:center;">
-        <div style="font-size:19px;font-weight:800;letter-spacing:-.02em;">${escapeHtml(String(done))}</div>
+        <div data-livestate="done" style="font-size:19px;font-weight:800;letter-spacing:-.02em;">${escapeHtml(String(done))}</div>
         <div style="font-size:10.5px;color:#9aa1ae;margin-top:2px;">${stat1Label}</div>
       </div>
       <div style="flex:1;background:#fbfbfc;border:1px solid rgba(20,22,28,.06);border-radius:11px;padding:11px 10px;text-align:center;">
-        <div style="font-size:19px;font-weight:800;letter-spacing:-.02em;">${escapeHtml(String(pend))}</div>
+        <div data-livestate="pending" style="font-size:19px;font-weight:800;letter-spacing:-.02em;">${escapeHtml(String(pend))}</div>
         <div style="font-size:10.5px;color:#9aa1ae;margin-top:2px;">${stat2Label}</div>
       </div>
       <div style="flex:1;background:#fbfbfc;border:1px solid rgba(20,22,28,.06);border-radius:11px;padding:11px 10px;text-align:center;">
-        <div style="font-size:19px;font-weight:800;letter-spacing:-.02em;color:#0e9f6e;">${escapeHtml(String(success))}</div>
+        <div data-livestate="success" style="font-size:19px;font-weight:800;letter-spacing:-.02em;color:#0e9f6e;">${escapeHtml(String(success))}</div>
         <div style="font-size:10.5px;color:#9aa1ae;margin-top:2px;">${stat3Label}</div>
       </div>
     </div>
     <div style="display:flex;flex-direction:column;gap:4px;padding-top:13px;border-top:1px solid rgba(20,22,28,.07);">
-      <span style="font:500 11.5px 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#9aa1ae;">Latest substrate write</span>
-      <span style="font:600 12.5px 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#3a3f4a;word-break:break-all;">${escapeHtml(writeFile)}</span>
-      <span style="font-size:12px;color:#9aa1ae;">${escapeHtml(writeWhen)}</span>
+      <span style="font:500 11.5px 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#9aa1ae;">Latest activity</span>
+      <span data-livestate="write-file" style="font:600 12.5px 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#3a3f4a;word-break:break-all;">${escapeHtml(writeFile)}</span>
+      <span data-livestate="write-when" style="font-size:12px;color:#9aa1ae;">${escapeHtml(writeWhen)}</span>
     </div>
     ${isPaperclip ? `<a href="http://127.0.0.1:3100" target="_blank" rel="noopener" style="display:flex;align-items:center;justify-content:center;gap:7px;margin-top:15px;padding:9px;border-radius:10px;background:rgba(20,22,28,.045);color:#16181d;font-size:12.5px;font-weight:600;text-decoration:none;">${liveCta} <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M9 7h8v8"/></svg></a>` : `<div style="margin-top:15px;padding:9px;border-radius:10px;background:rgba(20,22,28,.045);color:#9aa1ae;font-size:12px;text-align:center;">Live counters wire when Paperclip API is connected</div>`}
   </section>`;
+}
+
+// Populate the live-state card counters from the local trigger daemon's
+// /paperclip/agent-status endpoint (roadmap i29). Best-effort — if the
+// trigger isn't running or the fetch fails, the em-dashes just stay.
+function wireLiveStateCard({ agentId, bu, isPaperclip }) {
+  if (!isPaperclip || !agentId) return;
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), 15000);
+  fetch('http://127.0.0.1:3101/paperclip/agent-status', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ agent_id: agentId, bu }),
+    signal: controller.signal,
+  })
+    .then(r => r.json())
+    .then(json => {
+      clearTimeout(t);
+      if (!json?.ok) return;
+      const set = (k, v) => {
+        const el = document.querySelector(`[data-livestate="${k}"]`);
+        if (el && v != null) el.textContent = v;
+      };
+      const stats = json.stats_7d || {};
+      set('done', stats.done ?? '0');
+      set('pending', stats.cancelled ?? '0');
+      set('success', stats.success_rate_pct != null ? `${stats.success_rate_pct}%` : '—');
+      if (json.agent_present) {
+        set('run-status', json.last_run ? `Last run ${formatRelative(json.last_run)}` : 'No runs yet');
+        const runDot = document.querySelector('[data-livestate="run-dot"]');
+        if (runDot) runDot.style.background = json.last_run ? '#0e9f6e' : '#9aa1ae';
+        set('run-id', json.paperclip_agent_id ? json.paperclip_agent_id.slice(0, 12) + '…' : '—');
+        const lastIssue = json.last_issue || {};
+        set('write-file', lastIssue.title || (json.last_run ? '(no recent activity)' : '—'));
+        set('write-when', json.last_run ? formatRelative(json.last_run) : '—');
+      } else {
+        set('run-status', 'No Paperclip agent bound');
+        const runDot = document.querySelector('[data-livestate="run-dot"]');
+        if (runDot) runDot.style.background = '#df4b3f';
+      }
+    })
+    .catch(() => { clearTimeout(t); /* leave em-dashes */ });
+}
+
+function formatRelative(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso).getTime();
+  if (isNaN(d)) return '—';
+  const diff = Date.now() - d;
+  const s = Math.floor(diff / 1000);
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 48) return `${h}h ago`;
+  const days = Math.floor(h / 24);
+  if (days < 60) return `${days}d ago`;
+  return new Date(iso).toISOString().slice(0, 10);
 }
 
 function renderFilesCard(files) {
