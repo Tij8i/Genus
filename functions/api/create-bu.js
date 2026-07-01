@@ -12,6 +12,33 @@ import { requireAdmin } from './_identity.js';
 
 const SLUG_RE = /^[a-z][a-z0-9-]{1,30}$/;
 const DEFAULT_COLORS = ['#2f6bff', '#0e9f6e', '#e0a008', '#df4b3f', '#8a5cf6', '#06b6d4', '#ec4899', '#f97316'];
+const BINDINGS_PATH = 'dashboard/public/data/system/agent_bindings.json';
+
+// Map module_id → { archetype, docs_root, agent_id_pattern } for auto-binding
+// on Add-BU with default modules picked. Kept in sync with modules the operator
+// can actually install via the Modules view.
+const MODULE_BINDING_TEMPLATES = {
+  strategy: {
+    archetype: 'Stewart',
+    docs_root: 'docs/genus/modules/strategic-planning/agent',
+    agent_id: (bu) => `strategy-stewart-of-${bu}`,
+  },
+  finance: {
+    archetype: 'Stewart',
+    docs_root: 'docs/genus/modules/finance/agent',
+    agent_id: (bu) => `finance-stewart-of-${bu}`,
+  },
+  product: {
+    archetype: 'Stewart',
+    docs_root: 'docs/genus/modules/product/agent',
+    agent_id: (bu) => `product-stewart-of-${bu}`,
+  },
+  development: {
+    archetype: 'Stewart',
+    docs_root: 'docs/agents/bu_managers/dev_stewart',
+    agent_id: (bu) => `development-stewart-of-${bu}`,
+  },
+};
 
 export async function onRequestPost({ request, env }) {
   if (!env.GITHUB_PAT) return jsonResponse(500, { ok: false, message: 'GITHUB_PAT not set' });
@@ -50,7 +77,15 @@ export async function onRequestPost({ request, env }) {
     return jsonResponse(409, { ok: false, message: `BU '${id}' already exists in registry` });
   }
 
-  // 2) Compose new entry — empty modules_installed by default
+  // 2) Compose new entry — default_modules from body are installed inline.
+  // Anything not in available_modules or MODULE_BINDING_TEMPLATES is skipped
+  // silently (frontend picker only shows valid ones anyway).
+  const availableIds = new Set((parsed.available_modules || []).map(m => m.id));
+  const requestedModules = Array.isArray(body.default_modules) ? body.default_modules : [];
+  const validModules = requestedModules
+    .map(m => (m || '').toString().trim())
+    .filter(m => availableIds.has(m));
+
   const avatar_initial = (body.avatar_initial || display_name.charAt(0)).toString().toUpperCase().slice(0, 2);
   const color = body.color || DEFAULT_COLORS[existingIds.size % DEFAULT_COLORS.length];
   const newEntry = {
@@ -58,7 +93,7 @@ export async function onRequestPost({ request, env }) {
     display_name,
     avatar_initial,
     color,
-    modules_installed: [],
+    modules_installed: validModules,
     description: `New BU created via dashboard onboarding ${new Date().toISOString().slice(0, 10)}`,
   };
   parsed.business_units = [...(parsed.business_units || []), newEntry];
@@ -107,5 +142,67 @@ export async function onRequestPost({ request, env }) {
     });
   }
 
-  return jsonResponse(200, { ok: true, bu: newEntry });
+  // 5) Compose bindings for default modules (skipped if empty)
+  const bindingsWritten = [];
+  const bindingsSkipped = [];
+  if (validModules.length > 0) {
+    let bindingsFile;
+    try { bindingsFile = await getFile(env.GITHUB_PAT, BINDINGS_PATH); }
+    catch (e) {
+      return jsonResponse(200, {
+        ok: true, partial: true, bu: newEntry,
+        message: `Registry + identity written; bindings read failed: ${e.message || String(e)}`,
+        default_modules: validModules,
+      });
+    }
+    let bindingsParsed;
+    try { bindingsParsed = JSON.parse(bindingsFile.content); }
+    catch { return jsonResponse(200, { ok: true, partial: true, bu: newEntry, message: 'Registry + identity written; bindings not valid JSON', default_modules: validModules }); }
+    bindingsParsed.bindings = bindingsParsed.bindings || [];
+    const now = new Date().toISOString();
+    const installerEmail = gate?.email || 'unknown@genus.dashboard';
+    for (const modId of validModules) {
+      const tpl = MODULE_BINDING_TEMPLATES[modId];
+      if (!tpl) { bindingsSkipped.push({ module_id: modId, reason: 'no binding template' }); continue; }
+      const agentId = tpl.agent_id(id);
+      if (bindingsParsed.bindings.some(b => b.agent_id === agentId)) {
+        bindingsSkipped.push({ module_id: modId, reason: 'binding already exists' });
+        continue;
+      }
+      bindingsParsed.bindings.push({
+        bu: id,
+        module_id: modId,
+        agent_id: agentId,
+        archetype: tpl.archetype,
+        docs_root: tpl.docs_root,
+        runtime_id: 'local-paperclip-alessio',
+        hitl_owner_email: installerEmail,
+        installer_email: installerEmail,
+        installed_at: now,
+      });
+      bindingsWritten.push({ module_id: modId, agent_id: agentId });
+    }
+    if (bindingsWritten.length > 0) {
+      const bindingsContent = JSON.stringify(bindingsParsed, null, 2) + '\n';
+      try {
+        await putFile(env.GITHUB_PAT, BINDINGS_PATH, bindingsContent, bindingsFile.sha, `multi-bu: seed bindings for '${id}' (${bindingsWritten.map(b => b.module_id).join(', ')})`);
+      } catch (e) {
+        return jsonResponse(200, {
+          ok: true, partial: true, bu: newEntry,
+          message: `Registry + identity written; bindings write failed: ${e.message || String(e)}`,
+          default_modules: validModules,
+          bindings_written: [],
+          bindings_skipped: bindingsSkipped,
+        });
+      }
+    }
+  }
+
+  return jsonResponse(200, {
+    ok: true,
+    bu: newEntry,
+    default_modules: validModules,
+    bindings_written: bindingsWritten,
+    bindings_skipped: bindingsSkipped,
+  });
 }

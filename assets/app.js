@@ -766,10 +766,33 @@ function renderSettings() {
 // install + agent setup happen later. Uses the shared openOverlay primitive so
 // the modal matches the rest of the dashboard's visual language.
 function addVentureFlow() {
+  // Available modules for the picker come from the registry (loaded at boot
+  // into BU_REGISTRY). If the registry hasn't loaded yet we fall back to a
+  // static list matching MODULE_BINDING_TEMPLATES in functions/api/create-bu.js.
+  const availableModules = (BU_REGISTRY?.available_modules || []).filter(m =>
+    ['strategy', 'finance', 'product', 'development'].includes(m.id)
+  );
+  const modulePickerHtml = availableModules.length > 0 ? `
+    <label style="display:flex;flex-direction:column;gap:6px;">
+      <span style="font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-faint);font-weight:600;">Default modules <span style="font-weight:400;color:var(--text-faint);text-transform:none;letter-spacing:0;">(optional — you can install more later)</span></span>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:6px;">
+        ${availableModules.map(m => `
+          <label style="display:flex;gap:9px;align-items:flex-start;padding:9px 11px;border:1px solid var(--border);border-radius:6px;cursor:pointer;background:var(--surface);">
+            <input type="checkbox" class="addbu-module" value="${m.id}" style="margin-top:2px;flex:none;" ${m.id === 'strategy' ? 'checked' : ''}/>
+            <span>
+              <span style="display:block;font-weight:600;font-size:13px;color:var(--text);">${m.icon || ''} ${m.display_name || m.id}</span>
+              <span style="display:block;font-size:11.5px;color:var(--text-dim);line-height:1.4;margin-top:2px;">${(m.summary || '').slice(0, 90)}${(m.summary || '').length > 90 ? '…' : ''}</span>
+            </span>
+          </label>
+        `).join('')}
+      </div>
+    </label>
+  ` : '';
+
   const bodyHtml = `
     <div class="onboard-section-label mono">New venture</div>
     <p style="font-size:13px;color:var(--text-dim);line-height:1.55;margin:0 0 18px;">
-      Creates a fresh installation. No modules or agents wired yet — set those up later from Modules + People.
+      Creates a fresh installation. If your Paperclip trigger daemon is running, this also spins up the matching Paperclip company + agents in one shot (roadmap i28). If not, you can install modules manually later via Modules.
     </p>
     <div style="display:flex;flex-direction:column;gap:14px;">
       <label style="display:flex;flex-direction:column;gap:6px;">
@@ -783,6 +806,8 @@ function addVentureFlow() {
                style="padding:10px 12px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;outline:none;" />
         <span style="font-size:11px;color:var(--text-faint);">Lowercase letters, digits, hyphens. Auto-derived from name.</span>
       </label>
+      ${modulePickerHtml}
+      <div id="addbu-progress" style="display:none;padding:10px 12px;background:var(--accent-bg);color:var(--accent);border-radius:6px;font-size:12px;"></div>
       <div id="addbu-error" style="display:none;padding:10px 12px;background:var(--red-bg);color:var(--red-fg);border-radius:6px;font-size:12px;"></div>
     </div>
   `;
@@ -820,22 +845,84 @@ function addVentureFlow() {
     if (!display_name) { $err.textContent = 'Display name is required.'; $err.style.display = 'block'; return; }
     if (!/^[a-z][a-z0-9-]{1,30}$/.test(id)) { $err.textContent = 'URL id must be lowercase letters/digits/hyphens, 2-31 chars, start with a letter.'; $err.style.display = 'block'; return; }
 
+    const selectedModules = Array.from(document.querySelectorAll('.addbu-module:checked')).map(el => el.value);
+    const $progress = document.getElementById('addbu-progress');
+    const setProgress = (msg) => { $progress.textContent = msg; $progress.style.display = 'block'; };
+
     $btn.disabled = true;
     $btn.textContent = 'Creating…';
     try {
+      // 1. Registry + identity + bindings (all-in-one via /api/create-bu)
+      setProgress('1/4 · writing registry + identity…');
       const res = await fetch('/api/create-bu', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, display_name }),
+        body: JSON.stringify({ id, display_name, default_modules: selectedModules }),
       });
       const result = await res.json();
       if (!res.ok || !result.ok) {
         $err.textContent = result.message || `HTTP ${res.status}`;
         $err.style.display = 'block';
+        $progress.style.display = 'none';
         $btn.disabled = false;
         $btn.textContent = 'Create venture';
         return;
       }
+
+      // 2. Paperclip company via local trigger daemon (best-effort). If the
+      // daemon isn't running, we skip and land on the created BU anyway —
+      // operator can attach a company later via manual reconcile.
+      let paperclipCompany = null;
+      try {
+        setProgress('2/4 · creating Paperclip company…');
+        const prefix = id.replace(/[^a-z]/g, '').slice(0, 3).toUpperCase() || 'NEW';
+        const pcRes = await fetch('http://127.0.0.1:3101/paperclip/company', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: display_name, issue_prefix: prefix }),
+          signal: AbortSignal.timeout(20000),
+        });
+        const pcJson = await pcRes.json();
+        if (pcRes.ok && pcJson.ok) paperclipCompany = pcJson.company;
+        else console.warn('[add-bu] paperclip create returned', pcRes.status, pcJson);
+      } catch (e) {
+        console.info('[add-bu] trigger not reachable — Paperclip company step skipped:', e.message || e);
+      }
+
+      // 3. Persist mapping (only if we got a company id)
+      if (paperclipCompany?.id) {
+        try {
+          setProgress('3/4 · saving Paperclip mapping…');
+          await fetch('/api/finalize-bu', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              bu_id: id,
+              paperclip_company_id: paperclipCompany.id,
+              paperclip_company_name: paperclipCompany.name,
+              issue_prefix: paperclipCompany.issuePrefix || paperclipCompany.issue_prefix || '',
+            }),
+          });
+        } catch (e) {
+          console.warn('[add-bu] finalize-bu failed:', e.message || e);
+        }
+      }
+
+      // 4. Fire reconcile so agents + heartbeat routines get created now
+      if (paperclipCompany?.id && selectedModules.length > 0) {
+        try {
+          setProgress('4/4 · spinning up agents…');
+          await fetch('http://127.0.0.1:3101/reconcile-now', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ bu: id, timeout_ms: 60000 }),
+            signal: AbortSignal.timeout(60000),
+          });
+        } catch (e) {
+          console.info('[add-bu] reconcile trigger skipped:', e.message || e);
+        }
+      }
+
       localStorage.setItem('genus.currentBu', result.bu.id);
       const url = new URL(location.href);
       url.searchParams.set('bu', result.bu.id);
@@ -844,6 +931,7 @@ function addVentureFlow() {
     } catch (e) {
       $err.textContent = 'Network error: ' + (e.message || e);
       $err.style.display = 'block';
+      $progress.style.display = 'none';
       $btn.disabled = false;
       $btn.textContent = 'Create venture';
     }
