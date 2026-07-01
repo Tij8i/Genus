@@ -188,6 +188,46 @@ export async function renderAgentDetail(ctx) {
       // until the API integration ships.
       alert(`${binding.status === 'paused' ? 'Resume' : 'Pause'} would wire through the Paperclip runtime API. Not connected yet.`);
     });
+
+    // Turn on cron: fires the local trigger daemon with mode='add-cron-trigger'
+    // filtered to this agent. Reconciler adds a cron trigger to the heartbeat
+    // routine using the module-family default schedule (roadmap i32).
+    document.getElementById('enable-cron-btn')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      const agentId = btn.dataset.agentId;
+      const origLabel = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> Enabling…`;
+      try {
+        const res = await fetch('http://127.0.0.1:3101/reconcile-now', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ agent_id: agentId, mode: 'add-cron-trigger', timeout_ms: 40000 }),
+          signal: AbortSignal.timeout(45000),
+        });
+        const json = await res.json();
+        if (!res.ok || !json.ok) {
+          alert(`Turning on cron failed: ${json?.message || `HTTP ${res.status}`}\n\nIs the trigger daemon running? See scripts/paperclip_sync/install_daemon.sh in Orchestrator.`);
+          btn.disabled = false;
+          btn.innerHTML = origLabel;
+          return;
+        }
+        const applied = (json.envelope?.actions || []).filter(a => a.status === 'trigger_added' || a.status === 'added_trigger' || (a.finding?.fix_action === 'add_routine_trigger'));
+        const alreadyOn = (json.envelope?.by_category?.routine_missing_trigger || 0) === 0;
+        if (alreadyOn) {
+          btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Cron already on`;
+        } else {
+          btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Cron on`;
+        }
+        btn.style.background = 'var(--green-bg)';
+        btn.style.color = 'var(--green-fg)';
+        btn.style.borderColor = 'var(--green-border)';
+      } catch (err) {
+        alert(`Turning on cron failed: ${err.message || err}\n\nIs the trigger daemon running on http://127.0.0.1:3101 ?`);
+        btn.disabled = false;
+        btn.innerHTML = origLabel;
+      }
+    });
   }
 
   // External: wire the Revoke button in the right rail
@@ -249,6 +289,10 @@ function renderBindingDetail(b, runtimes, users, availableModules) {
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex:none;">
           ${isPaperclip ? `<a href="http://127.0.0.1:3100" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:7px;padding:9px 14px;border:1px solid rgba(20,22,28,.12);border-radius:10px;background:#fff;color:#16181d;font-size:13px;font-weight:600;text-decoration:none;">Open in Paperclip <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M9 7h8v8"/></svg></a>` : ''}
+          ${isPaperclip ? `<button type="button" id="enable-cron-btn" data-agent-id="${escapeHtml(b.agent_id)}" title="Add a scheduled trigger to this Stewart's heartbeat routine so it fires on cron (i32). Uses the default cron for this agent family." style="display:flex;align-items:center;gap:7px;padding:9px 14px;border:1px solid rgba(47,107,255,.28);border-radius:10px;background:rgba(47,107,255,.06);color:#2f6bff;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+            Turn on cron
+          </button>` : ''}
           <button type="button" id="edit-binding-btn" style="padding:9px 14px;border:1px solid rgba(20,22,28,.12);border-radius:10px;background:#fff;color:#16181d;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;">Edit binding</button>
           <button type="button" id="pause-btn" title="${b.status === 'paused' ? 'Resume' : 'Pause'}" style="width:38px;height:38px;border:1px solid rgba(20,22,28,.12);border-radius:10px;background:#fff;color:#5b6270;cursor:pointer;display:flex;align-items:center;justify-content:center;">
             ${b.status === 'paused'
