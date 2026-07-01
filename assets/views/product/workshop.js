@@ -1,4 +1,4 @@
-// Workshop view — Product module's Workshop section (v0.9 i43 successor).
+// Workshop view — Product module's Workshop section (v0.9).
 //
 // Where Genus develops its own module catalog: the Product Stewart proposes
 // candidate modules based on operator patterns, drafts HTML prototypes, and
@@ -9,6 +9,10 @@
 // Genus sidebar so we render Columns 2 (candidate rail) + 3 (detail panel) inside
 // the main content area.
 //
+// Palette + fonts: reskinned 2026-07-01 to Genus design system (assets/app.css)
+// — cool grey + blue-accent + Hanken Grotesk throughout. Layout + interactions
+// unchanged from the Claude Design handoff.
+//
 // v0.1 scope: reads from bus/{BU}/product/workshop_modules.json; UI actions
 // (Promote / Discard / Advance) mutate in-memory state and show toast. Persist-
 // ence via write-endpoint is v0.2 follow-up.
@@ -16,61 +20,29 @@
 import { escapeHtml } from '../../utils.js';
 import { fetchSubstrateJson } from '../../substrate-client.js';
 
-// ============ Design tokens (from README §Design Tokens) ============
-const T = {
-  bgCanvas: '#f1eee7',
-  bgNav: '#ebe7dd',
-  bgRail: '#f6f3ec',
-  bgCardRaised: '#fffdf8',
-  bgSectionCard: '#faf8f2',
-  ink: '#232017',
-  ink2a: '#4a4538',
-  ink2b: '#55503f',
-  muted: '#6b6457',
-  muted2a: '#8c8576',
-  muted2b: '#9a9384',
-  faint1: '#a59e8f',
-  faint2: '#b0a999',
-  border: '#e6e0d4',
-  borderStrong: '#ddd7ca',
-  borderCard: '#ebe6da',
-  borderNav: '#e0dacd',
-  greenPrimary: '#2f5d3f',
-  greenTintActive: '#dfe7e0',
-  greenTintPromoted: '#e3ede2',
-  greenTintPromotedBg: '#eef4ee',
-  greenTintPromoBorder: '#d4e2d6',
-  greenDot: '#4f8a63',
-  greenLink: '#356845',
-  greenAccent1: '#3f7d52',
-  greenAccent2: '#5a7a64',
-  amber: '#c08a3e',
-  amberTintPill: '#f3e9d6',
-  amberTintBg: '#fbf3e8',
-  amberInk: '#9a6320',
-  amberInkAlt: '#a08243',
-  blueGrey: '#7c8b97',
-  blueGreyInk: '#4a5a67',
-  blueGreyTint: '#e6ebef',
-  red: '#9a3b3b',
-};
-
+// Status → semantic Genus colors
 const STATUS_STYLE = {
-  testing:   { dot: T.amber,     pillBg: T.amberTintPill,    pillFg: T.amberInk,   label: 'Testing'   },
-  ideation:  { dot: T.blueGrey,  pillBg: T.blueGreyTint,     pillFg: T.blueGreyInk, label: 'Ideation'  },
-  promoted:  { dot: T.greenDot,  pillBg: T.greenTintPromoted, pillFg: T.greenLink,  label: 'Promoted'  },
-  discarded: { dot: '#aaa294',   pillBg: '#eeebe3',          pillFg: '#8d8475',    label: 'Discarded' },
+  testing:   { dot: 'var(--yellow)',   pillBg: 'var(--yellow-bg)',  pillFg: 'var(--yellow-fg)',  label: 'Testing'   },
+  ideation:  { dot: 'var(--text-faint)', pillBg: 'var(--surface2)', pillFg: 'var(--text-dim)',   label: 'Ideation'  },
+  promoted:  { dot: 'var(--green)',    pillBg: 'var(--green-bg)',   pillFg: 'var(--green-fg)',   label: 'Promoted'  },
+  discarded: { dot: 'var(--text-veryfaint)', pillBg: 'var(--surface2)', pillFg: 'var(--text-faint)', label: 'Discarded' },
 };
 
 const GROUP_ORDER = ['testing', 'ideation', 'promoted', 'discarded'];
 const GROUP_LABEL = { testing: 'Testing', ideation: 'Ideation', promoted: 'Promoted', discarded: 'Discarded' };
-const GROUP_COLOR = { testing: T.amber, ideation: '#6f8290', promoted: T.greenDot, discarded: T.faint1 };
+const GROUP_COLOR = { testing: 'var(--yellow-fg)', ideation: 'var(--text-dim)', promoted: 'var(--green-fg)', discarded: 'var(--text-faint)' };
 
 const EVIDENCE_STYLE = {
-  interaction: { dot: '#356845', bg: '#e3ede2', label: 'interaction' },
-  memo:        { dot: T.amberInk, bg: T.amberTintPill, label: 'memo' },
-  doc:         { dot: T.blueGreyInk, bg: T.blueGreyTint, label: 'doc' },
-  data:        { dot: T.muted, bg: '#ece8df', label: 'data' },
+  interaction: { dot: 'var(--accent)',  bg: 'var(--accent-bg)',   fg: 'var(--accent)',    label: 'interaction' },
+  memo:        { dot: 'var(--yellow)',  bg: 'var(--yellow-bg)',   fg: 'var(--yellow-fg)', label: 'memo'        },
+  doc:         { dot: 'var(--text-dim)', bg: 'var(--surface2)',   fg: 'var(--text-dim)',  label: 'doc'         },
+  data:        { dot: 'var(--green)',   bg: 'var(--green-bg)',    fg: 'var(--green-fg)',  label: 'data'        },
+};
+
+// Origin → display metadata (who proposed the candidate)
+const ORIGIN_STYLE = {
+  operator: { label: 'You',              badge: 'you',     accent: 'var(--accent)' },
+  stewart:  { label: 'Product Stewart',  badge: 'stewart', accent: 'var(--green-fg)' },
 };
 
 // ============ Module-scoped state (persists between renders in the same session) ============
@@ -83,6 +55,10 @@ const state = {
   expanded: false,
   discarding: false,
   reasonText: '',
+  creating: false,
+  newName: '',
+  newDesc: '',
+  newPattern: '',
   flash: null,
   flashTimer: null,
 };
@@ -96,7 +72,6 @@ export async function renderWorkshop(ctx) {
   if (!rootEl) return;
 
   if (state.bu !== bu) {
-    // BU changed — reset selection + reload
     state.bu = bu;
     state.selectedId = null;
   }
@@ -109,16 +84,14 @@ export async function renderWorkshop(ctx) {
     return;
   }
 
-  // Preserve any in-session mutations by merging: if a candidate has been mutated
-  // this session, keep the mutation; otherwise take the substrate value.
-  const substrateById = new Map((data.candidates || []).map(c => [c.id, c]));
+  // Preserve in-session mutations: if a candidate was mutated this session,
+  // keep the mutation; otherwise take the substrate value.
   const mutatedById = new Map(state.candidates.map(c => [c.id, c]));
   state.candidates = (data.candidates || []).map(c => mutatedById.get(c.id) || c);
   state.stewart = data.stewart;
   state.routed = data.routed || [];
 
   if (!state.selectedId || !state.candidates.some(c => c.id === state.selectedId)) {
-    // Auto-select first Testing candidate, else first anything
     const firstTesting = state.candidates.find(c => c.status === 'testing');
     state.selectedId = (firstTesting || state.candidates[0])?.id || null;
   }
@@ -139,14 +112,15 @@ function render() {
       ${renderDetail(selected)}
     </div>
     ${state.expanded && selected ? renderExpandModal(selected) : ''}
+    ${state.creating ? renderCreateModal() : ''}
     ${state.flash ? `<div class="ws-toast">${escapeHtml(state.flash)}</div>` : ''}
   `;
 }
 
 function renderEmpty(bu) {
   return `
-    <div style="padding:40px 32px; text-align:center; color:${T.muted}; font-family:'Hanken Grotesk',sans-serif;">
-      <div style="font-family:'Spectral',serif; font-size:22px; color:${T.ink}; margin-bottom:8px;">Workshop</div>
+    <div style="padding:40px 32px; text-align:center; color: var(--text-dim); font-family:'Hanken Grotesk',system-ui,sans-serif;">
+      <div style="font-family:'Hanken Grotesk',system-ui,sans-serif; font-size:20px; font-weight:700; letter-spacing:-.01em; color: var(--text); margin-bottom:8px;">Workshop</div>
       <div style="font-size:13.5px; line-height:1.5; max-width:520px; margin:0 auto;">
         No workshop substrate for <b>${escapeHtml(bu)}</b> yet. The Workshop lives in the Product module for the Genus installation itself — modules-in-development get proposed here by the Product Stewart based on your usage patterns. Once <code>bus/${escapeHtml(bu)}/product/workshop_modules.json</code> is seeded, this view surfaces the candidates.
       </div>
@@ -161,8 +135,10 @@ function renderRail() {
   const stewartCard = state.stewart ? `
     <div class="ws-stewart-card">
       <span class="ws-pulse-dot"></span>
-      <span class="ws-stewart-title">${escapeHtml(state.stewart.name || 'Product Stewart')} · ${escapeHtml(state.stewart.state || 'watching')}</span>
-      <span class="ws-stewart-meta">${escapeHtml(state.stewart.last_scan_label || '')} · ${escapeHtml(state.stewart.scan_footprint || '')}</span>
+      <div class="ws-stewart-copy">
+        <div class="ws-stewart-title">${escapeHtml(state.stewart.name || 'Product Stewart')} · ${escapeHtml(state.stewart.state || 'watching')}</div>
+        <div class="ws-stewart-meta">${escapeHtml(state.stewart.last_scan_label || '')} · ${escapeHtml(state.stewart.scan_footprint || '')}</div>
+      </div>
     </div>
   ` : '';
 
@@ -190,7 +166,7 @@ function renderRail() {
       <div class="ws-routed-label">Routed — already covered</div>
       ${state.routed.map(r => `
         <div class="ws-routed-body">
-          <span style="color:${T.greenAccent1}; font-weight:600;">${escapeHtml(r.detected_need)}</span>
+          <span style="color: var(--green-fg); font-weight:600;">${escapeHtml(r.detected_need)}</span>
           → sent to ${escapeHtml(r.existing_module_display || r.existing_module)}. ${escapeHtml(r.note || 'No candidate created.')}
         </div>
       `).join('')}
@@ -200,8 +176,11 @@ function renderRail() {
   return `
     <aside class="ws-rail">
       <div class="ws-rail-header">
-        <h2 class="ws-rail-title">Workshop</h2>
-        <span class="ws-rail-count">${totalCount} candidate${totalCount === 1 ? '' : 's'}</span>
+        <div class="ws-rail-titlerow">
+          <h2 class="ws-rail-title">Workshop</h2>
+          <span class="ws-rail-count">${totalCount} candidate${totalCount === 1 ? '' : 's'}</span>
+        </div>
+        <button type="button" class="ws-rail-new" data-action="open-create">＋ New candidate</button>
       </div>
       ${stewartCard}
       <div class="ws-rail-scroll">
@@ -219,26 +198,30 @@ function renderCandidateCard(c) {
 
   const footer = (() => {
     if (c.status === 'promoted') {
-      return `<div class="ws-card-footer" style="color:${T.greenAccent2};">→ Sage spec'ing · ${escapeHtml(c.decided_ago_label || 'recently')}</div>`;
+      return `<div class="ws-card-footer" style="color: var(--green-fg);">→ Sage spec'ing · ${escapeHtml(c.decided_ago_label || 'recently')}</div>`;
     }
     if (c.status === 'discarded') {
       return `<div class="ws-card-footer">discarded · ${escapeHtml(c.decided_ago_label || 'recently')}</div>`;
     }
     if (c.status === 'testing') {
-      return `<div class="ws-card-footer"><span style="color:${T.amber};">●</span> ${c.weight} signals · v${c.iteration}</div>`;
+      return `<div class="ws-card-footer"><span style="color: var(--yellow);">●</span> ${c.weight} signals · v${c.iteration}</div>`;
     }
-    // ideation
-    return `<div class="ws-card-footer"><span style="color:${T.blueGrey};">●</span> ${c.weight} signals · no prototype yet</div>`;
+    return `<div class="ws-card-footer"><span style="color: var(--text-faint);">●</span> ${c.weight} signals · no prototype yet</div>`;
   })();
 
   const kindBadge = c.kind === 'forked' ? `<span class="ws-card-kind" title="Forked from ${escapeHtml(c.source_module_id || '')} v${escapeHtml(c.source_module_version || '')}">forked · v${escapeHtml(c.target_version || '')}</span>` : '';
+  const origin = ORIGIN_STYLE[c.origin] || ORIGIN_STYLE.stewart;
+  const authorBadge = `<span class="ws-card-author" title="Proposed by ${escapeHtml(origin.label)}" style="color:${origin.accent};">by ${escapeHtml(origin.badge)}</span>`;
 
   return `
     <div class="ws-card ${selected ? 'ws-card--selected' : ''} ${isDiscarded ? 'ws-card--discarded' : ''}"
          data-card-id="${escapeHtml(c.id)}">
       <span class="ws-card-dot" style="background:${style.dot};"></span>
       <div class="ws-card-name">${escapeHtml(c.name)}</div>
-      ${kindBadge}
+      <div class="ws-card-badges">
+        ${authorBadge}
+        ${kindBadge}
+      </div>
       <div class="ws-card-desc">${escapeHtml(c.desc || '')}</div>
       ${footer}
     </div>
@@ -250,7 +233,7 @@ function renderDetail(c) {
     return `
       <section class="ws-detail">
         <div class="ws-detail-inner">
-          <div style="padding:40px 0; color:${T.muted}; font-size:13.5px;">Select a candidate on the left.</div>
+          <div style="padding:40px 0; color: var(--text-dim); font-size:13.5px;">Select a candidate on the left.</div>
         </div>
       </section>
     `;
@@ -261,12 +244,15 @@ function renderDetail(c) {
   const forkBadge = c.kind === 'forked'
     ? `<span class="ws-fork-badge">forked from ${escapeHtml(c.source_module_id)} v${escapeHtml(c.source_module_version)} → v${escapeHtml(c.target_version)}</span>`
     : '';
+  const origin = ORIGIN_STYLE[c.origin] || ORIGIN_STYLE.stewart;
+  const authorEyebrow = `<div class="ws-header-author" style="color:${origin.accent};">Proposed by ${escapeHtml(origin.label)}</div>`;
 
   return `
     <section class="ws-detail">
       <div class="ws-detail-inner">
         <header class="ws-header">
           <div class="ws-header-left">
+            ${authorEyebrow}
             <div class="ws-header-tags">
               <span class="ws-status-pill" style="background:${style.pillBg}; color:${style.pillFg};">${style.label}</span>
               ${idBadge}
@@ -375,7 +361,6 @@ function renderTryFrame(c) {
 
   let bodyHtml = '';
   if (c.status === 'testing' && c.prototype_path) {
-    // iframe via /api/workshop/<path>
     const iframeSrc = `/api/workshop/${c.prototype_path.split('/').map(encodeURIComponent).join('/')}`;
     bodyHtml = `<iframe class="ws-frame-iframe" src="${iframeSrc}" title="Prototype"></iframe>`;
   } else if (c.status === 'ideation') {
@@ -383,7 +368,7 @@ function renderTryFrame(c) {
       <div class="ws-frame-empty">
         <div class="ws-frame-empty-hatched">no prototype yet</div>
         <div class="ws-frame-empty-heading">The Steward hasn't built a prototype yet</div>
-        <div class="ws-frame-empty-body">Ideation candidates carry a pattern and evidence, but no surface to try. Advance to <span style="color:${T.amber}; font-weight:600;">Testing</span> and the Steward drafts a first prototype on its next heartbeat.</div>
+        <div class="ws-frame-empty-body">Ideation candidates carry a pattern and evidence, but no surface to try. Advance to <span style="color: var(--yellow-fg); font-weight:600;">Testing</span> and the Steward drafts a first prototype on its next heartbeat.</div>
         <button type="button" class="ws-btn ws-btn-advance" data-action="advance">Advance to Testing</button>
       </div>
     `;
@@ -436,14 +421,14 @@ function renderEvidence(c) {
       </div>
       <div class="ws-evidence-list">
         ${evidence.map(e => {
-          const style = EVIDENCE_STYLE[e.k] || EVIDENCE_STYLE.data;
+          const s = EVIDENCE_STYLE[e.k] || EVIDENCE_STYLE.data;
           return `
             <div class="ws-evidence-item">
-              <span class="ws-evidence-dot" style="background:${style.dot};"></span>
+              <span class="ws-evidence-dot" style="background:${s.dot};"></span>
               <div class="ws-evidence-content">
                 <div class="ws-evidence-meta">
                   <span class="ws-evidence-date">${escapeHtml(e.t || '')}</span>
-                  <span class="ws-evidence-chip" style="color:${style.dot}; background:${style.bg};">${escapeHtml(style.label)}</span>
+                  <span class="ws-evidence-chip" style="color:${s.fg}; background:${s.bg};">${escapeHtml(s.label)}</span>
                 </div>
                 <div class="ws-evidence-text">${escapeHtml(e.s || '')}</div>
               </div>
@@ -470,6 +455,41 @@ function renderDiscardComposer() {
   `;
 }
 
+function renderCreateModal() {
+  const canSubmit = state.newName.trim().length > 0 && state.newDesc.trim().length > 0;
+  return `
+    <div class="ws-modal-backdrop" data-action="create-close">
+      <div class="ws-modal ws-modal--form" data-action="create-inner">
+        <div class="ws-modal-head">
+          <div class="ws-modal-title">Propose a new candidate</div>
+          <button type="button" class="ws-modal-close" data-action="create-close">Close ✕</button>
+        </div>
+        <div class="ws-modal-body ws-create-body">
+          <div class="ws-create-lede">
+            Describe a module you'd like Genus to develop. It'll enter <span style="color:var(--text-dim); font-weight:600;">Ideation</span> with you marked as proposer. When you advance it to <span style="color:var(--yellow-fg); font-weight:600;">Testing</span>, the Product Stewart will draft the first prototype on its next heartbeat.
+          </div>
+          <label class="ws-form-label">
+            <span>Name</span>
+            <input type="text" class="ws-form-input" data-action="create-name" value="${escapeHtml(state.newName)}" placeholder="e.g. Personal agents tab in Roster" />
+          </label>
+          <label class="ws-form-label">
+            <span>What would it do?</span>
+            <input type="text" class="ws-form-input" data-action="create-desc" value="${escapeHtml(state.newDesc)}" placeholder="One line — the thing this module would show or do." />
+          </label>
+          <label class="ws-form-label">
+            <span>Why this? <span class="ws-form-optional">(optional — helps the Stewart draft it better)</span></span>
+            <textarea class="ws-form-textarea" data-action="create-pattern" placeholder="What pattern made you think of this? What's currently painful or scattered?" rows="3">${escapeHtml(state.newPattern)}</textarea>
+          </label>
+        </div>
+        <div class="ws-modal-foot">
+          <button type="button" class="ws-btn ws-btn-cancel" data-action="create-close">Cancel</button>
+          <button type="button" class="ws-btn ws-btn-promote" data-action="create-submit" ${canSubmit ? '' : 'disabled'} style="${canSubmit ? '' : 'opacity:.5; cursor:not-allowed;'}">Add to Ideation</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 function renderExpandModal(c) {
   const iframeSrc = c.prototype_path
     ? `/api/workshop/${c.prototype_path.split('/').map(encodeURIComponent).join('/')}`
@@ -483,7 +503,7 @@ function renderExpandModal(c) {
           <button type="button" class="ws-modal-close" data-action="modal-close">Close ✕</button>
         </div>
         <div class="ws-modal-body">
-          ${iframeSrc ? `<iframe class="ws-modal-iframe" src="${iframeSrc}" title="Prototype"></iframe>` : `<div style="padding:40px; text-align:center; color:${T.muted};">No prototype available.</div>`}
+          ${iframeSrc ? `<iframe class="ws-modal-iframe" src="${iframeSrc}" title="Prototype"></iframe>` : `<div style="padding:40px; text-align:center; color: var(--text-dim);">No prototype available.</div>`}
         </div>
       </div>
     </div>
@@ -498,8 +518,7 @@ function wire() {
   rootEl.addEventListener('click', (e) => {
     const cardEl = e.target.closest('[data-card-id]');
     if (cardEl) {
-      const id = cardEl.dataset.cardId;
-      selectCandidate(id);
+      selectCandidate(cardEl.dataset.cardId);
       return;
     }
     const actionEl = e.target.closest('[data-action]');
@@ -516,13 +535,20 @@ function wire() {
     else if (action === 'expand') openExpand();
     else if (action === 'modal-close') closeExpand(e);
     else if (action === 'modal-inner') e.stopPropagation();
+    else if (action === 'open-create') openCreate();
+    else if (action === 'create-close') closeCreate(e);
+    else if (action === 'create-inner') e.stopPropagation();
+    else if (action === 'create-submit') doCreate();
   });
 
   rootEl.addEventListener('input', (e) => {
-    const actionEl = e.target.closest('[data-action="reason-input"]');
-    if (actionEl) {
-      state.reasonText = actionEl.value;
-    }
+    const el = e.target.closest('[data-action]');
+    if (!el) return;
+    const a = el.dataset.action;
+    if (a === 'reason-input') state.reasonText = el.value;
+    else if (a === 'create-name') state.newName = el.value;
+    else if (a === 'create-desc') state.newDesc = el.value;
+    else if (a === 'create-pattern') state.newPattern = el.value;
   });
 }
 
@@ -594,6 +620,71 @@ function doAdvance(c) {
   wire();
 }
 
+function openCreate() {
+  state.creating = true;
+  state.newName = '';
+  state.newDesc = '';
+  state.newPattern = '';
+  render();
+  wire();
+  const first = rootEl.querySelector('[data-action="create-name"]');
+  if (first) first.focus();
+}
+
+function closeCreate(e) {
+  if (e && e.target && e.target.dataset && e.target.dataset.action === 'create-inner') return;
+  state.creating = false;
+  render();
+  wire();
+}
+
+function doCreate() {
+  const name = state.newName.trim();
+  const desc = state.newDesc.trim();
+  const pattern = state.newPattern.trim() || 'Proposed by the operator — no pattern text provided.';
+  if (!name || !desc) return;
+
+  const slug = name.toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, '-')
+    .slice(0, 60);
+  const id = state.candidates.some(c => c.id === slug) ? `${slug}-${Date.now().toString(36)}` : slug;
+
+  const now = nowIso();
+  const candidate = {
+    id,
+    name,
+    kind: 'new',
+    origin: 'operator',
+    source_module_id: null,
+    target_version: '0.1.0',
+    status: 'ideation',
+    iteration: 0,
+    weight: 1,
+    desc,
+    prototype_path: null,
+    prototype_filename: '—',
+    prototype_meta: 'awaiting prototype',
+    pattern,
+    reason: '',
+    created_at: now,
+    last_updated: now,
+    decided_at: null,
+    decided_reason: null,
+    evidence: [
+      { t: now.slice(0, 10), k: 'memo', s: 'Operator note when creating this candidate — proposed the pattern directly.' },
+    ],
+    more_signals: 0,
+  };
+  state.candidates = [candidate, ...state.candidates];
+  state.selectedId = id;
+  state.creating = false;
+  flash(`Added "${name}" to Ideation.`);
+  render();
+  wire();
+}
+
 function openExpand() {
   state.expanded = true;
   render();
@@ -638,162 +729,190 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-// ============ Styles ============
+// ============ Styles — Genus design system ============
 
 const STYLES = `
   #route-workshop {
-    background: ${T.bgCanvas};
-    font-family: 'Hanken Grotesk', system-ui, sans-serif;
-    color: ${T.ink};
-    height: calc(100vh - var(--main-header-height, 0px));
+    background: var(--bg);
+    font-family: 'Hanken Grotesk', system-ui, -apple-system, sans-serif;
+    color: var(--text);
+    height: 100%;
     overflow: hidden;
   }
   .ws-shell {
     display: grid;
     grid-template-columns: 320px 1fr;
     height: 100%;
-    background: ${T.bgCanvas};
-    animation: gpIn 0.24s ease;
+    background: var(--bg);
+    animation: wsIn 0.22s ease;
   }
-  @keyframes gpIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-  @keyframes gpWatch { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.82); } }
+  @keyframes wsIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 
   /* ============ Rail (Column 2) ============ */
   .ws-rail {
-    background: ${T.bgRail};
-    border-right: 1px solid ${T.borderStrong};
+    background: var(--surface2);
+    border-right: 1px solid var(--border);
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    min-height: 0;
   }
   .ws-rail-header {
-    padding: 20px 20px 14px;
+    padding: 22px 22px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .ws-rail-titlerow {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
   }
   .ws-rail-title {
-    font-family: 'Spectral', serif;
-    font-weight: 600;
-    font-size: 23px;
-    letter-spacing: -.01em;
+    font-family: 'Hanken Grotesk', system-ui, sans-serif;
+    font-weight: 700;
+    font-size: 20px;
+    letter-spacing: -.015em;
     margin: 0;
-    color: ${T.ink};
+    color: var(--text);
   }
   .ws-rail-count {
     font-family: 'JetBrains Mono', monospace;
     font-size: 11px;
-    color: ${T.muted2b};
+    color: var(--text-faint);
   }
+  .ws-rail-new {
+    font-family: 'Hanken Grotesk', system-ui, sans-serif;
+    font-size: 12.5px;
+    font-weight: 600;
+    background: var(--surface);
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    border-radius: 8px;
+    padding: 7px 12px;
+    cursor: pointer;
+    transition: background .12s;
+    text-align: center;
+  }
+  .ws-rail-new:hover { background: var(--accent-bg); }
   .ws-stewart-card {
-    margin: 0 20px 16px;
-    background: ${T.bgCardRaised};
-    border: 1px solid #e3ddd0;
+    margin: 0 22px 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
     border-radius: 10px;
-    padding: 10px 12px;
+    padding: 12px 14px;
     display: grid;
     grid-template-columns: auto 1fr;
-    column-gap: 8px;
-    row-gap: 2px;
+    column-gap: 12px;
     align-items: center;
   }
   .ws-pulse-dot {
-    width: 7px; height: 7px; border-radius: 50%;
-    background: ${T.greenDot};
-    animation: gpWatch 2.4s ease-in-out infinite;
-    display: inline-block;
-    grid-row: 1 / 3;
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--green);
+    animation: pulseDot 2.4s ease-in-out infinite;
+    flex: none;
   }
-  .ws-stewart-title {
-    font-size: 12.5px; font-weight: 600; color: ${T.ink2a};
-  }
+  .ws-stewart-copy { min-width: 0; }
+  .ws-stewart-title { font-size: 12.5px; font-weight: 600; color: var(--text); line-height: 1.3; }
   .ws-stewart-meta {
     font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    color: #8c8576;
-    grid-column: 2;
+    font-size: 10.5px;
+    color: var(--text-faint);
+    margin-top: 2px;
   }
   .ws-rail-scroll {
     flex: 1;
     overflow-y: auto;
-    padding: 0 20px 20px;
+    padding: 0 22px 24px;
+    min-height: 0;
   }
-  .ws-group { margin-bottom: 18px; }
+  .ws-group { margin-bottom: 24px; }
   .ws-group-header {
     font-family: 'JetBrains Mono', monospace;
     font-size: 10px;
-    font-weight: 500;
+    font-weight: 600;
     text-transform: uppercase;
     letter-spacing: .14em;
-    padding: 6px 2px;
+    padding: 6px 2px 10px;
     display: flex;
     justify-content: space-between;
   }
-  .ws-group-count { color: ${T.muted2b}; }
-  .ws-group-items { display: flex; flex-direction: column; gap: 6px; }
+  .ws-group-count { color: var(--text-faint); }
+  .ws-group-items { display: flex; flex-direction: column; gap: 8px; }
   .ws-card {
     position: relative;
-    background: ${T.bgRail};
-    border: 1px solid ${T.borderCard};
-    border-radius: 11px;
-    padding: 12px 13px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 15px;
     cursor: pointer;
     transition: background .12s, border-color .12s, box-shadow .12s;
-    animation: gpIn 0.24s ease;
+    animation: wsIn 0.22s ease;
   }
-  .ws-card:hover { border-color: #d8d0bd; }
+  .ws-card:hover { border-color: var(--border-strong); background: var(--surface-hover); }
   .ws-card--selected {
-    background: ${T.bgCardRaised};
-    border-color: #c9c0ad;
-    box-shadow: 0 2px 10px rgba(60,52,30,.08);
+    background: var(--surface);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-bg);
   }
-  .ws-card--discarded {
-    opacity: .72;
-  }
+  .ws-card--discarded { opacity: .68; }
   .ws-card--discarded .ws-card-name {
     text-decoration: line-through;
-    text-decoration-color: #c3bcad;
+    text-decoration-color: var(--text-veryfaint);
   }
   .ws-card-dot {
     position: absolute;
     top: 14px; right: 14px;
-    width: 7px; height: 7px;
+    width: 8px; height: 8px;
     border-radius: 50%;
   }
   .ws-card-name {
-    font-size: 13.5px;
+    font-size: 14px;
     font-weight: 600;
-    line-height: 1.25;
+    line-height: 1.3;
     padding-right: 16px;
-    color: ${T.ink};
+    color: var(--text);
+  }
+  .ws-card-badges {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+  }
+  .ws-card-author {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    font-weight: 600;
   }
   .ws-card-kind {
     display: inline-block;
-    margin-top: 4px;
     font-family: 'JetBrains Mono', monospace;
     font-size: 9px;
     letter-spacing: .06em;
     padding: 2px 6px;
-    background: ${T.blueGreyTint};
-    color: ${T.blueGreyInk};
+    background: var(--accent-bg);
+    color: var(--accent);
     border-radius: 6px;
     text-transform: uppercase;
+    font-weight: 600;
   }
   .ws-card-desc {
-    font-size: 11.5px;
-    color: ${T.muted2a};
-    margin-top: 6px;
-    line-height: 1.35;
+    font-size: 12.5px;
+    color: var(--text-dim);
+    margin-top: 8px;
+    line-height: 1.5;
   }
   .ws-card-footer {
     font-family: 'JetBrains Mono', monospace;
     font-size: 10px;
-    color: ${T.faint1};
-    margin-top: 8px;
+    color: var(--text-faint);
+    margin-top: 10px;
   }
   .ws-routed {
     margin-top: 8px;
-    border: 1px dashed ${T.borderStrong};
+    border: 1px dashed var(--border-strong);
     background: transparent;
     border-radius: 10px;
     padding: 10px 12px;
@@ -803,39 +922,48 @@ const STYLES = `
     font-size: 10px;
     text-transform: uppercase;
     letter-spacing: .14em;
-    color: ${T.muted2b};
+    color: var(--text-faint);
     margin-bottom: 4px;
   }
   .ws-routed-body {
     font-size: 12px;
-    color: ${T.ink2b};
+    color: var(--text-dim);
     line-height: 1.4;
   }
 
   /* ============ Detail (Column 3) ============ */
   .ws-detail {
-    background: ${T.bgCanvas};
+    background: var(--bg);
     overflow-y: auto;
-    padding: 26px 34px 60px;
+    padding: 32px 40px 64px;
+    min-height: 0;
   }
   .ws-detail-inner {
     max-width: 980px;
     margin: 0 auto;
-    animation: gpIn 0.3s ease;
+    animation: wsIn 0.26s ease;
   }
   .ws-header {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    gap: 20px;
-    margin-bottom: 22px;
+    gap: 24px;
+    margin-bottom: 28px;
   }
   .ws-header-left { flex: 1; min-width: 0; }
+  .ws-header-author {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
   .ws-header-tags {
     display: flex;
     align-items: center;
     gap: 10px;
-    margin-bottom: 10px;
+    margin-bottom: 12px;
     flex-wrap: wrap;
   }
   .ws-status-pill {
@@ -845,33 +973,33 @@ const STYLES = `
     letter-spacing: .14em;
     padding: 4px 10px;
     border-radius: 20px;
-    font-weight: 500;
+    font-weight: 600;
   }
   .ws-id-badge {
     font-family: 'JetBrains Mono', monospace;
     font-size: 11px;
-    color: ${T.faint1};
+    color: var(--text-faint);
   }
   .ws-fork-badge {
     font-family: 'JetBrains Mono', monospace;
     font-size: 10px;
-    color: ${T.blueGreyInk};
-    background: ${T.blueGreyTint};
+    color: var(--accent);
+    background: var(--accent-bg);
     padding: 3px 8px;
     border-radius: 8px;
   }
   .ws-header-name {
-    font-family: 'Spectral', serif;
-    font-weight: 600;
-    font-size: 31px;
-    letter-spacing: -.015em;
-    line-height: 1.1;
+    font-family: 'Hanken Grotesk', system-ui, sans-serif;
+    font-weight: 800;
+    font-size: 28px;
+    letter-spacing: -.02em;
+    line-height: 1.15;
     margin: 4px 0 8px;
-    color: ${T.ink};
+    color: var(--text);
   }
   .ws-header-desc {
     font-size: 15px;
-    color: ${T.muted};
+    color: var(--text-dim);
     max-width: 60ch;
     line-height: 1.5;
     margin: 0;
@@ -884,87 +1012,94 @@ const STYLES = `
     border-radius: 9px;
     padding: 9px 15px;
     cursor: pointer;
-    transition: transform .06s, box-shadow .12s;
+    transition: transform .06s, box-shadow .12s, background .12s;
   }
   .ws-btn:active { transform: translateY(1px); }
   .ws-btn-discard {
-    background: ${T.bgCardRaised};
-    border: 1px solid ${T.borderStrong};
-    color: ${T.muted};
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    color: var(--text-dim);
   }
+  .ws-btn-discard:hover { background: var(--surface-hover); color: var(--text); }
   .ws-btn-promote {
-    background: ${T.greenPrimary};
-    border: 1px solid ${T.greenPrimary};
-    color: ${T.greenTintPromotedBg};
+    background: var(--accent);
+    border: 1px solid var(--accent);
+    color: #fff;
     padding: 9px 18px;
-    box-shadow: 0 1px 2px rgba(47,93,63,.25);
+    box-shadow: 0 2px 6px rgba(47, 107, 255, .32);
   }
-  .ws-btn-promote:hover { background: #274d34; }
+  .ws-btn-promote:hover { background: #2557d9; }
   .ws-btn-cancel {
     background: transparent;
-    border: 1px solid ${T.borderStrong};
-    color: ${T.muted};
+    border: 1px solid var(--border-strong);
+    color: var(--text-dim);
     padding: 8px 14px;
     font-size: 12px;
   }
   .ws-btn-discard-confirm {
-    background: ${T.bgCardRaised};
-    border: 1px solid ${T.red};
-    color: ${T.red};
+    background: var(--surface);
+    border: 1px solid var(--red);
+    color: var(--red-fg);
     padding: 8px 14px;
     font-size: 12px;
   }
+  .ws-btn-discard-confirm:hover { background: var(--red-bg); }
   .ws-btn-advance {
-    background: ${T.bgCardRaised};
-    border: 1px solid ${T.amber};
-    color: ${T.amberInk};
+    background: var(--surface);
+    border: 1px solid var(--accent);
+    color: var(--accent);
     padding: 8px 14px;
-    font-size: 12px;
-    margin-top: 12px;
+    font-size: 12.5px;
+    margin-top: 14px;
+    font-weight: 600;
   }
+  .ws-btn-advance:hover { background: var(--accent-bg); }
   .ws-btn-expand {
-    background: ${T.bgCardRaised};
-    border: 1px solid ${T.borderStrong};
-    color: ${T.muted};
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    color: var(--text-dim);
     padding: 4px 10px;
     border-radius: 7px;
     font-size: 11px;
     font-weight: 600;
     cursor: pointer;
     margin-left: 8px;
+    font-family: inherit;
   }
+  .ws-btn-expand:hover { background: var(--surface-hover); color: var(--text); }
 
   /* ============ Discard composer ============ */
   .ws-discard-composer {
-    background: ${T.bgCardRaised};
-    border: 1px solid #e3ddd0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--red);
     border-radius: 12px;
     padding: 14px 16px;
     margin-bottom: 20px;
-    animation: gpIn 0.24s ease;
+    animation: wsIn 0.22s ease;
   }
   .ws-discard-prompt {
-    font-size: 12.5px;
+    font-size: 13px;
     font-weight: 600;
-    color: ${T.ink2a};
+    color: var(--text);
     margin-bottom: 8px;
   }
   .ws-discard-input {
     width: 100%;
-    background: #fbf9f3;
-    border: 1px solid ${T.borderStrong};
+    background: var(--bg);
+    border: 1px solid var(--border-strong);
     border-radius: 8px;
     padding: 8px 12px;
-    font-family: 'Hanken Grotesk', sans-serif;
+    font-family: 'Hanken Grotesk', system-ui, sans-serif;
     font-size: 13px;
-    color: ${T.ink};
+    color: var(--text);
     box-sizing: border-box;
   }
-  .ws-discard-input::placeholder { color: ${T.faint1}; }
-  .ws-discard-input:focus { outline: none; border-color: #c9c0ad; }
+  .ws-discard-input::placeholder { color: var(--text-faint); }
+  .ws-discard-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
   .ws-discard-helper {
-    font-size: 11px;
-    color: ${T.muted2b};
+    font-size: 11.5px;
+    color: var(--text-faint);
     margin: 6px 0 10px;
   }
   .ws-discard-actions {
@@ -975,8 +1110,8 @@ const STYLES = `
 
   /* ============ Stepper ============ */
   .ws-stepper-card {
-    background: ${T.bgSectionCard};
-    border: 1px solid ${T.border};
+    background: var(--surface);
+    border: 1px solid var(--border);
     border-radius: 12px;
     padding: 15px 18px;
     margin-bottom: 20px;
@@ -999,38 +1134,39 @@ const STYLES = `
     align-items: center;
     justify-content: center;
     font-size: 12px;
-    font-weight: 600;
+    font-weight: 700;
     border: 1px solid;
+    font-family: 'JetBrains Mono', monospace;
   }
   .ws-stepper-label {
     font-size: 12.5px;
     font-weight: 600;
   }
   .ws-stepper-node--reached .ws-stepper-num {
-    background: ${T.greenTintActive};
-    color: ${T.greenPrimary};
-    border-color: ${T.greenPrimary};
+    background: var(--accent-bg);
+    color: var(--accent);
+    border-color: var(--accent);
   }
-  .ws-stepper-node--reached .ws-stepper-label { color: ${T.greenPrimary}; }
+  .ws-stepper-node--reached .ws-stepper-label { color: var(--accent); }
   .ws-stepper-node--testing .ws-stepper-num {
-    background: ${T.amberTintPill};
-    color: ${T.amber};
-    border-color: ${T.amber};
+    background: var(--yellow-bg);
+    color: var(--yellow-fg);
+    border-color: var(--yellow);
   }
-  .ws-stepper-node--testing .ws-stepper-label { color: ${T.amber}; }
+  .ws-stepper-node--testing .ws-stepper-label { color: var(--yellow-fg); }
   .ws-stepper-node--unreached .ws-stepper-num {
-    background: ${T.bgSectionCard};
-    color: #b0a999;
-    border-color: #cfc8b9;
+    background: var(--surface);
+    color: var(--text-veryfaint);
+    border-color: var(--border-strong);
   }
-  .ws-stepper-node--unreached .ws-stepper-label { color: #b0a999; }
+  .ws-stepper-node--unreached .ws-stepper-label { color: var(--text-veryfaint); }
   .ws-stepper-connector {
     width: 32px;
     height: 1.5px;
-    background: #cfc8b9;
+    background: var(--border-strong);
     display: inline-block;
   }
-  .ws-stepper-connector--reached { background: ${T.greenPrimary}; }
+  .ws-stepper-connector--reached { background: var(--accent); }
   .ws-stepper-pills {
     display: inline-flex;
     gap: 6px;
@@ -1041,35 +1177,36 @@ const STYLES = `
     font-size: 10px;
     padding: 2px 7px;
     border-radius: 20px;
-    font-weight: 500;
+    font-weight: 600;
   }
-  .ws-pill-muted { background: ${T.amberTintPill}; color: ${T.amberInkAlt}; }
-  .ws-pill-active { background: ${T.amber}; color: #fff; }
+  .ws-pill-muted { background: var(--yellow-bg); color: var(--yellow-fg); }
+  .ws-pill-active { background: var(--yellow); color: #fff; }
   .ws-stepper-caption {
-    font-size: 11.5px;
-    color: ${T.muted2b};
+    font-size: 12px;
+    color: var(--text-dim);
     margin-top: 12px;
+    line-height: 1.5;
   }
 
   /* ============ Body (Try + Why/Evidence) ============ */
   .ws-body {
     display: flex;
-    gap: 20px;
+    gap: 28px;
     align-items: flex-start;
   }
   .ws-try { flex: 1.55; min-width: 0; }
   .ws-why { flex: 1; min-width: 0; }
 
   .ws-frame {
-    border: 1px solid ${T.borderNav};
-    border-radius: 13px;
-    background: #fff;
-    box-shadow: 0 2px 12px rgba(60,52,30,.06);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+    box-shadow: 0 1px 3px rgba(20,22,28,.04);
     overflow: hidden;
   }
   .ws-frame-head {
-    background: #f3f0e9;
-    border-bottom: 1px solid ${T.border};
+    background: var(--surface-hover);
+    border-bottom: 1px solid var(--border);
     padding: 9px 13px;
     display: flex;
     align-items: center;
@@ -1079,12 +1216,12 @@ const STYLES = `
   .ws-frame-dot {
     width: 9px; height: 9px;
     border-radius: 50%;
-    background: #dcd6c8;
+    background: var(--border-strong);
   }
   .ws-frame-file {
     font-family: 'JetBrains Mono', monospace;
     font-size: 10.5px;
-    color: ${T.muted2b};
+    color: var(--text-faint);
     margin-left: 6px;
   }
   .ws-frame-meta {
@@ -1093,14 +1230,15 @@ const STYLES = `
     align-items: center;
     font-family: 'JetBrains Mono', monospace;
     font-size: 10.5px;
-    color: ${T.muted2b};
+    color: var(--text-faint);
   }
-  .ws-frame-body { min-height: 360px; }
+  .ws-frame-body { min-height: 360px; background: #fff; }
   .ws-frame-iframe {
     width: 100%;
     height: 500px;
     border: 0;
     display: block;
+    background: #fff;
   }
   .ws-frame-empty {
     padding: 24px 28px 28px;
@@ -1108,36 +1246,37 @@ const STYLES = `
   }
   .ws-frame-empty-hatched {
     height: 130px;
-    background-image: repeating-linear-gradient(135deg,#f4f1ea,#f4f1ea 9px,#efebe2 9px,#efebe2 18px);
+    background-image: repeating-linear-gradient(135deg, var(--surface2), var(--surface2) 9px, var(--bg) 9px, var(--bg) 18px);
     border-radius: 10px;
     display: flex;
     align-items: center;
     justify-content: center;
     font-family: 'JetBrains Mono', monospace;
     font-size: 11px;
-    color: ${T.faint1};
+    color: var(--text-faint);
     margin-bottom: 18px;
     text-transform: uppercase;
     letter-spacing: .1em;
   }
   .ws-frame-empty-heading {
-    font-family: 'Spectral', serif;
-    font-weight: 600;
-    font-size: 17px;
-    color: ${T.ink};
+    font-family: 'Hanken Grotesk', system-ui, sans-serif;
+    font-weight: 700;
+    font-size: 16px;
+    letter-spacing: -.01em;
+    color: var(--text);
     margin-bottom: 6px;
   }
   .ws-frame-empty-body {
-    font-size: 12.5px;
-    color: ${T.muted2a};
+    font-size: 13px;
+    color: var(--text-dim);
     line-height: 1.55;
     max-width: 42ch;
     margin: 0 auto;
   }
   .ws-frame-promoted {
     padding: 22px 26px 26px;
-    background: ${T.greenTintPromotedBg};
-    border: 1px solid ${T.greenTintPromoBorder};
+    background: var(--green-bg);
+    border: 1px solid var(--green-border);
     border-radius: 10px;
     margin: 18px;
   }
@@ -1148,51 +1287,54 @@ const STYLES = `
     margin-bottom: 10px;
   }
   .ws-sage-avatar {
-    width: 22px; height: 22px;
-    background: ${T.greenPrimary};
-    color: ${T.greenTintPromotedBg};
+    width: 24px; height: 24px;
+    background: var(--green);
+    color: #fff;
     border-radius: 50%;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-family: 'Spectral', serif;
+    font-family: 'Hanken Grotesk', system-ui, sans-serif;
     font-size: 12px;
-    font-weight: 600;
+    font-weight: 700;
   }
   .ws-frame-promoted-title {
     font-size: 14px;
-    font-weight: 600;
-    color: ${T.greenLink};
+    font-weight: 700;
+    color: var(--green-fg);
   }
   .ws-frame-promoted-code {
-    background: ${T.greenTintPromoted};
+    background: var(--surface);
+    border: 1px solid var(--green-border);
     padding: 10px 14px;
     border-radius: 6px;
     font-family: 'JetBrains Mono', monospace;
     font-size: 11.5px;
-    color: ${T.ink2a};
+    color: var(--text);
     margin: 0 0 12px;
     white-space: pre-wrap;
   }
   .ws-frame-promoted-copy {
-    font-size: 12.5px;
-    color: ${T.ink2a};
+    font-size: 13px;
+    color: var(--text-dim);
     line-height: 1.55;
   }
   .ws-frame-discarded {
     padding: 40px 30px;
     text-align: center;
+    background: #fff;
   }
   .ws-frame-discarded-title {
-    font-family: 'Spectral', serif;
-    font-weight: 600;
-    font-size: 20px;
-    color: ${T.muted};
+    font-family: 'Hanken Grotesk', system-ui, sans-serif;
+    font-weight: 700;
+    font-size: 18px;
+    letter-spacing: -.01em;
+    color: var(--text-dim);
     margin-bottom: 8px;
   }
   .ws-frame-discarded-reason {
     font-size: 13.5px;
-    color: ${T.ink2a};
+    color: var(--text);
     font-style: italic;
     max-width: 42ch;
     margin: 0 auto 12px;
@@ -1201,13 +1343,13 @@ const STYLES = `
   .ws-frame-discarded-mono {
     font-family: 'JetBrains Mono', monospace;
     font-size: 11px;
-    color: ${T.muted2b};
+    color: var(--text-faint);
   }
 
   /* ============ Why / Evidence ============ */
   .ws-why-card {
-    background: ${T.bgSectionCard};
-    border: 1px solid ${T.border};
+    background: var(--surface);
+    border: 1px solid var(--border);
     border-radius: 12px;
     padding: 14px 16px;
     margin-bottom: 18px;
@@ -1217,12 +1359,12 @@ const STYLES = `
     font-size: 10px;
     text-transform: uppercase;
     letter-spacing: .14em;
-    color: ${T.muted2b};
+    color: var(--text-faint);
     margin-bottom: 8px;
   }
   .ws-why-body {
     font-size: 13.5px;
-    color: ${T.ink2a};
+    color: var(--text);
     line-height: 1.6;
     margin: 0;
   }
@@ -1238,21 +1380,21 @@ const STYLES = `
     font-size: 10px;
     text-transform: uppercase;
     letter-spacing: .14em;
-    color: ${T.muted2b};
+    color: var(--text-faint);
   }
   .ws-evidence-count {
     font-family: 'JetBrains Mono', monospace;
     font-size: 11px;
-    color: ${T.muted2b};
+    color: var(--text-faint);
   }
   .ws-evidence-list {
-    border-left: 1.5px solid ${T.border};
+    border-left: 1.5px solid var(--border);
     margin-left: 4px;
     padding-left: 14px;
   }
   .ws-evidence-item {
     position: relative;
-    padding: 8px 0 8px 4px;
+    padding: 8px 0;
   }
   .ws-evidence-dot {
     position: absolute;
@@ -1269,84 +1411,87 @@ const STYLES = `
   }
   .ws-evidence-date {
     font-family: 'JetBrains Mono', monospace;
-    font-size: 10px;
-    color: ${T.muted2b};
+    font-size: 10.5px;
+    color: var(--text-faint);
   }
   .ws-evidence-chip {
     font-family: 'JetBrains Mono', monospace;
-    font-size: 9px;
+    font-size: 9.5px;
     text-transform: uppercase;
-    letter-spacing: .06em;
+    letter-spacing: .08em;
     padding: 1px 6px;
     border-radius: 6px;
-    font-weight: 500;
+    font-weight: 600;
   }
   .ws-evidence-text {
     font-size: 12.5px;
-    color: ${T.ink2b};
-    line-height: 1.45;
+    color: var(--text);
+    line-height: 1.5;
   }
   .ws-evidence-more {
     padding: 8px 0 4px;
     font-family: 'JetBrains Mono', monospace;
     font-size: 11px;
-    color: ${T.faint1};
+    color: var(--text-faint);
   }
 
   /* ============ Modal ============ */
   .ws-modal-backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(35,32,23,.42);
+    background: rgba(20,22,28,.42);
     backdrop-filter: blur(3px);
     z-index: 9999;
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 30px;
-    animation: gpIn 0.18s ease;
+    animation: wsIn 0.18s ease;
   }
   .ws-modal {
     max-width: 1080px;
     width: 100%;
     max-height: 88vh;
-    background: #fff;
+    background: var(--surface);
     border-radius: 16px;
-    box-shadow: 0 24px 70px rgba(0,0,0,.34);
+    box-shadow: 0 24px 70px rgba(0,0,0,.28);
     display: flex;
     flex-direction: column;
     overflow: hidden;
   }
   .ws-modal-head {
-    background: #f3f0e9;
+    background: var(--surface-hover);
     padding: 12px 16px;
     display: flex;
     align-items: center;
     gap: 14px;
-    border-bottom: 1px solid ${T.border};
+    border-bottom: 1px solid var(--border);
   }
   .ws-modal-title {
-    font-family: 'Spectral', serif;
-    font-weight: 600;
+    font-family: 'Hanken Grotesk', system-ui, sans-serif;
+    font-weight: 700;
     font-size: 15px;
-    color: ${T.ink};
+    letter-spacing: -.01em;
+    color: var(--text);
   }
   .ws-modal-meta {
     font-family: 'JetBrains Mono', monospace;
     font-size: 11px;
-    color: ${T.muted2b};
+    color: var(--text-faint);
   }
   .ws-modal-close {
     margin-left: auto;
-    background: ${T.bgCardRaised};
-    border: 1px solid ${T.borderStrong};
-    color: ${T.muted};
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    color: var(--text-dim);
     padding: 5px 12px;
     border-radius: 8px;
     font-size: 12px;
     font-weight: 600;
     cursor: pointer;
+    font-family: inherit;
   }
+  .ws-modal-close:hover { background: var(--surface-hover); color: var(--text); }
   .ws-modal-body {
     flex: 1;
     overflow: auto;
@@ -1359,6 +1504,65 @@ const STYLES = `
     border: 0;
     display: block;
   }
+  .ws-modal--form {
+    max-width: 620px;
+  }
+  .ws-create-body {
+    padding: 24px 28px 8px;
+    background: var(--surface);
+  }
+  .ws-create-lede {
+    font-size: 13.5px;
+    color: var(--text-dim);
+    line-height: 1.55;
+    margin-bottom: 22px;
+  }
+  .ws-form-label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 18px;
+    font-family: 'Hanken Grotesk', system-ui, sans-serif;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .ws-form-optional {
+    font-weight: 400;
+    color: var(--text-faint);
+  }
+  .ws-form-input, .ws-form-textarea {
+    width: 100%;
+    font-family: 'Hanken Grotesk', system-ui, sans-serif;
+    font-size: 14px;
+    font-weight: 400;
+    background: var(--bg);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    padding: 10px 12px;
+    color: var(--text);
+    box-sizing: border-box;
+    resize: vertical;
+  }
+  .ws-form-input::placeholder, .ws-form-textarea::placeholder { color: var(--text-veryfaint); }
+  .ws-form-input:focus, .ws-form-textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-bg);
+  }
+  .ws-form-textarea {
+    min-height: 76px;
+    line-height: 1.5;
+    font-family: 'Hanken Grotesk', system-ui, sans-serif;
+  }
+  .ws-modal-foot {
+    padding: 16px 28px 22px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+  }
 
   /* ============ Toast ============ */
   .ws-toast {
@@ -1366,14 +1570,15 @@ const STYLES = `
     bottom: 30px;
     left: 50%;
     transform: translateX(-50%);
-    background: #232017;
-    color: #f4f1e8;
+    background: var(--text);
+    color: #fff;
+    font-family: 'Hanken Grotesk', system-ui, sans-serif;
     font-size: 13px;
     font-weight: 500;
     padding: 11px 18px;
     border-radius: 11px;
-    box-shadow: 0 8px 28px rgba(0,0,0,.22);
+    box-shadow: 0 8px 28px rgba(20,22,28,.28);
     z-index: 10000;
-    animation: gpIn 0.2s ease;
+    animation: wsIn 0.2s ease;
   }
 `;
