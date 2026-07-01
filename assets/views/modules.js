@@ -236,6 +236,12 @@ async function installModuleFlow(modId, bu, install) {
       .then(res => {
         const agentId = res?.binding?.agent_id;
         if (install) return kickReconcileNow(agentId || bu);
+        // Uninstall path (roadmap i27): the binding is already gone from
+        // agent_bindings.json; the Paperclip agent is now an orphan. Fire
+        // the trigger with mode='archive-orphans' so the reconciler pauses
+        // the heartbeat routine right away. Best-effort — periodic reconcile
+        // reports the orphan even if the trigger isn't running.
+        return kickReconcileNow(agentId || bu, { mode: 'archive-orphans' });
       })
       .catch(() => { /* best-effort */ });
     if (install) {
@@ -255,7 +261,7 @@ async function installModuleFlow(modId, bu, install) {
 // fetch, we silently no-op — the periodic 5-min reconciler will pick up
 // the install anyway. When it does work, the Paperclip agent + heartbeat
 // routine are created within ~2-8 seconds instead of up to 5 minutes.
-async function kickReconcileNow(filter) {
+async function kickReconcileNow(filter, opts = {}) {
   const TRIGGER_URL = 'http://127.0.0.1:3101/reconcile-now';
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), 45000);
@@ -263,7 +269,14 @@ async function kickReconcileNow(filter) {
     const res = await fetch(TRIGGER_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ agent_id: filter || null, timeout_ms: 40000 }),
+      body: JSON.stringify({
+        agent_id: filter || null,
+        timeout_ms: 40000,
+        // mode: 'archive-orphans' pauses the heartbeat routines of orphaned
+        // Paperclip agents (i27 Uninstall-Module). Absent = install-flavored
+        // reconcile (i26 default).
+        mode: opts.mode || null,
+      }),
       signal: controller.signal,
     });
     clearTimeout(t);
