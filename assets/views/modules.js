@@ -58,7 +58,14 @@ export async function renderModules(_ctx) {
       </div>
     </div>
     <div class="modules-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
-      ${available.map(m => renderModuleCard(m, installed.has(m.id), bindingFor(adminState, currentBu, m.id), adminState)).join('')}
+      ${available.map(m => renderModuleCard(
+        m,
+        installed.has(m.id),
+        bindingFor(adminState, currentBu, m.id),
+        adminState,
+        // i13: count of BUs (across the whole installation) with this module installed
+        (registry.business_units || []).filter(b => (b.modules_installed || []).includes(m.id)).length,
+      )).join('')}
     </div>
   `;
 
@@ -81,7 +88,7 @@ function bindingFor(adminState, bu, module_id) {
   return (adminState.bindings || []).find(b => b.bu === bu && b.module_id === module_id) || null;
 }
 
-function renderModuleCard(m, isInstalled, binding, adminState) {
+function renderModuleCard(m, isInstalled, binding, adminState, installedCount = 0) {
   const installedTag = isInstalled
     ? '<span class="finance-pill" style="background:var(--green);">INSTALLED</span>'
     : '';
@@ -100,19 +107,56 @@ function renderModuleCard(m, isInstalled, binding, adminState) {
         <button type="button" data-mod-binding="${escapeHtml(m.id)}" style="align-self:flex-start;margin-top:4px;padding:4px 10px;font-size:11px;background:none;border:1px solid var(--border);border-radius:4px;color:var(--accent);cursor:pointer;">Edit binding</button>
       </div>`;
   }
+
+  // Vision-shaped metadata (i13). Renders as expandable sections. If the
+  // module.json wasn't enriched yet, the sections are simply omitted.
+  const category = m.category ? `<span style="font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;font-size:9.5px;text-transform:uppercase;letter-spacing:.1em;padding:2px 7px;border-radius:5px;background:var(--surface2);color:var(--text-dim);font-weight:600;">${escapeHtml(m.category)}</span>` : '';
+  const installedCountChip = installedCount > 0 ? `<span style="font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;font-size:10px;color:var(--text-faint);">installed on ${installedCount} venture${installedCount === 1 ? '' : 's'}</span>` : '';
+
+  const renderList = (label, items, tint) => {
+    if (!Array.isArray(items) || items.length === 0) return '';
+    return `
+      <div style="margin-top:12px;">
+        <div style="font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:${tint};margin-bottom:6px;font-weight:600;">${escapeHtml(label)}</div>
+        <ul style="margin:0;padding-left:18px;font-size:12.5px;color:var(--text);line-height:1.55;">
+          ${items.map(i => `<li style="margin-bottom:3px;">${escapeHtml(i)}</li>`).join('')}
+        </ul>
+      </div>`;
+  };
+
+  const catalogDetails = (m.when_useful || m.when_not_useful || m.install_signals || m.example_intents) ? `
+    <details style="margin-top:8px;">
+      <summary style="cursor:pointer;font-size:12px;color:var(--accent);font-weight:600;user-select:none;list-style:none;display:inline-flex;align-items:center;gap:6px;">
+        <span class="chev" style="display:inline-block;transition:transform .15s;">▸</span>
+        When to install this
+      </summary>
+      <style>details[open] > summary > .chev { transform: rotate(90deg); }</style>
+      <div style="padding-top:6px;">
+        ${renderList('When useful', m.when_useful, 'var(--green-fg)')}
+        ${renderList('When NOT useful', m.when_not_useful, 'var(--red-fg)')}
+        ${renderList('Install signals (what the agent watches for)', m.install_signals, 'var(--accent)')}
+        ${renderList('Example intents you might have', m.example_intents, 'var(--text-dim)')}
+      </div>
+    </details>` : '';
+
   return `
     <div class="card" style="display:flex;flex-direction:column;gap:10px;">
       <div style="display:flex;align-items:start;gap:14px;">
         <span style="font-size:30px;line-height:1;">${m.icon || '📦'}</span>
         <div style="flex:1;">
-          <div style="display:flex;align-items:center;gap:8px;">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
             <strong style="font-size:15px;">${escapeHtml(m.display_name)}</strong>
             ${installedTag}
+            ${category}
           </div>
-          <div style="font-size:11px;color:var(--text-faint);font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;margin-top:2px;">${escapeHtml(m.id)} · v${escapeHtml(m.version || '0')}</div>
+          <div style="font-size:11px;color:var(--text-faint);font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;margin-top:2px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+            <span>${escapeHtml(m.id)} · v${escapeHtml(m.version || '0')}</span>
+            ${installedCountChip}
+          </div>
         </div>
       </div>
       <p style="font-size:13px;color:var(--text-dim);line-height:1.55;margin:0;">${escapeHtml(m.summary || '')}</p>
+      ${catalogDetails}
       ${bindingChip}
       <div style="display:flex;gap:8px;margin-top:6px;justify-content:flex-end;">
         <button type="button" class="onboard-cancel" data-mod-preview="${escapeHtml(m.id)}">Details</button>
