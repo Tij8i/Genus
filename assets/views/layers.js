@@ -129,6 +129,71 @@ function renderGenusAgentBanner(state) {
   `;
 }
 
+// Roadmap i14 — Genus Agent area-modelling proposals surface.
+// Renders any `status: 'pending'` proposals as decision cards above the areas
+// grid. Accept applies the change (via /api/business-areas-edit); Reject
+// captures a reason; Dismiss soft-hides.
+function renderProposalsBlock(proposals, bu) {
+  const pending = (proposals || []).filter(p => p.status === 'pending');
+  if (pending.length === 0) return '';
+  const kindPill = (k) => {
+    const map = {
+      split:   { bg: '#f3e9d6', fg: '#9a6320', label: 'SPLIT' },
+      merge:   { bg: '#e3ede2', fg: '#356845', label: 'MERGE' },
+      rename:  { bg: '#e6ebef', fg: '#4a5a67', label: 'RENAME' },
+      add:     { bg: 'var(--accent-bg)', fg: 'var(--accent)', label: 'ADD' },
+      retire:  { bg: '#fdebe9', fg: '#c12525', label: 'RETIRE' },
+    };
+    const s = map[k] || map.rename;
+    return `<span style="font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;font-size:9.5px;text-transform:uppercase;letter-spacing:.12em;padding:2px 8px;border-radius:5px;background:${s.bg};color:${s.fg};font-weight:600;">${s.label}</span>`;
+  };
+  const summarizeProposal = (p) => {
+    if (p.kind === 'rename') {
+      return `Rename <b>${escapeHtml(p.subject_area_ids[0])}</b> → <b>${escapeHtml(p.proposal?.new_display_name || '?')}</b>`;
+    }
+    if (p.kind === 'split') {
+      const parts = (p.proposal?.areas || []).map(a => `<b>${escapeHtml(a.display_name)}</b>`).join(' + ');
+      return `Split <b>${escapeHtml(p.subject_area_ids[0])}</b> into ${parts}`;
+    }
+    if (p.kind === 'merge') {
+      const src = p.subject_area_ids.map(escapeHtml).join(' + ');
+      return `Merge <b>${src}</b> → <b>${escapeHtml(p.proposal?.new_area?.display_name || '?')}</b>`;
+    }
+    if (p.kind === 'add') return `Add area <b>${escapeHtml(p.proposal?.area?.display_name || '?')}</b>`;
+    if (p.kind === 'retire') return `Retire <b>${(p.subject_area_ids||[]).map(escapeHtml).join(', ')}</b>`;
+    return escapeHtml(p.kind);
+  };
+  const cards = pending.map((p, i) => `
+    <div class="prop-card" data-prop-id="${escapeHtml(p.id)}" style="background:#fff;border:1px solid #e0e6f2;border-left:4px solid var(--accent);border-radius:11px;padding:14px 16px;margin-bottom:10px;">
+      <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:8px;flex-wrap:wrap;">
+        ${kindPill(p.kind)}
+        <span style="font-size:13.5px;color:var(--text);flex:1;line-height:1.4;">${summarizeProposal(p)}</span>
+        <span style="font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;font-size:10px;color:var(--text-faint);">${escapeHtml((p.created_at || '').slice(0,10))}</span>
+      </div>
+      <div style="font-size:12.5px;color:var(--text-dim);line-height:1.55;margin-bottom:10px;">${escapeHtml(p.reasoning || '')}</div>
+      <details style="margin-bottom:12px;">
+        <summary style="cursor:pointer;font-size:11.5px;color:var(--accent);font-weight:600;user-select:none;list-style:none;">▸ ${(p.evidence || []).length} signal${(p.evidence || []).length === 1 ? '' : 's'}</summary>
+        <ul style="margin:6px 0 0 0;padding-left:16px;font-size:12px;color:var(--text-dim);line-height:1.5;">
+          ${(p.evidence || []).map(e => `<li style="margin-bottom:2px;"><span style="font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;color:var(--text-faint);">${escapeHtml(e.t || '?')}</span> — ${escapeHtml(e.signal || '')}</li>`).join('')}
+        </ul>
+      </details>
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button type="button" class="prop-dismiss onboard-cancel" data-prop-id="${escapeHtml(p.id)}" style="padding:6px 12px;font-size:12px;">Dismiss</button>
+        <button type="button" class="prop-reject onboard-cancel" data-prop-id="${escapeHtml(p.id)}" style="padding:6px 12px;font-size:12px;color:#c12525;border-color:#f6cfca;">Reject</button>
+        <button type="button" class="prop-accept onboard-begin" data-prop-id="${escapeHtml(p.id)}" style="padding:6px 14px;font-size:12px;">Accept ↗</button>
+      </div>
+    </div>
+  `).join('');
+  return `
+    <div style="margin-bottom:16px;">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:10px;">
+        <div style="font:600 10px 'JetBrains Mono',ui-monospace,Menlo,monospace;letter-spacing:.14em;color:var(--accent);text-transform:uppercase;">Genus Agent has ${pending.length} proposal${pending.length === 1 ? '' : 's'} for your areas</div>
+        <div style="font-size:11.5px;color:var(--text-faint);">Manual invoke at v0.1 · automatic scanning ships in v1.0</div>
+      </div>
+      ${cards}
+    </div>`;
+}
+
 function renderPopulated(coverage, bu) {
   const s = coverage.summary;
   const banner = renderGenusAgentBanner(coverage.genus_agent_state);
@@ -151,8 +216,10 @@ function renderPopulated(coverage, bu) {
       <span style="font-size:12px;text-decoration:underline;cursor:pointer;">Resolve →</span>
     </div>` : '';
 
+  const proposalsBlock = renderProposalsBlock(coverage.proposals || [], bu);
   return `
     ${banner}
+    ${proposalsBlock}
     ${critical}
     ${overlap}
 
@@ -319,6 +386,21 @@ function wireEmptyState(bu) {
 function wirePopulated(coverage, bu, ctx) {
   // Header CTA
   document.getElementById('layers-talk-btn')?.addEventListener('click', () => startGenusAgentMeeting(bu));
+
+  // i14 proposal buttons — accept / reject / dismiss
+  document.querySelectorAll('.prop-accept').forEach(btn => {
+    btn.addEventListener('click', () => decideProposal(bu, btn.dataset.propId, 'accept_proposal', null, ctx));
+  });
+  document.querySelectorAll('.prop-reject').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const reason = prompt('Why reject this proposal? The Agent will remember and won\'t re-propose the same shape.');
+      if (reason === null) return; // cancelled
+      decideProposal(bu, btn.dataset.propId, 'reject_proposal', reason, ctx);
+    });
+  });
+  document.querySelectorAll('.prop-dismiss').forEach(btn => {
+    btn.addEventListener('click', () => decideProposal(bu, btn.dataset.propId, 'dismiss_proposal', null, ctx));
+  });
 
   // Edit-mode toggle
   document.getElementById('layers-edit-toggle')?.addEventListener('click', () => {
@@ -853,6 +935,29 @@ async function startGenusAgentMeeting(bu, mode = 'areas') {
     purpose: 'business-modelling',
     opening_prompt: opening,
   });
+}
+
+// ============ i14 — proposal decision handler ============
+
+async function decideProposal(bu, proposal_id, action, reason, ctx) {
+  const btn = document.querySelector(`.prop-card[data-prop-id="${proposal_id}"] .prop-accept, .prop-card[data-prop-id="${proposal_id}"] .prop-reject, .prop-card[data-prop-id="${proposal_id}"] .prop-dismiss`);
+  const card = document.querySelector(`.prop-card[data-prop-id="${proposal_id}"]`);
+  if (card) card.style.opacity = '.55';
+  try {
+    const res = await fetch('/api/business-areas-edit', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bu, action, proposal_id, reason }),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok || !j.ok) throw new Error(j.message || `HTTP ${res.status}`);
+    // Refresh the view — coverage will pick up applied changes + status
+    await renderLayers(ctx);
+  } catch (e) {
+    if (card) card.style.opacity = '1';
+    alert(`Could not ${action.replace('_', ' ')}: ${e.message}`);
+  }
 }
 
 // ============ Helpers ============

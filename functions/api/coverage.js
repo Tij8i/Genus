@@ -59,10 +59,13 @@ export async function onRequestGet({ request, env }) {
   const [businessAreas, registry, bindingsData, rolesData, runtimesData] = reads;
 
   if (!businessAreas || !Array.isArray(businessAreas.areas)) {
-    return jsonResponse(200, { ok: true, bu, empty: true, areas: [], summary: emptySummary(), genus_agent_state: null });
+    return jsonResponse(200, { ok: true, bu, empty: true, areas: [], summary: emptySummary(), genus_agent_state: null, proposals: [] });
   }
 
   const genus_agent_state = businessAreas.genus_agent_state || null;
+  // i14: Genus Agent area-modelling proposals (pending only surface in the UI;
+  // decided ones ship through for audit but the Layers view filters).
+  const proposals = Array.isArray(businessAreas.proposals) ? businessAreas.proposals : [];
 
   const allBindings = (bindingsData?.bindings || []).filter(b => b.bu === bu);
   const allUsers = rolesData?.users || [];
@@ -171,7 +174,7 @@ export async function onRequestGet({ request, env }) {
     overlapping_area_ids: areas.filter(a => a.state === 'overlap').map(a => a.id),
   };
 
-  return jsonResponse(200, { ok: true, bu, areas, summary, genus_agent_state });
+  return jsonResponse(200, { ok: true, bu, areas, summary, genus_agent_state, proposals });
 }
 
 function emptySummary() {

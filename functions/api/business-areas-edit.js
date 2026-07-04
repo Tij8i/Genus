@@ -119,6 +119,92 @@ export async function onRequestPost({ request, env }) {
       const a = { ...data.areas[idx] };
       a.tools = (a.tools || []).filter(t => t.tool !== tool_name);
       data.areas[idx] = a;
+    } else if (action === 'accept_proposal' || action === 'reject_proposal' || action === 'dismiss_proposal') {
+      // Roadmap i14 — Genus Agent area-modelling proposals.
+      // accept_proposal: apply the proposal's change to areas[] + mark accepted
+      // reject_proposal: mark rejected with a reason (Agent won't re-propose the same shape)
+      // dismiss_proposal: soft-hide; Agent may re-propose if new signals appear
+      const proposal_id = (body.proposal_id || '').toString().trim();
+      const reason = (body.reason || '').toString();
+      if (!proposal_id) return jsonResponse(400, { ok: false, message: 'proposal_id is required' });
+      data.proposals = data.proposals || [];
+      const pidx = data.proposals.findIndex(p => p.id === proposal_id);
+      if (pidx === -1) return jsonResponse(404, { ok: false, message: `Proposal '${proposal_id}' not found` });
+      const prop = { ...data.proposals[pidx] };
+      if (prop.status !== 'pending') return jsonResponse(409, { ok: false, message: `Proposal '${proposal_id}' is already ${prop.status}` });
+      const now = todayISO();
+
+      if (action === 'accept_proposal') {
+        // Apply the proposal to areas[]
+        if (prop.kind === 'rename') {
+          const target_id = prop.subject_area_ids?.[0];
+          const aidx = data.areas.findIndex(a => a.id === target_id);
+          if (aidx === -1) return jsonResponse(404, { ok: false, message: `Subject area '${target_id}' not found` });
+          const a = { ...data.areas[aidx] };
+          if (prop.proposal?.new_display_name) a.display_name = prop.proposal.new_display_name;
+          if (prop.proposal?.new_description)  a.description  = prop.proposal.new_description;
+          a.genus_agent_notes = (a.genus_agent_notes || '') + ` [renamed via proposal ${proposal_id} on ${now.slice(0,10)}]`;
+          data.areas[aidx] = a;
+        } else if (prop.kind === 'split') {
+          const target_id = prop.subject_area_ids?.[0];
+          const aidx = data.areas.findIndex(a => a.id === target_id);
+          if (aidx === -1) return jsonResponse(404, { ok: false, message: `Subject area '${target_id}' not found` });
+          const originalTools = data.areas[aidx].tools || [];
+          const newAreas = (prop.proposal?.areas || []).map((child, i) => ({
+            id: child.id || slugify(child.display_name || ''),
+            display_name: child.display_name,
+            description: child.description || '',
+            critical: !!child.critical,
+            operator_confirmed: true,
+            genus_agent_notes: `Created via split from '${target_id}' (proposal ${proposal_id})`,
+            tools: i === 0 ? originalTools : [],
+          }));
+          data.areas.splice(aidx, 1, ...newAreas);
+        } else if (prop.kind === 'merge') {
+          const targets = prop.subject_area_ids || [];
+          const survivors = data.areas.filter(a => !targets.includes(a.id));
+          const mergedTools = data.areas
+            .filter(a => targets.includes(a.id))
+            .flatMap(a => a.tools || []);
+          const nc = prop.proposal?.new_area || {};
+          survivors.push({
+            id: nc.id || slugify(nc.display_name || 'merged'),
+            display_name: nc.display_name,
+            description: nc.description || '',
+            critical: !!nc.critical,
+            operator_confirmed: true,
+            genus_agent_notes: `Merged from ${targets.join(', ')} (proposal ${proposal_id})`,
+            tools: mergedTools,
+          });
+          data.areas = survivors;
+        } else if (prop.kind === 'add') {
+          const nc = prop.proposal?.area || {};
+          data.areas.push({
+            id: nc.id || slugify(nc.display_name || 'new-area'),
+            display_name: nc.display_name,
+            description: nc.description || '',
+            critical: !!nc.critical,
+            operator_confirmed: true,
+            genus_agent_notes: `Added via proposal ${proposal_id}`,
+            tools: [],
+          });
+        } else if (prop.kind === 'retire') {
+          data.areas = data.areas.filter(a => !(prop.subject_area_ids || []).includes(a.id));
+        } else {
+          return jsonResponse(400, { ok: false, message: `Unknown proposal kind: ${prop.kind}` });
+        }
+        prop.status = 'accepted';
+        prop.decided_at = now;
+      } else if (action === 'reject_proposal') {
+        prop.status = 'rejected';
+        prop.decided_at = now;
+        prop.decided_reason = reason || 'No reason given.';
+      } else {
+        prop.status = 'dismissed';
+        prop.decided_at = now;
+        prop.decided_reason = reason || null;
+      }
+      data.proposals[pidx] = prop;
     } else {
       return jsonResponse(400, { ok: false, message: `Unknown action: ${action}` });
     }
