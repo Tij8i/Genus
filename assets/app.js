@@ -46,6 +46,7 @@ import { renderDecisionDetail as renderDecisionDetailView } from './views/produc
 import { renderFunctionOverview as renderFnOverviewView } from './views/workflows/function-overview.js';
 import { renderFunctionWorkflows as renderFnWorkflowsView } from './views/workflows/function-workflows.js';
 import { renderFunctionTasks as renderFnTasksView } from './views/workflows/function-tasks.js';
+import { renderFunctionDiscipline as renderFnDisciplineView } from './views/workflows/function-discipline.js';
 import { renderWorkflowDetail as renderWorkflowDetailView } from './views/workflows/workflow-detail.js';
 import { loadWorkflowTasks, updateTaskBadges } from './views/workflows/_shared.js';
 import { renderDevelopmentOverview } from './views/development/overview.js';
@@ -581,15 +582,19 @@ function renderRoute(route) {
   else if (route === 'finance-overview')    safeRender('finance-overview',    () => renderFnOverviewView('finance'));
   else if (route === 'finance-workflows')   safeRender('finance-workflows',   () => renderFnWorkflowsView('finance'));
   else if (route === 'finance-tasks')       safeRender('finance-tasks',       () => renderFnTasksView('finance'));
+  else if (route === 'finance-discipline')  safeRender('finance-discipline',  () => renderFnDisciplineView('finance'));
   else if (route === 'strategy-overview')   safeRender('strategy-overview',   () => renderFnOverviewView('strategy'));
   else if (route === 'strategy-workflows')  safeRender('strategy-workflows',  () => renderFnWorkflowsView('strategy'));
   else if (route === 'strategy-tasks')      safeRender('strategy-tasks',      () => renderFnTasksView('strategy'));
+  else if (route === 'strategy-discipline') safeRender('strategy-discipline', () => renderFnDisciplineView('strategy'));
   else if (route === 'product-overview')    safeRender('product-overview',    () => renderFnOverviewView('product'));
   else if (route === 'product-workflows')   safeRender('product-workflows',   () => renderFnWorkflowsView('product'));
   else if (route === 'product-tasks')       safeRender('product-tasks',       () => renderFnTasksView('product'));
+  else if (route === 'product-discipline')  safeRender('product-discipline',  () => renderFnDisciplineView('product'));
   else if (route === 'development-overview') safeRender('development-overview', renderDevelopmentOverview);
   else if (route === 'development-workflows')safeRender('development-workflows',() => renderFnWorkflowsView('development'));
   else if (route === 'development-tasks')    safeRender('development-tasks',    () => renderFnTasksView('development'));
+  else if (route === 'development-discipline')safeRender('development-discipline',() => renderFnDisciplineView('development'));
   else if (route === 'dev-tests')            safeRender('dev-tests',            renderDevTests);
   else if (route === 'dev-bugs')             safeRender('dev-bugs',             renderDevBugs);
   else if (route === 'dev-deploys')          safeRender('dev-deploys',          renderDevDeploys);
@@ -598,6 +603,7 @@ function renderRoute(route) {
   else if (route === 'operations-overview') safeRender('operations-overview', () => renderFnOverviewView('operations'));
   else if (route === 'operations-workflows')safeRender('operations-workflows',() => renderFnWorkflowsView('operations'));
   else if (route === 'operations-tasks')    safeRender('operations-tasks',    () => renderFnTasksView('operations'));
+  else if (route === 'operations-discipline')safeRender('operations-discipline',() => renderFnDisciplineView('operations'));
   else if (route === 'workflow-detail')     safeRender('workflow-detail',     renderWorkflowDetailView);
   else if (route === 'settings') safeRender('settings', renderSettings);
   else if (route === 'budget') safeRender('budget', renderBudget);

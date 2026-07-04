@@ -71,9 +71,10 @@ export function escapeHtml(s) {
 // Page header used by all function-tab pages
 export function functionHeader({ mod, modName, modColor, activeTab }) {
   const tabs = [
-    { key: 'overview',  label: 'Overview',  hash: `#${mod}-overview` },
-    { key: 'workflows', label: 'Workflows', hash: `#${mod}-workflows` },
-    { key: 'tasks',     label: 'Tasks',     hash: `#${mod}-tasks` },
+    { key: 'overview',   label: 'Overview',   hash: `#${mod}-overview` },
+    { key: 'workflows',  label: 'Workflows',  hash: `#${mod}-workflows` },
+    { key: 'tasks',      label: 'Tasks',      hash: `#${mod}-tasks` },
+    { key: 'discipline', label: 'Discipline', hash: `#${mod}-discipline` },
   ];
   return `
     <div style="display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap;margin-bottom:18px;">
