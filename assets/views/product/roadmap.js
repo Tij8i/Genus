@@ -45,7 +45,7 @@ export async function renderRoadmap() {
     eyebrow: `${bu.toUpperCase()} · PRODUCT`,
     title: 'Roadmap',
     sub: 'Where this product is going, organised by version.',
-    action: renderViewToggle(),
+    action: renderHeaderActions(),
   }) + renderFilterRow(visibleData) + renderVersionChips(data.versions) + (VIEW === 'A' ? renderKanban(visibleData) : renderTimeline(visibleData));
 
   // Wiring
@@ -67,7 +67,19 @@ export async function renderRoadmap() {
     openItemDrawer(data);
   }));
 
+  document.getElementById('rm-add-note-btn')?.addEventListener('click', () => openNoteDialog(data, bu));
+
   if (OPEN_ITEM_ID) openItemDrawer(data);
+}
+
+function renderHeaderActions() {
+  return `<div style="display:inline-flex;gap:10px;align-items:center;">
+    <button type="button" id="rm-add-note-btn" style="display:inline-flex;align-items:center;gap:7px;padding:7px 14px;background:var(--accent);color:#fff;border:none;border-radius:10px;cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:600;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+      Add via note
+    </button>
+    ${renderViewToggle()}
+  </div>`;
 }
 
 function renderViewToggle() {
@@ -265,4 +277,187 @@ function closeDrawer() {
   const host = document.getElementById('overlay-host');
   if (host) host.innerHTML = '';
   OPEN_ITEM_ID = null;
+}
+
+// ============ i39 — Note-capture flow ============
+//
+// Operator types a rough note; we split it into draft cards (client-side —
+// deterministic decomposition, no meeting round-trip). Operator picks which
+// to keep, edits inline, saves. POSTs to /api/add-roadmap-items.
+//
+// Decomposition rules (in priority order):
+//   1. Lines starting with '- ', '* ', or 'N. ' → each is one card
+//   2. Otherwise: split on blank lines → each chunk is one card
+//   3. Fallback: whole note = one card
+// First line of a chunk = title; the rest = summary + long.
+
+let DRAFTS = [];
+
+function decomposeNote(note) {
+  const text = (note || '').trim();
+  if (!text) return [];
+  const lines = text.split('\n').map(l => l.trim());
+
+  const bulletRe = /^([-*•]|\d+[\.\)])\s+(.*)$/;
+  const bulletChunks = [];
+  let currentBullet = null;
+  for (const line of lines) {
+    const m = line.match(bulletRe);
+    if (m) {
+      if (currentBullet) bulletChunks.push(currentBullet);
+      currentBullet = m[2];
+    } else if (currentBullet !== null) {
+      if (line === '') { bulletChunks.push(currentBullet); currentBullet = null; }
+      else currentBullet += ' ' + line;
+    }
+  }
+  if (currentBullet) bulletChunks.push(currentBullet);
+  if (bulletChunks.length >= 2) {
+    return bulletChunks.map(chunkToCard);
+  }
+
+  const paraChunks = text.split(/\n{2,}/).map(c => c.trim()).filter(Boolean);
+  if (paraChunks.length >= 2) return paraChunks.map(chunkToCard);
+
+  return [chunkToCard(text)];
+}
+
+function chunkToCard(chunk) {
+  const lines = chunk.split('\n').map(l => l.trim()).filter(Boolean);
+  const title = (lines[0] || '').slice(0, 100);
+  const rest = lines.slice(1).join(' ').trim();
+  return {
+    title,
+    summary: rest.slice(0, 200) || title,
+    long: rest || title,
+    version: null,
+    tags: [],
+  };
+}
+
+function openNoteDialog(data, bu) {
+  const host = document.getElementById('overlay-host');
+  if (!host) return;
+  const versions = (data.versions || []).map(v => v.key);
+  const defaultVersion = versions.find(k => (data.versions.find(v => v.key === k)?.vstate) === 'in_progress')
+    || versions.find(k => (data.versions.find(v => v.key === k)?.vstate) === 'planned')
+    || versions[versions.length - 1]
+    || 'v0.9';
+  DRAFTS = [];
+
+  host.innerHTML = `
+    <div id="rm-note-scrim" style="position:fixed;inset:0;background:rgba(16,18,28,.34);z-index:60;"></div>
+    <div id="rm-note-modal" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:min(720px,94vw);max-height:88vh;background:#fff;border-radius:16px;box-shadow:0 30px 90px rgba(16,18,28,.28);z-index:61;display:flex;flex-direction:column;overflow:hidden;">
+      <div style="padding:20px 24px 14px;border-bottom:1px solid rgba(20,22,28,.08);display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <div style="font:600 10px 'JetBrains Mono',ui-monospace,Menlo,monospace;letter-spacing:.14em;color:var(--accent);text-transform:uppercase;">Add roadmap items via note</div>
+          <div style="font-size:13.5px;color:#3a3f4a;margin-top:4px;">Type your thought — one idea per bullet, or paragraphs separated by blank lines.</div>
+        </div>
+        <button type="button" id="rm-note-close" style="background:none;border:none;font-size:26px;color:#9aa1ae;cursor:pointer;line-height:1;">×</button>
+      </div>
+
+      <div id="rm-note-step-input" style="padding:20px 24px;overflow-y:auto;flex:1;">
+        <textarea id="rm-note-textarea" placeholder="e.g.
+- MCP server so external instances get native tool access
+- Redesign the module submenus — the three-tab pattern isn't right
+- Onboarding wizard for empty installs" style="width:100%;min-height:220px;padding:14px 16px;border:1px solid rgba(20,22,28,.12);border-radius:11px;font-family:inherit;font-size:13.5px;line-height:1.55;resize:vertical;color:#16181d;"></textarea>
+        <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:14px;">
+          <button type="button" class="rm-note-cancel onboard-cancel" style="padding:8px 16px;">Cancel</button>
+          <button type="button" id="rm-note-decompose-btn" class="onboard-begin" style="padding:8px 18px;">Decompose →</button>
+        </div>
+      </div>
+
+      <div id="rm-note-step-review" style="display:none;padding:20px 24px;overflow-y:auto;flex:1;"></div>
+
+      <div id="rm-note-step-footer" style="display:none;padding:14px 24px;border-top:1px solid rgba(20,22,28,.08);display:flex;justify-content:space-between;align-items:center;">
+        <button type="button" id="rm-note-back-btn" class="onboard-cancel" style="padding:8px 16px;">← Back</button>
+        <div style="display:flex;gap:10px;">
+          <button type="button" class="rm-note-cancel onboard-cancel" style="padding:8px 16px;">Cancel</button>
+          <button type="button" id="rm-note-save-btn" class="onboard-begin" style="padding:8px 18px;">Add selected to roadmap ↗</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const close = () => { host.innerHTML = ''; };
+  document.getElementById('rm-note-scrim')?.addEventListener('click', close);
+  document.getElementById('rm-note-close')?.addEventListener('click', close);
+  document.querySelectorAll('.rm-note-cancel').forEach(b => b.addEventListener('click', close));
+
+  document.getElementById('rm-note-decompose-btn').addEventListener('click', () => {
+    const text = document.getElementById('rm-note-textarea').value;
+    DRAFTS = decomposeNote(text).map(d => ({ ...d, keep: true, version: defaultVersion }));
+    if (DRAFTS.length === 0) { alert('Nothing to decompose — type at least one line.'); return; }
+    document.getElementById('rm-note-step-input').style.display = 'none';
+    const rev = document.getElementById('rm-note-step-review');
+    rev.style.display = 'block';
+    rev.innerHTML = renderDrafts(versions);
+    document.getElementById('rm-note-step-footer').style.display = 'flex';
+    wireDraftInputs();
+  });
+
+  document.getElementById('rm-note-back-btn').addEventListener('click', () => {
+    document.getElementById('rm-note-step-input').style.display = 'block';
+    document.getElementById('rm-note-step-review').style.display = 'none';
+    document.getElementById('rm-note-step-footer').style.display = 'none';
+  });
+
+  document.getElementById('rm-note-save-btn').addEventListener('click', async () => {
+    const kept = DRAFTS.filter(d => d.keep);
+    if (kept.length === 0) { alert('Toggle at least one card to keep.'); return; }
+    const btn = document.getElementById('rm-note-save-btn');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+      const payload = { bu, items: kept.map(d => ({ title: d.title, summary: d.summary, long: d.long, version: d.version, tags: d.tags })) };
+      const res = await fetch('/api/add-roadmap-items', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) throw new Error(j.message || `HTTP ${res.status}`);
+      close();
+      await renderRoadmap();
+    } catch (e) {
+      btn.disabled = false; btn.textContent = 'Add selected to roadmap ↗';
+      alert(`Could not add items: ${e.message}`);
+    }
+  });
+}
+
+function renderDrafts(versions) {
+  return `
+    <div style="font-size:12.5px;color:#5b6270;margin-bottom:12px;">Split into <strong>${DRAFTS.length}</strong> draft card${DRAFTS.length === 1 ? '' : 's'}. Untick to drop, edit inline, then save.</div>
+    <div style="display:flex;flex-direction:column;gap:10px;">
+    ${DRAFTS.map((d, i) => `
+      <div class="rm-draft" data-idx="${i}" style="border:1px solid rgba(20,22,28,.1);border-radius:12px;padding:12px 14px;background:${d.keep ? '#fff' : '#f5f6f8'};transition:opacity .12s;opacity:${d.keep ? '1' : '.5'};">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+          <input type="checkbox" class="rm-draft-keep" data-idx="${i}" ${d.keep ? 'checked' : ''} style="width:16px;height:16px;cursor:pointer;">
+          <input type="text" class="rm-draft-title" data-idx="${i}" value="${escapeHtml(d.title)}" style="flex:1;font-size:13.5px;font-weight:700;color:#16181d;border:1px solid transparent;background:transparent;padding:4px 6px;border-radius:6px;" onfocus="this.style.background='#fff';this.style.borderColor='rgba(20,22,28,.12)';" onblur="this.style.background='transparent';this.style.borderColor='transparent';">
+          <select class="rm-draft-version" data-idx="${i}" style="font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;font-size:11.5px;padding:4px 8px;border-radius:6px;border:1px solid rgba(20,22,28,.15);background:#fff;cursor:pointer;">
+            ${versions.map(v => `<option value="${escapeHtml(v)}" ${d.version === v ? 'selected' : ''}>${escapeHtml(v)}</option>`).join('')}
+          </select>
+        </div>
+        <textarea class="rm-draft-summary" data-idx="${i}" rows="2" placeholder="Summary (shown on the card)" style="width:100%;font-size:12.5px;color:#3a3f4a;line-height:1.5;padding:6px 8px;border:1px solid rgba(20,22,28,.1);border-radius:7px;font-family:inherit;resize:vertical;background:#fff;">${escapeHtml(d.summary)}</textarea>
+      </div>
+    `).join('')}
+    </div>`;
+}
+
+function wireDraftInputs() {
+  document.querySelectorAll('.rm-draft-keep').forEach(cb => cb.addEventListener('change', e => {
+    const i = parseInt(e.target.dataset.idx, 10);
+    DRAFTS[i].keep = e.target.checked;
+    const card = e.target.closest('.rm-draft');
+    if (card) { card.style.opacity = DRAFTS[i].keep ? '1' : '.5'; card.style.background = DRAFTS[i].keep ? '#fff' : '#f5f6f8'; }
+  }));
+  document.querySelectorAll('.rm-draft-title').forEach(inp => inp.addEventListener('input', e => {
+    DRAFTS[parseInt(e.target.dataset.idx, 10)].title = e.target.value;
+  }));
+  document.querySelectorAll('.rm-draft-summary').forEach(ta => ta.addEventListener('input', e => {
+    DRAFTS[parseInt(e.target.dataset.idx, 10)].summary = e.target.value;
+  }));
+  document.querySelectorAll('.rm-draft-version').forEach(sel => sel.addEventListener('change', e => {
+    DRAFTS[parseInt(e.target.dataset.idx, 10)].version = e.target.value;
+  }));
 }
