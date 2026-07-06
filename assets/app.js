@@ -36,6 +36,7 @@ import { renderLearningOverview } from './views/learning-module.js';
 import { renderHrOverview, renderHrCatalog, renderPlanOptimizer } from './views/hr.js';
 import { renderSalesOverview } from './views/sales.js';
 import { renderMarketingOverview } from './views/marketing.js';
+import { renderAbRuns } from './views/ab-runs.js';
 import { renderAgents as renderAgentsView, openAddAgentOverlay } from './views/agents.js';
 import { renderRoster as renderRosterView } from './views/roster.js';
 import { renderAgentDetail as renderAgentDetailView } from './views/agent-detail.js';
@@ -580,6 +581,7 @@ function renderRoute(route) {
   else if (route === 'hr-plan-optimizer')  safeRender('hr-plan-optimizer',  renderPlanOptimizer);
   else if (route === 'sales-overview')     safeRender('sales-overview',     renderSalesOverview);
   else if (route === 'marketing-overview') safeRender('marketing-overview', renderMarketingOverview);
+  else if (route === 'ab-runs')            safeRender('ab-runs',            renderAbRuns);
   else if (route === 'roster') safeRender('roster', renderRoster);
   else if (route === 'agent-detail') safeRender('agent-detail', renderAgentDetail);
   else if (route === 'archetype') safeRender('archetype', renderArchetype);
