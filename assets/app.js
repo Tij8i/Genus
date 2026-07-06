@@ -37,6 +37,8 @@ import { renderHrOverview, renderHrCatalog, renderPlanOptimizer } from './views/
 import { renderSalesOverview } from './views/sales.js';
 import { renderMarketingOverview } from './views/marketing.js';
 import { renderAbRuns } from './views/ab-runs.js';
+import { renderMeetings } from './views/meetings.js';
+import { renderOnboarding } from './views/onboarding.js';
 import { renderAgents as renderAgentsView, openAddAgentOverlay } from './views/agents.js';
 import { renderRoster as renderRosterView } from './views/roster.js';
 import { renderAgentDetail as renderAgentDetailView } from './views/agent-detail.js';
@@ -582,6 +584,8 @@ function renderRoute(route) {
   else if (route === 'sales-overview')     safeRender('sales-overview',     renderSalesOverview);
   else if (route === 'marketing-overview') safeRender('marketing-overview', renderMarketingOverview);
   else if (route === 'ab-runs')            safeRender('ab-runs',            renderAbRuns);
+  else if (route === 'meetings')           safeRender('meetings',           renderMeetings);
+  else if (route === 'onboarding')         safeRender('onboarding',         renderOnboarding);
   else if (route === 'roster') safeRender('roster', renderRoster);
   else if (route === 'agent-detail') safeRender('agent-detail', renderAgentDetail);
   else if (route === 'archetype') safeRender('archetype', renderArchetype);
@@ -606,6 +610,7 @@ function renderRoute(route) {
   else if (route === 'product-workflows')   safeRender('product-workflows',   () => renderFnWorkflowsView('product'));
   else if (route === 'product-tasks')       safeRender('product-tasks',       () => renderFnTasksView('product'));
   else if (route === 'product-discipline')  safeRender('product-discipline',  () => renderFnDisciplineView('product'));
+  else if (route === 'product-settings-rules') safeRender('product-settings-rules', () => renderFnDisciplineView('product'));  // i106: new canonical route
   else if (route === 'development-overview') safeRender('development-overview', renderDevelopmentOverview);
   else if (route === 'development-workflows')safeRender('development-workflows',() => renderFnWorkflowsView('development'));
   else if (route === 'development-tasks')    safeRender('development-tasks',    () => renderFnTasksView('development'));
@@ -1045,4 +1050,18 @@ function renderWsMenu(identity) {
 
 // ============ Go ============
 
-boot().then(() => { try { mountChatDock(); } catch (e) { console.warn('chat dock mount', e); } });
+boot().then(() => {
+  try { mountChatDock(); } catch (e) { console.warn('chat dock mount', e); }
+  // i44 — Chat with Stewart tab handler (bubbles from any module page)
+  document.body.addEventListener('click', async (e) => {
+    const link = e.target.closest('[data-action-tab="steward-chat"]');
+    if (!link) return;
+    e.preventDefault();
+    try {
+      const { openStewardTab } = await import('./chat-dock.js');
+      const mod = link.dataset.mod;
+      const displayName = mod ? (mod.charAt(0).toUpperCase() + mod.slice(1)) : 'Stewart';
+      openStewardTab({ id: `${mod}-steward`, label: `${displayName} Stewart`, agent_id: `${mod}-stewart` });
+    } catch (err) { console.warn('steward chat', err); }
+  });
+});

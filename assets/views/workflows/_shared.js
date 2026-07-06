@@ -70,11 +70,17 @@ export function escapeHtml(s) {
 
 // Page header used by all function-tab pages
 export function functionHeader({ mod, modName, modColor, activeTab }) {
+  // i44 partial rollout: keep the existing artefact-typed tabs for now
+  // (Overview / Workflows / Tasks / Discipline). Add a Chat tab per module
+  // that spawns the Steward chat via the i108 dock — first piece of the
+  // "Chat with Steward" ops tab from the locked design. Full sidebar-and-ops-
+  // tabs redesign is v1.0 sweep (see i71 for the shared-component migration).
   const tabs = [
     { key: 'overview',   label: 'Overview',   hash: `#${mod}-overview` },
     { key: 'workflows',  label: 'Workflows',  hash: `#${mod}-workflows` },
     { key: 'tasks',      label: 'Tasks',      hash: `#${mod}-tasks` },
     { key: 'discipline', label: 'Discipline', hash: `#${mod}-discipline` },
+    { key: 'chat',       label: '💬 Chat with Stewart', hash: `#${mod}-chat`, isAction: true },
   ];
   return `
     <div style="display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap;margin-bottom:18px;">
@@ -90,6 +96,11 @@ export function functionHeader({ mod, modName, modColor, activeTab }) {
     <nav style="display:flex;gap:22px;border-bottom:1px solid ${C.border};margin-bottom:24px;">
       ${tabs.map(t => {
         const on = activeTab === t.key;
+        if (t.isAction) {
+          return `<a href="#" data-action-tab="steward-chat" data-mod="${mod}" style="padding:10px 0;font-size:13.5px;color:${C.ink3};font-weight:500;border-bottom:2px solid transparent;margin-bottom:-1px;text-decoration:none;margin-left:auto;">
+            ${t.label}
+          </a>`;
+        }
         return `<a href="${t.hash}" style="padding:10px 0;font-size:13.5px;color:${on ? C.ink : C.ink3};font-weight:${on ? 700 : 500};border-bottom:${on ? `2px solid ${C.accent}` : '2px solid transparent'};margin-bottom:-1px;text-decoration:none;">
           ${t.label}
         </a>`;

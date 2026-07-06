@@ -17,7 +17,9 @@ const FN_META = {
 };
 
 export async function renderFunctionDiscipline(mod) {
-  const root = document.getElementById(`route-${mod}-discipline`);
+  // i106: check both old route (route-{mod}-discipline) and new route
+  // (route-{mod}-settings-rules). Whichever is currently visible gets rendered.
+  const root = document.getElementById(`route-${mod}-settings-rules`) || document.getElementById(`route-${mod}-discipline`);
   if (!root) return;
   const bu = currentBu();
   const modMeta = FN_META[mod] || { name: mod, color: C.ink };
