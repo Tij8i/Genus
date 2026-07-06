@@ -30,6 +30,8 @@ import { renderLearning as renderLearningView } from './views/learning.js';
 import { renderLayers as renderLayersView } from './views/layers.js';
 import { renderModules as renderModulesView } from './views/modules.js';
 import { renderPeople as renderPeopleView } from './views/people.js';
+import { renderTasksCentral as renderTasksCentralView } from './views/tasks-central.js';
+import { mountChatDock } from './chat-dock.js';
 import { renderAgents as renderAgentsView, openAddAgentOverlay } from './views/agents.js';
 import { renderRoster as renderRosterView } from './views/roster.js';
 import { renderAgentDetail as renderAgentDetailView } from './views/agent-detail.js';
@@ -567,6 +569,7 @@ function renderRoute(route) {
   else if (route === 'modules') safeRender('modules', renderModules);
   else if (route === 'agents') safeRender('agents', renderAgents);
   else if (route === 'people') safeRender('people', renderPeople);
+  else if (route === 'tasks') safeRender('tasks', renderTasksCentralView);
   else if (route === 'roster') safeRender('roster', renderRoster);
   else if (route === 'agent-detail') safeRender('agent-detail', renderAgentDetail);
   else if (route === 'archetype') safeRender('archetype', renderArchetype);
@@ -1030,4 +1033,4 @@ function renderWsMenu(identity) {
 
 // ============ Go ============
 
-boot();
+boot().then(() => { try { mountChatDock(); } catch (e) { console.warn('chat dock mount', e); } });
