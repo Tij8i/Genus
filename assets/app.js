@@ -104,11 +104,25 @@ function applyNavGroupState(name, open) {
 }
 function wireNavGroups() {
   const state = loadNavGroupsState();
-  for (const k of ['finance', 'strategy', 'operations']) applyNavGroupState(k, state[k]);
-  document.querySelectorAll('.nav-group-label').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const name = btn.dataset.groupToggle;
+  // Default new groups (introduced in v0.9) to expanded so operators can see
+  // the new content items. finance/strategy/operations keep their persisted state.
+  for (const k of ['finance', 'strategy', 'operations', 'product', 'development', 'learning', 'hr', 'sales', 'marketing']) {
+    if (state[k] === undefined) state[k] = true;
+    applyNavGroupState(k, state[k]);
+  }
+  saveNavGroupsState(state);
+  // i44: labels are now anchor links to the module page. Clicking anywhere on
+  // the label (including chevron) navigates; clicking JUST the chevron toggles
+  // the group expand/collapse without navigating.
+  document.querySelectorAll('.nav-group-label').forEach(el => {
+    el.addEventListener('click', (e) => {
+      const name = el.dataset.groupToggle;
       if (!name) return;
+      // Only toggle when the click was on the chevron; leave the anchor
+      // nav to navigate normally.
+      const chevron = e.target.closest('.nav-group-chevron');
+      if (!chevron) return;
+      e.preventDefault();
       state[name] = !state[name];
       applyNavGroupState(name, state[name]);
       saveNavGroupsState(state);
