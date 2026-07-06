@@ -22,8 +22,9 @@ export async function onRequestGet({ request, env }) {
 
   try {
     const file = await getFile(env.GITHUB_PAT, pathFor(bu));
-    const data = JSON.parse(file.content);
-    const meetings = data.meetings || [];
+    const parsed = JSON.parse(file.content);
+    // meetings.json is a top-level array (shape shared with the pre-i107 view code).
+    const meetings = Array.isArray(parsed) ? parsed : (parsed?.meetings || []);
     const filtered = module ? meetings.filter(m => m.module_id === module) : meetings;
     const live = meetings.filter(m => !m.adjourned_at).length;
     return jsonResponse(200, { ok: true, bu, meetings: filtered, total: meetings.length, live });
@@ -46,15 +47,16 @@ export async function onRequestPost({ request, env }) {
   const viewer = gate;
 
   const PATH = pathFor(bu);
-  let file, data;
+  let file, meetings;
   try {
     file = await getFile(env.GITHUB_PAT, PATH);
-    data = JSON.parse(file.content);
+    const parsed = JSON.parse(file.content);
+    meetings = Array.isArray(parsed) ? parsed : (parsed?.meetings || []);
   } catch (e) {
-    if (e.status === 404) data = { $schema: 'https://genus.work/schemas/meetings-v0.json', version: 1, bu, meetings: [] };
+    if (e.status === 404) meetings = [];
     else return jsonResponse(e.status || 500, { ok: false, message: e.message || String(e) });
   }
-  data.meetings = Array.isArray(data.meetings) ? data.meetings : [];
+  const data = { meetings };  // wrapper used below; serialised as top-level array on write
   const now = todayISO();
 
   try {
@@ -113,7 +115,9 @@ export async function onRequestPost({ request, env }) {
   }
 
   try {
-    await putFile(env.GITHUB_PAT, PATH, JSON.stringify(data, null, 2) + '\n', file?.sha || null, `meetings: ${action} by ${viewer.email}`);
+    // Serialise as a top-level array so the pre-i107 dashboard boot code
+    // (which loads meetings.json as an array) keeps working.
+    await putFile(env.GITHUB_PAT, PATH, JSON.stringify(data.meetings, null, 2) + '\n', file?.sha || null, `meetings: ${action} by ${viewer.email}`);
   } catch (e) {
     return jsonResponse(e.status || 500, { ok: false, message: e.message || String(e) });
   }
