@@ -24,7 +24,7 @@ export async function renderFunctionDiscipline(mod) {
   const bu = currentBu();
   const modMeta = FN_META[mod] || { name: mod, color: C.ink };
   root.innerHTML = `<div style="max-width:1080px;margin:0 auto;padding:22px 28px 80px;">
-    ${functionHeader({ mod, modName: modMeta.name, modColor: modMeta.color, activeTab: 'discipline' })}
+    ${functionHeader({ mod, modName: modMeta.name, modColor: modMeta.color, activeTab: 'settings' })}
     <div style="padding:40px;color:#9aa1ae;text-align:center;">Loading discipline rules…</div>
   </div>`;
 
@@ -35,7 +35,7 @@ export async function renderFunctionDiscipline(mod) {
     if (!res.ok || !payload.ok) throw new Error(payload.message || `HTTP ${res.status}`);
   } catch (e) {
     root.innerHTML = `<div style="max-width:1080px;margin:0 auto;padding:22px 28px 80px;">
-      ${functionHeader({ mod, modName: modMeta.name, modColor: modMeta.color, activeTab: 'discipline' })}
+      ${functionHeader({ mod, modName: modMeta.name, modColor: modMeta.color, activeTab: 'settings' })}
       <div style="padding:24px;background:#fdebe9;border:1px solid #f6cfca;border-radius:11px;color:#c12525;">Could not load discipline: ${escapeHtml(e.message || String(e))}</div>
     </div>`;
     return;
@@ -48,13 +48,14 @@ export async function renderFunctionDiscipline(mod) {
 
   root.innerHTML = `
     <div style="max-width:1080px;margin:0 auto;padding:22px 28px 80px;">
-      ${functionHeader({ mod, modName: modMeta.name, modColor: modMeta.color, activeTab: 'discipline' })}
+      ${functionHeader({ mod, modName: modMeta.name, modColor: modMeta.color, activeTab: 'settings' })}
 
+      ${renderSettingsSubNav(mod, 'rules')}
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px;gap:20px;flex-wrap:wrap;">
         <div style="flex:1;min-width:280px;">
-          <div style="font:600 10px 'JetBrains Mono',ui-monospace,Menlo,monospace;letter-spacing:.14em;color:${modMeta.color};text-transform:uppercase;margin-bottom:6px;">${escapeHtml(modMeta.name)} · discipline</div>
+          <div style="font:600 10px 'JetBrains Mono',ui-monospace,Menlo,monospace;letter-spacing:.14em;color:${modMeta.color};text-transform:uppercase;margin-bottom:6px;">SETTINGS · RULES</div>
           <h2 style="font-size:20px;font-weight:800;margin:0 0 6px;color:#16181d;">The rules ${moduleStewart(mod)} + the operator have agreed to follow</h2>
-          <p style="font-size:13px;color:#5b6270;margin:0;line-height:1.5;">${escapeHtml(payload.description || `Discipline rules for the ${modMeta.name} module. Proposed by the Stewart, agreed by the operator. Rejected rules stay for archaeology — Stewart won't re-propose the same shape.`)}</p>
+          <p style="font-size:13px;color:#5b6270;margin:0;line-height:1.5;">${escapeHtml(payload.description || `Rules for the ${modMeta.name} module. Proposed by the Stewart, agreed by the operator. Rejected rules stay for archaeology — Stewart won't re-propose the same shape.`)}</p>
         </div>
         <button type="button" id="disc-propose-btn" style="padding:9px 16px;border:none;border-radius:10px;background:${modMeta.color};color:#fff;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 2px 8px ${modMeta.color}44;flex-shrink:0;">+ Propose a rule</button>
       </div>
@@ -74,6 +75,21 @@ export async function renderFunctionDiscipline(mod) {
     if (reason === null) return;
     decideRule(bu, mod, b.dataset.ruleId, 'reject_rule', reason);
   }));
+}
+
+function renderSettingsSubNav(mod, active) {
+  const items = [
+    { key: 'general',     label: 'General',     hash: `#${mod}-settings-general` },
+    { key: 'connections', label: 'Connections', hash: `#${mod}-settings-connections` },
+    { key: 'rules',       label: 'Rules',       hash: `#${mod}-settings-rules` },
+    { key: 'permissions', label: 'Permissions', hash: `#${mod}-settings-permissions` },
+  ];
+  return `<nav style="display:flex;gap:16px;margin-bottom:20px;padding-bottom:0;">
+    ${items.map(it => {
+      const on = it.key === active;
+      return `<a href="${it.hash}" style="padding:6px 12px;font-size:12.5px;font-weight:${on ? 700 : 500};color:${on ? '#16181d' : '#5b6270'};border-radius:8px;background:${on ? 'rgba(20,22,28,.06)' : 'transparent'};text-decoration:none;">${it.label}</a>`;
+    }).join('')}
+  </nav>`;
 }
 
 function moduleStewart(mod) {

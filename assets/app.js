@@ -56,6 +56,7 @@ import { renderFunctionOverview as renderFnOverviewView } from './views/workflow
 import { renderFunctionWorkflows as renderFnWorkflowsView } from './views/workflows/function-workflows.js';
 import { renderFunctionTasks as renderFnTasksView } from './views/workflows/function-tasks.js';
 import { renderFunctionDiscipline as renderFnDisciplineView } from './views/workflows/function-discipline.js';
+import { renderSettingsPlaceholder as renderFnSettingsPlaceholder } from './views/workflows/function-settings.js';
 import { renderWorkflowDetail as renderWorkflowDetailView } from './views/workflows/workflow-detail.js';
 import { loadWorkflowTasks, updateTaskBadges } from './views/workflows/_shared.js';
 import { renderDevelopmentOverview } from './views/development/overview.js';
@@ -381,6 +382,9 @@ async function boot() {
   // persist + filter sidebar nav before any view renders. (Session #18 Initiative #2)
   try {
     BU_REGISTRY = await fetchSubstrateJson('dashboard/public/data/bus/_registry.json', null);
+    // Expose registry to modules that need synchronous meta lookup (e.g.
+    // functionHeader in _shared.js reads purpose_line + stewart_archetype).
+    window.__genusRegistry = BU_REGISTRY;
   } catch (e) {
     console.warn('[genus] BU registry fetch failed; falling back to default', e);
   }
@@ -624,7 +628,14 @@ function renderRoute(route) {
   else if (route === 'product-workflows')   safeRender('product-workflows',   () => renderFnWorkflowsView('product'));
   else if (route === 'product-tasks')       safeRender('product-tasks',       () => renderFnTasksView('product'));
   else if (route === 'product-discipline')  safeRender('product-discipline',  () => renderFnDisciplineView('product'));
-  else if (route === 'product-settings-rules') safeRender('product-settings-rules', () => renderFnDisciplineView('product'));  // i106: new canonical route
+  else if (route.match(/^(product|finance|strategy|development|operations)-settings-rules$/)) {
+    const mod = route.split('-')[0];
+    safeRender(route, () => renderFnDisciplineView(mod));
+  }
+  else if (route.match(/^(product|finance|strategy|development|operations)-settings-(general|connections|permissions)$/)) {
+    const [mod, , sub] = route.split('-');
+    safeRender(route, () => renderFnSettingsPlaceholder(mod, sub));
+  }
   else if (route === 'development-overview') safeRender('development-overview', renderDevelopmentOverview);
   else if (route === 'development-workflows')safeRender('development-workflows',() => renderFnWorkflowsView('development'));
   else if (route === 'development-tasks')    safeRender('development-tasks',    () => renderFnTasksView('development'));
@@ -1073,9 +1084,18 @@ boot().then(() => {
     e.preventDefault();
     try {
       const { openStewardTab } = await import('./chat-dock.js');
+      const { fetchSubstrateJson } = await import('./substrate-client.js');
       const mod = link.dataset.mod;
       const displayName = mod ? (mod.charAt(0).toUpperCase() + mod.slice(1)) : 'Stewart';
-      openStewardTab({ id: `${mod}-steward`, label: `${displayName} Stewart`, agent_id: `${mod}-stewart` });
+      // Look up the real agent binding for this BU + module
+      const currentBu = new URLSearchParams(location.search).get('bu') || localStorage.getItem('genus.currentBu') || 'genus';
+      let agent_id = `${mod}-stewart`;  // fallback if binding not found
+      try {
+        const bindings = await fetchSubstrateJson('dashboard/public/data/system/agent_bindings.json', { bindings: [] });
+        const match = (bindings?.bindings || []).find(b => b.bu === currentBu && (b.module_id === mod || b.module_id === 'architect' && mod === 'product'));
+        if (match?.agent_id) agent_id = match.agent_id;
+      } catch (_) {}
+      openStewardTab({ id: `${mod}-steward-${currentBu}`, label: `${displayName} Stewart`, agent_id });
     } catch (err) { console.warn('steward chat', err); }
   });
 });

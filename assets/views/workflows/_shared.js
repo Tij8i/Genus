@@ -68,30 +68,44 @@ export function escapeHtml(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-// Page header used by all function-tab pages
-export function functionHeader({ mod, modName, modColor, activeTab }) {
-  // i44 partial rollout: keep the existing artefact-typed tabs for now
-  // (Overview / Workflows / Tasks / Discipline). Add a Chat tab per module
-  // that spawns the Steward chat via the i108 dock — first piece of the
-  // "Chat with Steward" ops tab from the locked design. Full sidebar-and-ops-
-  // tabs redesign is v1.0 sweep (see i71 for the shared-component migration).
+// Page header used by all function-tab pages.
+// i44 real fix (2026-07-06): matches the locked design.
+//   - No Overview tab (content items are in the sidebar directly now)
+//   - No standalone Discipline tab (folds into Settings → Rules per i106)
+//   - Four ops tabs: Workflows | Tasks | Settings | Chat with Steward
+//   - Header line 2: purpose · Stewart · connectors (from registry manifest)
+//   - Status pill on the right showing Stewart activity
+export function moduleMetaSync(mod) {
+  const reg = (typeof window !== 'undefined' && window.__genusRegistry) || null;
+  return (reg?.available_modules || []).find(m => m.id === mod) || null;
+}
+
+export function functionHeader({ mod, modName, modColor, activeTab, meta }) {
+  meta = meta || moduleMetaSync(mod);
   const tabs = [
-    { key: 'overview',   label: 'Overview',   hash: `#${mod}-overview` },
-    { key: 'workflows',  label: 'Workflows',  hash: `#${mod}-workflows` },
-    { key: 'tasks',      label: 'Tasks',      hash: `#${mod}-tasks` },
-    { key: 'discipline', label: 'Discipline', hash: `#${mod}-discipline` },
-    { key: 'chat',       label: '💬 Chat with Stewart', hash: `#${mod}-chat`, isAction: true },
+    { key: 'workflows', label: 'Workflows', hash: `#${mod}-workflows` },
+    { key: 'tasks',     label: 'Tasks',     hash: `#${mod}-tasks` },
+    { key: 'settings',  label: 'Settings',  hash: `#${mod}-settings-rules` },
+    { key: 'chat',      label: `💬 Chat with ${stewardLabel(mod, meta)}`, hash: `#${mod}-chat`, isAction: true },
   ];
+  const purpose = meta?.purpose_line || meta?.summary || '';
+  const connectors = (meta?.requires_connectors || []).slice(0, 3).map(c => escapeHtml(c)).join(', ');
+  const stewart = escapeHtml(stewardLabel(mod, meta));
+  const purposeLine = purpose
+    ? `<div style="font-size:13.5px;color:${C.ink2};line-height:1.45;margin-top:6px;">${escapeHtml(purpose)}${stewart ? ` · <strong style="color:${C.ink};font-weight:600;">${stewart}</strong>` : ''}${connectors ? ` · <span style="color:${C.ink3};font-family:${C.mono};font-size:12px;">${connectors}</span>` : ''}</div>`
+    : '';
+  const statusPill = `<span style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;background:rgba(14,159,110,.10);color:${C.green};border-radius:99px;font:600 10.5px ${C.mono};letter-spacing:.06em;flex-shrink:0;"><span style="width:7px;height:7px;border-radius:99px;background:${C.green};animation:pulseDot 1.6s infinite;"></span>Steward active</span>`;
   return `
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap;margin-bottom:18px;">
-      <div>
-        <div style="font:600 10.5px ${C.mono};letter-spacing:.14em;text-transform:uppercase;color:${modColor};margin-bottom:8px;">${escapeHtml(modName)} · function</div>
-        <h1 style="font-size:27px;font-weight:800;letter-spacing:-.025em;margin:0;line-height:1.04;">${escapeHtml(modName)}</h1>
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:18px;flex-wrap:wrap;margin-bottom:14px;">
+      <div style="flex:1;min-width:280px;">
+        <div style="font:600 10.5px ${C.mono};letter-spacing:.14em;text-transform:uppercase;color:${modColor};margin-bottom:8px;">${escapeHtml(modName)} · module</div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div style="width:40px;height:40px;border-radius:9px;background:${modColor};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:17px;flex-shrink:0;">${escapeHtml((modName||'?').charAt(0))}</div>
+          <h1 style="font-size:26px;font-weight:800;letter-spacing:-.025em;margin:0;line-height:1.05;">${escapeHtml(modName)}</h1>
+          ${statusPill}
+        </div>
+        ${purposeLine}
       </div>
-      <button type="button" id="add-workflow-btn" style="display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border:none;border-radius:11px;background:${C.accent};color:#fff;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 2px 8px rgba(47,107,255,.28);">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-        Add workflow
-      </button>
     </div>
     <nav style="display:flex;gap:22px;border-bottom:1px solid ${C.border};margin-bottom:24px;">
       ${tabs.map(t => {
@@ -107,6 +121,15 @@ export function functionHeader({ mod, modName, modColor, activeTab }) {
       }).join('')}
     </nav>
   `;
+}
+
+function stewardLabel(mod, meta) {
+  if (meta?.stewart_archetype) {
+    // e.g. product-stewart → "Product Stewart"
+    const parts = meta.stewart_archetype.split('-');
+    return parts.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
+  }
+  return `${mod.charAt(0).toUpperCase() + mod.slice(1)} Stewart`;
 }
 
 // Wide WorkflowRow used in Workflows tab + as rollup-preview in Overview.

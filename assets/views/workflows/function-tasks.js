@@ -14,7 +14,9 @@ export async function renderFunctionTasks(mod) {
 
   const [wfData, taskData] = await Promise.all([loadWorkflows(bu), loadWorkflowTasks(bu)]);
   const allTasks = taskData?.tasks || [];
-  const tasks = allTasks.filter(t => t.mod === mod);
+  // i65: filter by owner_module (new) with fallback to legacy mod field so
+  // existing task substrate keeps working during the migration.
+  const tasks = allTasks.filter(t => t.owner_module === mod || t.mod === mod);
   // Filter out done so the badge + groups reflect optimistic state
   const liveTasks = allTasks.filter(t => !DONE[t.id]);
   updateTaskBadges(liveTasks);
