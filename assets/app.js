@@ -37,7 +37,7 @@ import { renderHrOverview, renderHrCatalog, renderPlanOptimizer } from './views/
 import { renderSalesOverview } from './views/sales.js';
 import { renderMarketingOverview } from './views/marketing.js';
 import { renderAbRuns } from './views/ab-runs.js';
-import { renderMeetings } from './views/meetings.js';
+import { renderMeetings, renderMeetingDetail } from './views/meetings.js';
 import { renderOnboarding } from './views/onboarding.js';
 import { renderAgents as renderAgentsView, openAddAgentOverlay } from './views/agents.js';
 import { renderRoster as renderRosterView } from './views/roster.js';
@@ -603,6 +603,7 @@ function renderRoute(route) {
   else if (route === 'marketing-overview') safeRender('marketing-overview', renderMarketingOverview);
   else if (route === 'ab-runs')            safeRender('ab-runs',            renderAbRuns);
   else if (route === 'meetings')           safeRender('meetings',           renderMeetings);
+  else if (route.startsWith('meetings/'))  safeRender('meetings',           renderMeetingDetail);
   else if (route === 'onboarding')         safeRender('onboarding',         renderOnboarding);
   else if (route === 'roster') safeRender('roster', renderRoster);
   else if (route === 'agent-detail') safeRender('agent-detail', renderAgentDetail);
