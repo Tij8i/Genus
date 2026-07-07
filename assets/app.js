@@ -794,8 +794,10 @@ async function rehydrateAndRerender() {
       fetchSubstrateJson(baseRel('governance.json'), governance),
     ]);
     tasks = t; meetings = m; memos = mm; plans = mt; initiatives = i; goals = g; governance = gov;
-    // Re-render current route
-    const route = (window.location.hash || '#dashboard').replace(/^#/, '');
+    // Re-render current route. Strip #, ?query, and /path so #inputs?tab=memos
+    // → 'inputs' — otherwise renderRoute compares the raw hash to route keys,
+    // finds no match, hides every section, and blanks the page.
+    const route = (window.location.hash || '#dashboard').replace(/^#/, '').split('?')[0].split('/')[0];
     renderRoute(route);
   } catch (e) {
     console.error('[genus] rehydrate failed:', e);

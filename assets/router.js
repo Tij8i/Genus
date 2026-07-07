@@ -1,7 +1,34 @@
 // Tiny hash router. Routes are #dashboard / #planning / #kpis / #inputs /
 // #outputs / #settings. Default route used when hash is missing or invalid.
 
-const VALID_ROUTES = ['dashboard', 'planning', 'kpis', 'inputs', 'outputs', 'learning', 'layers', 'modules', 'agents', 'people', 'roster', 'agent-detail', 'archetype', 'settings', 'budget', 'costs', 'invoices', 'products', 'vision', 'roadmap', 'backlog', 'releases', 'release-detail', 'design-system', 'decisions', 'decision-detail', 'finance-overview', 'finance-workflows', 'finance-tasks', 'strategy-overview', 'strategy-workflows', 'strategy-tasks', 'product-overview', 'product-workflows', 'product-tasks', 'development-overview', 'development-workflows', 'development-tasks', 'dev-tests', 'dev-bugs', 'dev-deploys', 'dev-synthetic', 'dev-workflow-detail', 'operations-overview', 'operations-workflows', 'operations-tasks', 'workflow-detail', 'confidence-demo', 'workshop'];
+const VALID_ROUTES = [
+  // Core (venture-wide)
+  'dashboard', 'planning', 'kpis', 'inputs', 'outputs', 'learning', 'layers',
+  'modules', 'agents', 'people', 'roster', 'agent-detail', 'archetype', 'settings',
+  // i65 central task pool + i107 meetings + i47 A/B + i40 onboarding
+  'tasks', 'meetings', 'ab-runs', 'onboarding',
+  // Product module content items
+  'products', 'vision', 'roadmap', 'backlog', 'releases', 'release-detail',
+  'design-system', 'decisions', 'decision-detail', 'workshop',
+  // Finance module content items
+  'budget', 'costs', 'invoices',
+  // Module top-level routes (Workflows / Tasks / Settings sub-nav)
+  'finance-overview', 'finance-workflows', 'finance-tasks', 'finance-discipline',
+  'finance-settings-rules', 'finance-settings-general', 'finance-settings-connections', 'finance-settings-permissions',
+  'strategy-overview', 'strategy-workflows', 'strategy-tasks', 'strategy-discipline',
+  'strategy-settings-rules', 'strategy-settings-general', 'strategy-settings-connections', 'strategy-settings-permissions',
+  'product-overview', 'product-workflows', 'product-tasks', 'product-discipline',
+  'product-settings-rules', 'product-settings-general', 'product-settings-connections', 'product-settings-permissions',
+  'development-overview', 'development-workflows', 'development-tasks', 'development-discipline',
+  'development-settings-rules', 'development-settings-general', 'development-settings-connections', 'development-settings-permissions',
+  'dev-tests', 'dev-bugs', 'dev-deploys', 'dev-synthetic', 'dev-workflow-detail',
+  'operations-overview', 'operations-workflows', 'operations-tasks',
+  // v0.9 new modules (i48/i49/i50/i51/i52)
+  'learning-overview', 'hr-overview', 'hr-catalog', 'hr-plan-optimizer',
+  'sales-overview', 'marketing-overview',
+  // Misc
+  'workflow-detail', 'confidence-demo',
+];
 let currentRoute = null;
 let onChangeCb = () => {};
 
