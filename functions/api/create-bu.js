@@ -171,7 +171,7 @@ export async function onRequestPost({ request, env }) {
         bu: id,
         module_id: 'core',
         agent_id: 'genus-agent',
-        archetype: 'GenusAgent',
+        archetype: 'Genus Agent',  // Must match reconcile.mjs filter
         docs_root: 'docs/agents/genus_agent',
         paperclip_url_key: 'genus-agent',
         runtime_id: 'local-paperclip-alessio',
