@@ -8,7 +8,14 @@ import { escapeHtml, ago, icon } from '../utils.js';
 import { openOverlay, closeOverlay } from '../overlay.js';
 
 const MEETING_SERVER = 'http://localhost:8765';
-const BU = 'tuto';
+// Legacy hardcode — memos + meetings were pinned to 'tuto' from the pre-
+// multi-BU era. Now resolves from the current BU dynamically. Using a getter
+// so nothing calls this at module load (before localStorage is populated).
+function BU() {
+  return new URLSearchParams(location.search).get('bu')
+    || localStorage.getItem('genus.currentBu')
+    || 'tuto';
+}
 
 let activeSubTab = 'suggestions';  // default to the most-engaged surface
 
@@ -298,7 +305,7 @@ async function decideTask(btn, decision, onChange, tasks, ctx) {
     const resp = await fetch('/api/decide-tasks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bu: BU, decisions: [{ task_id: taskId, decision }], decided_by: 'operator' }),
+      body: JSON.stringify({ bu: BU(), decisions: [{ task_id: taskId, decision }], decided_by: 'operator' }),
     });
     const json = await resp.json().catch(() => ({}));
 
@@ -559,7 +566,7 @@ async function dismissMeetingRequest(meetingId, meetings, ctx, onChange) {
   try {
     const r = await fetch(`${MEETING_SERVER}/meeting/close`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bu: BU, meeting_id: meetingId }),
+      body: JSON.stringify({ bu: BU(), meeting_id: meetingId }),
     });
     const j = await r.json().catch(() => ({}));
     // 404 = server doesn't know this meeting (already gone, or never persisted).
@@ -617,7 +624,7 @@ async function startMeeting(payload, ctx, onChange, btn) {
   try {
     const r = await fetch(`${MEETING_SERVER}/meeting/new`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bu: BU, agent_id: 'tuto-stewart', ...payload }),
+      body: JSON.stringify({ bu: BU(), agent_id: 'tuto-stewart', ...payload }),
     });
     const j = await r.json();
     if (!r.ok || !j.ok) throw new Error(j.message || `HTTP ${r.status}`);
@@ -682,7 +689,7 @@ function openMeetingChat(meeting, ctx, onChange) {
 
 async function hydrateMeetingTranscript(meeting) {
   try {
-    const r = await fetch(`${MEETING_SERVER}/meetings?bu=${encodeURIComponent(BU)}`, { cache: 'no-store' });
+    const r = await fetch(`${MEETING_SERVER}/meetings?bu=${encodeURIComponent(BU())}`, { cache: 'no-store' });
     if (!r.ok) return;
     const j = await r.json();
     if (!j || !j.ok || !Array.isArray(j.meetings)) return;
@@ -755,7 +762,7 @@ function wireChatHandlers(meeting, ctx, onChange) {
       try {
         const r = await fetch(`${MEETING_SERVER}/meeting/close`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ bu: BU, meeting_id: meeting.id }),
+          body: JSON.stringify({ bu: BU(), meeting_id: meeting.id }),
         });
         const j = await r.json();
         if (!r.ok || !j.ok) throw new Error(j.message || `HTTP ${r.status}`);
@@ -795,7 +802,7 @@ function wireChatHandlers(meeting, ctx, onChange) {
     try {
       const r = await fetch(`${MEETING_SERVER}/meeting/turn`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bu: BU, meeting_id: meeting.id, message: text }),
+        body: JSON.stringify({ bu: BU(), meeting_id: meeting.id, message: text }),
       });
       const j = await r.json();
       document.getElementById('chat-thinking')?.remove();
@@ -999,7 +1006,7 @@ function wireMemoButtons(memos, onChange) {
       try {
         const resp = await fetch('/api/create-memo', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ bu: BU, level, target, body }),
+          body: JSON.stringify({ bu: BU(), level, target, body }),
         });
         const json = await resp.json().catch(() => ({}));
         if (!resp.ok || !json.ok) throw new Error(json.message || `HTTP ${resp.status}`);
@@ -1020,7 +1027,7 @@ function wireMemoButtons(memos, onChange) {
       try {
         const resp = await fetch('/api/dismiss-memo', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ bu: BU, memo_id: memoId }),
+          body: JSON.stringify({ bu: BU(), memo_id: memoId }),
         });
         const json = await resp.json().catch(() => ({}));
         if (!resp.ok || !json.ok) throw new Error(json.message || `HTTP ${resp.status}`);
