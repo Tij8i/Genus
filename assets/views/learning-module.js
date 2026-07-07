@@ -4,6 +4,7 @@
 
 import { escapeHtml, currentBu } from './workflows/_shared.js';
 import { moduleMetaFor, renderModuleShell, renderListSection, newButton, fetchModuleData, createModuleItem, openStewardChat } from './module-scaffold.js';
+import { showAlert, showConfirm, showPrompt } from '../dialog.js';
 
 const RESULT_COLOR = { confirmed: '#238c46', refuted: '#c12525', inconclusive: '#c78500' };
 
@@ -55,12 +56,12 @@ export async function renderLearningOverview() {
 
   document.getElementById('chat-steward-btn')?.addEventListener('click', () => openStewardChat('learning'));
   document.getElementById('mod-new-btn')?.addEventListener('click', async () => {
-    const title = prompt('Experiment title:'); if (!title) return;
-    const hypothesis = prompt('Hypothesis (one sentence):'); if (!hypothesis) return;
-    const test_type = prompt("Test type — 'commercial', 'infra', or 'agent-interaction':", 'commercial') || 'commercial';
+    const title = await showPrompt('Experiment title:'); if (!title) return;
+    const hypothesis = await showPrompt('Hypothesis (one sentence):'); if (!hypothesis) return;
+    const test_type = await showPrompt("Test type — 'commercial', 'infra', or 'agent-interaction':", 'commercial') || 'commercial';
     try {
       await createModuleItem({ bu, module: 'learning', file: 'experiments.json', item: { title, hypothesis, test_type, status: 'in_progress', started_at: new Date().toISOString(), owner_agent_id: 'strategy-stewart', result: null, measured_delta: null, learnings: [] } });
       await renderLearningOverview();
-    } catch (e) { alert(`Could not create experiment: ${e.message}`); }
+    } catch (e) { await showAlert(`Could not create experiment: ${e.message}`); }
   });
 }

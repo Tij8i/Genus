@@ -5,6 +5,7 @@
 import { escapeHtml } from '../utils.js';
 import { openOverlay, closeOverlay } from '../overlay.js';
 import { fetchSubstrateJson } from '../substrate-client.js';
+import { showAlert, showConfirm, showPrompt } from '../dialog.js';
 
 const ROLE_TINTS = { owner: '#16181d', admin: '#2f6bff', member: '#0e9f6e', observer: '#9aa1ae' };
 const ROLE_LABELS = { owner: 'Owner', admin: 'Admin', member: 'Member', observer: 'Observer' };
@@ -135,16 +136,16 @@ function editPersonFlow(email, users, allBus) {
 }
 
 async function removePersonFlow(email) {
-  if (!confirm(`Remove ${email}? They will lose dashboard access immediately on reload.`)) return;
+  if (!await showConfirm(`Remove ${email}? They will lose dashboard access immediately on reload.`)) return;
   try {
     const res = await fetch('/api/people-edit', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'remove', email }),
     });
     const result = await res.json();
-    if (!res.ok || !result.ok) { alert('Remove failed: ' + (result.message || `HTTP ${res.status}`)); return; }
+    if (!res.ok || !result.ok) { await showAlert('Remove failed: ' + (result.message || `HTTP ${res.status}`)); return; }
     renderPeople({ viewer: {} });
-  } catch (e) { alert('Network error: ' + (e.message || e)); }
+  } catch (e) { await showAlert('Network error: ' + (e.message || e)); }
 }
 
 function personForm(u, allBus, isEdit, addToBu) {

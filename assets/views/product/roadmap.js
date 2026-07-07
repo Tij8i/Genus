@@ -2,6 +2,7 @@
 // Click a roadmap-item card → right-side detail drawer.
 
 import { currentBu, loadProductFile, pageHeader, emptyPanel, ownerAvatar, escapeHtml, STATUS, VSTATE, VSTATE_SOFT, TAG } from './_shared.js';
+import { showAlert, showConfirm, showPrompt } from '../../dialog.js';
 
 let VIEW = 'A';            // 'A' = kanban, 'B' = timeline
 let ACTIVE_VERSION = null; // version key to filter columns
@@ -384,10 +385,10 @@ function openNoteDialog(data, bu) {
   document.getElementById('rm-note-close')?.addEventListener('click', close);
   document.querySelectorAll('.rm-note-cancel').forEach(b => b.addEventListener('click', close));
 
-  document.getElementById('rm-note-decompose-btn').addEventListener('click', () => {
+  document.getElementById('rm-note-decompose-btn').addEventListener('click', async () => {
     const text = document.getElementById('rm-note-textarea').value;
     DRAFTS = decomposeNote(text).map(d => ({ ...d, keep: true, version: defaultVersion }));
-    if (DRAFTS.length === 0) { alert('Nothing to decompose — type at least one line.'); return; }
+    if (DRAFTS.length === 0) { await showAlert('Nothing to decompose — type at least one line.'); return; }
     document.getElementById('rm-note-step-input').style.display = 'none';
     const rev = document.getElementById('rm-note-step-review');
     rev.style.display = 'block';
@@ -404,7 +405,7 @@ function openNoteDialog(data, bu) {
 
   document.getElementById('rm-note-save-btn').addEventListener('click', async () => {
     const kept = DRAFTS.filter(d => d.keep);
-    if (kept.length === 0) { alert('Toggle at least one card to keep.'); return; }
+    if (kept.length === 0) { await showAlert('Toggle at least one card to keep.'); return; }
     const btn = document.getElementById('rm-note-save-btn');
     btn.disabled = true; btn.textContent = 'Saving…';
     try {
@@ -420,7 +421,7 @@ function openNoteDialog(data, bu) {
       await renderRoadmap();
     } catch (e) {
       btn.disabled = false; btn.textContent = 'Add selected to roadmap ↗';
-      alert(`Could not add items: ${e.message}`);
+      await showAlert(`Could not add items: ${e.message}`);
     }
   });
 }

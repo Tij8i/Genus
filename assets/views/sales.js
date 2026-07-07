@@ -3,6 +3,7 @@
 
 import { escapeHtml, currentBu } from './workflows/_shared.js';
 import { moduleMetaFor, renderModuleShell, renderListSection, newButton, fetchModuleData, createModuleItem, openStewardChat } from './module-scaffold.js';
+import { showAlert, showConfirm, showPrompt } from '../dialog.js';
 
 const STAGE_COLOR = { Lead: '#5b6270', Qualified: '#3468d6', Proposal: '#c78500', Won: '#238c46', Lost: '#9aa1ae' };
 
@@ -55,17 +56,17 @@ export async function renderSalesOverview() {
 
   document.getElementById('chat-steward-btn')?.addEventListener('click', () => openStewardChat('sales'));
   document.getElementById('mod-new-btn')?.addEventListener('click', async () => {
-    const company = prompt('Company / contact:'); if (!company) return;
-    const stage = prompt("Stage — 'Lead', 'Qualified', 'Proposal':", 'Lead') || 'Lead';
-    const valueStr = prompt('Value (number, no currency symbol):') || '0';
+    const company = await showPrompt('Company / contact:'); if (!company) return;
+    const stage = await showPrompt("Stage — 'Lead', 'Qualified', 'Proposal':", 'Lead') || 'Lead';
+    const valueStr = await showPrompt('Value (number, no currency symbol):') || '0';
     const value = parseFloat(valueStr) || 0;
     try {
       await createModuleItem({ bu, module: 'sales', file: 'deals.json', item: { company, stage, value, currency: 'EUR', opened_at: new Date().toISOString(), next_step: '', notes: '' } });
       await renderSalesOverview();
-    } catch (e) { alert(`Could not create deal: ${e.message}`); }
+    } catch (e) { await showAlert(`Could not create deal: ${e.message}`); }
   });
-  document.getElementById('import-btn')?.addEventListener('click', () => {
-    const paste = prompt('Paste unstructured pipeline data. Sales Stewart will decompose on its next run.\n\n(v0.9 dev: files a task on Sales Stewart with the raw paste.)');
-    if (paste) alert('Import queued. Sales Stewart will process on its next heartbeat.');
+  document.getElementById('import-btn')?.addEventListener('click', async () => {
+    const paste = await showPrompt('Paste unstructured pipeline data. Sales Stewart will decompose on its next run.\n\n(v0.9 dev: files a task on Sales Stewart with the raw paste.)');
+    if (paste) await showAlert('Import queued. Sales Stewart will process on its next heartbeat.');
   });
 }

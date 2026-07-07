@@ -6,6 +6,7 @@
 
 import { escapeHtml, ago, icon } from '../utils.js';
 import { openOverlay, closeOverlay } from '../overlay.js';
+import { showAlert, showConfirm, showPrompt } from '../dialog.js';
 
 const MEETING_SERVER = 'http://localhost:8765';
 // Legacy hardcode — memos + meetings were pinned to 'tuto' from the pre-
@@ -520,7 +521,7 @@ function wireMeetingButtons(meetings, ctx, onChange) {
   const newBtn = document.getElementById('new-meeting-btn');
   if (newBtn) {
     newBtn.addEventListener('click', () => {
-      // In-app modal (was two chained window.prompt()s — replaced 2026-07-07
+      // In-app modal (was two chained await showPrompt()s — replaced 2026-07-07
       // per operator direction to use proper in-app UI). Per MEETING_PROTOCOL.md
       // every meeting still needs a one-sentence expected-output; asked in the
       // same modal.
@@ -626,14 +627,14 @@ function wireMeetingButtons(meetings, ctx, onChange) {
           const j = await res.json().catch(() => ({}));
           if (!res.ok || !j.ok) {
             btn.disabled = false; btn.textContent = 'Schedule →';
-            alert(`Could not schedule (HTTP ${res.status}): ${j.message || 'unknown error'}`);
+            await showAlert(`Could not schedule (HTTP ${res.status}): ${j.message || 'unknown error'}`);
             return;
           }
           close();
           onChange?.();
         } catch (e) {
           btn.disabled = false; btn.textContent = 'Schedule →';
-          alert(`Could not schedule: ${e.message}`);
+          await showAlert(`Could not schedule: ${e.message}`);
         }
       });
     });
@@ -781,7 +782,7 @@ async function startMeeting(payload, ctx, onChange, btn) {
     if (typeof onChange === 'function') setTimeout(onChange, 0);
     openMeetingChat(j.meeting, ctx, onChange);
   } catch (e) {
-    alert(`Could not start meeting: ${e.message}. The local meeting server might not be running.`);
+    await showAlert(`Could not start meeting: ${e.message}. The local meeting server might not be running.`);
   } finally {
     if (reqId) inFlightMeetingStarts.delete(reqId);
     if (btn) {
@@ -903,7 +904,7 @@ function wireChatHandlers(meeting, ctx, onChange) {
 
   if (closeBtn) {
     closeBtn.addEventListener('click', async () => {
-      if (!window.confirm('Close this meeting?')) return;
+      if (!await showConfirm('Close this meeting?')) return;
       closeBtn.disabled = true;
       closeBtn.textContent = 'closing…';
       try {
@@ -920,7 +921,7 @@ function wireChatHandlers(meeting, ctx, onChange) {
       } catch (e) {
         closeBtn.disabled = false;
         closeBtn.textContent = 'Close meeting';
-        alert(`Close failed: ${e.message}`);
+        await showAlert(`Close failed: ${e.message}`);
       }
     });
   }
@@ -1181,7 +1182,7 @@ function wireMemoButtons(memos, onChange) {
         onChange();
       } catch (e) {
         btn.disabled = false; btn.textContent = 'Dismiss';
-        alert(`Could not dismiss: ${e.message}`);
+        await showAlert(`Could not dismiss: ${e.message}`);
       }
     });
   });

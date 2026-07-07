@@ -17,6 +17,7 @@
 //   - Measurement count + capture method ("3 measurements · stewart_heartbeat")
 
 import { escapeHtml, ago } from '../utils.js';
+import { showAlert, showConfirm, showPrompt } from '../dialog.js';
 
 let activeAreaFilter = 'all';
 let scopeDropdownOpen = false;
@@ -469,11 +470,11 @@ function wireLogButtons(hooks) {
       const kpiName = btn.dataset.kpiName;
       const unit = btn.dataset.kpiUnit || '';
       const promptLabel = unit ? `${kpiName} (${unit})` : kpiName;
-      const raw = window.prompt(`Log new value for "${promptLabel}":`);
+      const raw = await showPrompt(`Log new value for "${promptLabel}":`);
       if (raw == null) return;
       const value = raw.trim();
       if (!value) return;
-      const notes = window.prompt('Notes (optional):') || null;
+      const notes = await showPrompt('Notes (optional):') || null;
       btn.disabled = true;
       const originalText = btn.textContent;
       btn.textContent = '…';
@@ -494,7 +495,7 @@ function wireLogButtons(hooks) {
       } catch (e) {
         btn.disabled = false;
         btn.textContent = originalText;
-        alert(`Failed: ${e.message}`);
+        await showAlert(`Failed: ${e.message}`);
         console.error('[genus] log-kpi-measurement failed:', e);
       }
     });

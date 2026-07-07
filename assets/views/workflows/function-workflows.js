@@ -1,6 +1,7 @@
 // Function · Workflows tab — wide WorkflowRow list with a column header.
 
 import { C, MODULES, escapeHtml, currentBu, loadWorkflows, loadWorkflowTasks, functionHeader, workflowRow, updateTaskBadges } from './_shared.js';
+import { showAlert, showConfirm, showPrompt } from '../../dialog.js';
 
 export async function renderFunctionWorkflows(mod) {
   const root = document.getElementById(`route-${mod}-workflows`);
@@ -32,6 +33,6 @@ export async function renderFunctionWorkflows(mod) {
           </div>`}
     </div>
   `;
-  document.getElementById('add-workflow-btn')?.addEventListener('click', () => alert('+ Add workflow — overlay ships in the follow-up slice.'));
-  document.getElementById('empty-add-btn')?.addEventListener('click', () => alert('+ Add workflow — overlay ships in the follow-up slice.'));
+  document.getElementById('add-workflow-btn')?.addEventListener('click', async () => await showAlert('+ Add workflow — overlay ships in the follow-up slice.'));
+  document.getElementById('empty-add-btn')?.addEventListener('click', async () => await showAlert('+ Add workflow — overlay ships in the follow-up slice.'));
 }

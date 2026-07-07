@@ -5,6 +5,7 @@
 
 import { C, DEV, devHeader, escapeHtml, currentBu, loadDevSubstrate } from './_shared.js';
 import { loadWorkflows, loadWorkflowTasks, workflowRow, dueStyle, updateTaskBadges } from '../workflows/_shared.js';
+import { showAlert, showConfirm, showPrompt } from '../../dialog.js';
 
 // Persisted UI state for the matrix card so a hash navigation away + back
 // preserves the All/Live/In dev tab + per-row expanded state.
@@ -96,8 +97,8 @@ export async function renderDevelopmentOverview() {
   `;
 
   wireMatrixHandlers(matrix);
-  document.getElementById('add-workflow-btn')?.addEventListener('click', () => {
-    alert('+ Add workflow — overlay ships in the follow-up slice.');
+  document.getElementById('add-workflow-btn')?.addEventListener('click', async () => {
+    await showAlert('+ Add workflow — overlay ships in the follow-up slice.');
   });
 }
 

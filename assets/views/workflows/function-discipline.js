@@ -8,6 +8,7 @@
 // bus/<bu>/<mod>/discipline.json. API: /api/discipline.
 
 import { C, MODULES, escapeHtml, currentBu, functionHeader } from './_shared.js';
+import { showAlert, showConfirm, showPrompt } from '../../dialog.js';
 
 const FN_META = {
   finance:    MODULES.finance,
@@ -70,8 +71,8 @@ export async function renderFunctionDiscipline(mod) {
 
   document.getElementById('disc-propose-btn')?.addEventListener('click', () => openProposeDialog(bu, mod));
   document.querySelectorAll('.disc-agree').forEach(b => b.addEventListener('click', () => decideRule(bu, mod, b.dataset.ruleId, 'agree_rule', null)));
-  document.querySelectorAll('.disc-reject').forEach(b => b.addEventListener('click', () => {
-    const reason = prompt('Why reject this rule? Stewart will remember and not re-propose the same shape.');
+  document.querySelectorAll('.disc-reject').forEach(b => b.addEventListener('click', async () => {
+    const reason = await showPrompt('Why reject this rule? Stewart will remember and not re-propose the same shape.');
     if (reason === null) return;
     decideRule(bu, mod, b.dataset.ruleId, 'reject_rule', reason);
   }));
@@ -185,8 +186,8 @@ function openProposeDialog(bu, mod) {
   document.getElementById('disc-submit').addEventListener('click', async () => {
     const title = document.getElementById('disc-title').value.trim();
     const body = document.getElementById('disc-body').value.trim();
-    if (!title) { alert('Title required'); return; }
-    if (!body) { alert('Rule body required'); return; }
+    if (!title) { await showAlert('Title required'); return; }
+    if (!body) { await showAlert('Rule body required'); return; }
     const btn = document.getElementById('disc-submit');
     btn.disabled = true; btn.textContent = 'Proposing…';
     try {
@@ -201,7 +202,7 @@ function openProposeDialog(bu, mod) {
       await renderFunctionDiscipline(mod);
     } catch (e) {
       btn.disabled = false; btn.textContent = 'Propose ↗';
-      alert(`Could not propose: ${e.message}`);
+      await showAlert(`Could not propose: ${e.message}`);
     }
   });
 }
@@ -217,6 +218,6 @@ async function decideRule(bu, mod, rule_id, action, reason) {
     if (!res.ok || !j.ok) throw new Error(j.message || `HTTP ${res.status}`);
     await renderFunctionDiscipline(mod);
   } catch (e) {
-    alert(`Could not ${action.replace('_', ' ')}: ${e.message}`);
+    await showAlert(`Could not ${action.replace('_', ' ')}: ${e.message}`);
   }
 }

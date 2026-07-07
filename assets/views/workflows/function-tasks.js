@@ -3,6 +3,7 @@
 // swap, and updates the sidebar badge live.
 
 import { C, MODULES, escapeHtml, currentBu, loadWorkflows, loadWorkflowTasks, functionHeader, dueStyle, updateTaskBadges } from './_shared.js';
+import { showAlert, showConfirm, showPrompt } from '../../dialog.js';
 
 const DONE = {}; // taskId → bool (in-memory; clears on reload, per design "local/optimistic")
 
@@ -101,5 +102,5 @@ function wireTaskHandlers(mod) {
       renderFunctionTasks(mod);
     });
   });
-  document.getElementById('add-workflow-btn')?.addEventListener('click', () => alert('+ Add workflow — overlay ships in the follow-up slice.'));
+  document.getElementById('add-workflow-btn')?.addEventListener('click', async () => await showAlert('+ Add workflow — overlay ships in the follow-up slice.'));
 }

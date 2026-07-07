@@ -3,6 +3,7 @@
 // + blue Refresh now button.
 
 import { C, DEV, escapeHtml, loadDevSubstrate } from './_shared.js';
+import { showAlert, showConfirm, showPrompt } from '../../dialog.js';
 
 export async function renderDevSynthetic() {
   const root = document.getElementById('route-dev-synthetic');
@@ -34,9 +35,9 @@ export async function renderDevSynthetic() {
   `;
 
   document.querySelectorAll('[data-refresh-bu]').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const buName = btn.dataset.refreshBu;
-      alert(`Refresh now — Synthetic Data Mason would regenerate fixtures for ${buName}. (Stub — wires up in the next slice.)`);
+      await showAlert(`Refresh now — Synthetic Data Mason would regenerate fixtures for ${buName}. (Stub — wires up in the next slice.)`);
     });
   });
 }

@@ -7,6 +7,7 @@
 // chat is v1.0 (ties in with i108 dock + meeting-server chat).
 
 import { escapeHtml, currentBu } from './workflows/_shared.js';
+import { showAlert, showConfirm, showPrompt } from '../dialog.js';
 
 const TOPICS = [
   { id: 1, key: 'setup',        label: 'Set up',                       prompt: 'What are you building? A one-line thesis is enough — I\'ll follow up.' },
@@ -137,7 +138,7 @@ export async function renderOnboarding() {
   });
 
   document.getElementById('onb-close')?.addEventListener('click', async () => {
-    if (!confirm('Close onboarding and land on the dashboard?')) return;
+    if (!await showConfirm('Close onboarding and land on the dashboard?')) return;
     await fetch('/api/onboarding', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bu, action: 'close' }) });
     location.hash = '#dashboard';
   });

@@ -4,6 +4,7 @@
 // to multiple.
 
 import { currentBu, loadProductFile, pageHeader, emptyPanel, escapeHtml, VSTATE } from './_shared.js';
+import { showAlert, showConfirm, showPrompt } from '../../dialog.js';
 
 const OWNERS = {
   alessio: { name: 'Alessio Tixi', av: 'A',  grad: 'linear-gradient(135deg,#2f6bff,#7a4dff)' },
@@ -45,7 +46,7 @@ export async function renderProducts() {
         </div>`}
     </div>
   `;
-  document.getElementById('add-product-btn')?.addEventListener('click', () => alert('+ New product — sets up a new product space (Vision / Roadmap / Releases) under this BU. Ships in a follow-up.'));
+  document.getElementById('add-product-btn')?.addEventListener('click', async () => await showAlert('+ New product — sets up a new product space (Vision / Roadmap / Releases) under this BU. Ships in a follow-up.'));
 }
 
 function renderProductCard(p) {

@@ -10,6 +10,7 @@ import { escapeHtml } from '../utils.js';
 import { fetchSubstrateJson } from '../substrate-client.js';
 import { getPathSegment } from '../router.js';
 import { openEditAgentOverlay } from './agents.js';
+import { showAlert, showConfirm, showPrompt } from '../dialog.js';
 
 const GH_BASE = 'https://github.com/Tij8i/Orchestrator/blob/main/';
 
@@ -183,10 +184,10 @@ export async function renderAgentDetail(ctx) {
       openEditAgentOverlay({ bu: currentBu, binding, runtimes, users, areas, ctx });
     });
 
-    document.getElementById('pause-btn')?.addEventListener('click', () => {
+    document.getElementById('pause-btn')?.addEventListener('click', async () => {
       // Pause/resume requires Paperclip runtime control — surface intent
       // until the API integration ships.
-      alert(`${binding.status === 'paused' ? 'Resume' : 'Pause'} would wire through the Paperclip runtime API. Not connected yet.`);
+      await showAlert(`${binding.status === 'paused' ? 'Resume' : 'Pause'} would wire through the Paperclip runtime API. Not connected yet.`);
     });
 
     // Hydrate live counters (last run · 7d done/cancelled/success rate) from
@@ -211,7 +212,7 @@ export async function renderAgentDetail(ctx) {
         });
         const json = await res.json();
         if (!res.ok || !json.ok) {
-          alert(`Turning on cron failed: ${json?.message || `HTTP ${res.status}`}\n\nIs the trigger daemon running? See scripts/paperclip_sync/install_daemon.sh in Orchestrator.`);
+          await showAlert(`Turning on cron failed: ${json?.message || `HTTP ${res.status}`}\n\nIs the trigger daemon running? See scripts/paperclip_sync/install_daemon.sh in Orchestrator.`);
           btn.disabled = false;
           btn.innerHTML = origLabel;
           return;
@@ -227,7 +228,7 @@ export async function renderAgentDetail(ctx) {
         btn.style.color = 'var(--green-fg)';
         btn.style.borderColor = 'var(--green-border)';
       } catch (err) {
-        alert(`Turning on cron failed: ${err.message || err}\n\nIs the trigger daemon running on http://127.0.0.1:3101 ?`);
+        await showAlert(`Turning on cron failed: ${err.message || err}\n\nIs the trigger daemon running on http://127.0.0.1:3101 ?`);
         btn.disabled = false;
         btn.innerHTML = origLabel;
       }
@@ -239,7 +240,7 @@ export async function renderAgentDetail(ctx) {
     document.querySelectorAll('[data-ext-revoke]').forEach(btn => {
       btn.addEventListener('click', async () => {
         const id = btn.dataset.extRevoke;
-        if (!window.confirm(`Revoke access for ${external.display_name}? Their token stops working immediately.`)) return;
+        if (!await showConfirm(`Revoke access for ${external.display_name}? Their token stops working immediately.`)) return;
         btn.disabled = true;
         try {
           const r = await fetch('/api/external-access-edit', {
@@ -250,7 +251,7 @@ export async function renderAgentDetail(ctx) {
           if (!r.ok || !j.ok) throw new Error(j.message || `HTTP ${r.status}`);
           location.hash = '#roster?tab=external';
         } catch (e) {
-          alert(`Revoke failed: ${e.message}`);
+          await showAlert(`Revoke failed: ${e.message}`);
           btn.disabled = false;
         }
       });

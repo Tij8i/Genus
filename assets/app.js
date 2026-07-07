@@ -393,7 +393,7 @@ async function boot() {
   applyBuNavFilter(BU, BU_REGISTRY);
   // Fire-and-forget: populate sidebar Tasks badges from substrate so they
   // surface before the user navigates into a workflow page.
-  loadWorkflowTasks(BU).then(d => updateTaskBadges(d?.tasks || [])).catch(() => {});
+  loadWorkflowTasks(BU).then(d => updateTaskBadges(d?.tasks || [])).catch(async () => {});
 
   // Expose the leaf renderers globally so the Function Overview view can
   // dispatch into them with the right ctx (identity / viewer / substrate

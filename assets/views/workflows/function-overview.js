@@ -15,6 +15,7 @@
 // Clicking a tile navigates to the legacy route which still works standalone.
 
 import { C, MODULES, escapeHtml, currentBu, loadWorkflows, loadWorkflowTasks, functionHeader, workflowRow, dueStyle, adherenceColor, updateTaskBadges } from './_shared.js';
+import { showAlert, showConfirm, showPrompt } from '../../dialog.js';
 
 const FN_META = {
   finance:    MODULES.finance,
@@ -106,8 +107,8 @@ export async function renderFunctionOverview(mod) {
         </div>` : ''}
     </div>
   `;
-  document.getElementById('add-workflow-btn')?.addEventListener('click', () => {
-    alert('+ Add workflow — overlay ships in the follow-up slice.');
+  document.getElementById('add-workflow-btn')?.addEventListener('click', async () => {
+    await showAlert('+ Add workflow — overlay ships in the follow-up slice.');
   });
 }
 

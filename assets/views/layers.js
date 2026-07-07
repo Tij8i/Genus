@@ -20,6 +20,7 @@ import { openOverlay, closeOverlay } from '../overlay.js';
 import { startMeeting } from '../meeting.js';
 import { openAddAgentOverlay } from './agents.js';
 import { fetchSubstrateJson } from '../substrate-client.js';
+import { showAlert, showConfirm, showPrompt } from '../dialog.js';
 
 const TOOL_TOKENS = {
   notion:        { bg: '#16181d', fg: '#fff',    initial: 'N', label: 'Notion' },
@@ -392,8 +393,8 @@ function wirePopulated(coverage, bu, ctx) {
     btn.addEventListener('click', () => decideProposal(bu, btn.dataset.propId, 'accept_proposal', null, ctx));
   });
   document.querySelectorAll('.prop-reject').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const reason = prompt('Why reject this proposal? The Agent will remember and won\'t re-propose the same shape.');
+    btn.addEventListener('click', async () => {
+      const reason = await showPrompt('Why reject this proposal? The Agent will remember and won\'t re-propose the same shape.');
       if (reason === null) return; // cancelled
       decideProposal(bu, btn.dataset.propId, 'reject_proposal', reason, ctx);
     });
@@ -435,7 +436,7 @@ function wirePopulated(coverage, bu, ctx) {
 
   // Edit-mode: inline rename
   document.querySelectorAll('.area-name-editable').forEach(el => {
-    el.addEventListener('click', (e) => {
+    el.addEventListener('click', async (e) => {
       e.stopPropagation();
       const area_id = el.dataset.areaId;
       const current = el.textContent;
@@ -460,7 +461,7 @@ function wirePopulated(coverage, bu, ctx) {
           const j = await r.json();
           if (!r.ok || !j.ok) throw new Error(j.message || `HTTP ${r.status}`);
         } catch (err) {
-          alert(`Rename failed: ${err.message}`);
+          await showAlert(`Rename failed: ${err.message}`);
         }
         renderLayers(ctx);
       };
@@ -479,7 +480,7 @@ function wirePopulated(coverage, bu, ctx) {
       const area_id = btn.dataset.areaId;
       const area = coverage.areas.find(a => a.id === area_id);
       if (!area) return;
-      if (!window.confirm(`Delete the area "${area.display_name}"? This will remove it from this BU's business model.`)) return;
+      if (!await showConfirm(`Delete the area "${area.display_name}"? This will remove it from this BU's business model.`)) return;
       btn.disabled = true;
       btn.textContent = '…';
       try {
@@ -491,7 +492,7 @@ function wirePopulated(coverage, bu, ctx) {
         if (!r.ok || !j.ok) throw new Error(j.message || `HTTP ${r.status}`);
         renderLayers(ctx);
       } catch (err) {
-        alert(`Could not delete: ${err.message}`);
+        await showAlert(`Could not delete: ${err.message}`);
         btn.disabled = false;
         btn.textContent = '×';
       }
@@ -735,7 +736,7 @@ function openDetail(coverage, areaId, bu, ctx) {
       e.stopPropagation();
       const area_id = btn.dataset.areaId;
       const tool_name = btn.dataset.toolName;
-      if (!window.confirm(`Remove ${tool_name} from this area?`)) return;
+      if (!await showConfirm(`Remove ${tool_name} from this area?`)) return;
       btn.disabled = true;
       try {
         const r = await fetch('/api/business-areas-edit', {
@@ -747,7 +748,7 @@ function openDetail(coverage, areaId, bu, ctx) {
         closeDetail();
         renderLayers(ctx);
       } catch (err) {
-        alert(`Remove failed: ${err.message}`);
+        await showAlert(`Remove failed: ${err.message}`);
         btn.disabled = false;
       }
     });
@@ -756,13 +757,13 @@ function openDetail(coverage, areaId, bu, ctx) {
   // Resolver
   const resolveBtn = document.getElementById('resolver-submit');
   if (resolveBtn) {
-    resolveBtn.addEventListener('click', () => {
+    resolveBtn.addEventListener('click', async () => {
       const picked = document.querySelector('input[name="resolver-lead"]:checked')?.value;
       if (!picked) return;
       // For v1 — placeholder: surface message, real implementation rewires
       // agent_bindings.json via a new endpoint that sets lead:true on picked
       // + drops the other agent's covers_areas claim for this area.
-      alert(`Resolver: ${picked} would be set as lead for "${area.display_name}". Wiring to /api/agent-binding-edit ships in the follow-up that adds covers_areas + lead fields to bindings.`);
+      await showAlert(`Resolver: ${picked} would be set as lead for "${area.display_name}". Wiring to /api/agent-binding-edit ships in the follow-up that adds covers_areas + lead fields to bindings.`);
       closeDetail();
     });
   }
@@ -915,7 +916,7 @@ async function openAddAgentFromLayers(bu, area_id, ctx) {
       ctx,
     });
   } catch (e) {
-    alert(`Could not open Add agent: ${e.message}`);
+    await showAlert(`Could not open Add agent: ${e.message}`);
   }
 }
 
@@ -956,7 +957,7 @@ async function decideProposal(bu, proposal_id, action, reason, ctx) {
     await renderLayers(ctx);
   } catch (e) {
     if (card) card.style.opacity = '1';
-    alert(`Could not ${action.replace('_', ' ')}: ${e.message}`);
+    await showAlert(`Could not ${action.replace('_', ' ')}: ${e.message}`);
   }
 }
 

@@ -9,11 +9,12 @@
 //     bu, moduleMeta, // from registry
 //     endpoint: '/api/learning?bu=<bu>' | function
 //     primaryList: { title, items: [{id, title, sub, chip?}], emptyCopy },
-//     onCreate: async () => { title = prompt(...) ... POST create ... }
+//     onCreate: async () => { title = await showPrompt(...) ... POST create ... }
 //   })
 
 import { escapeHtml, currentBu } from './workflows/_shared.js';
 import { renderStatTiles } from '../components/stat-tiles.js';
+import { showAlert, showConfirm, showPrompt } from '../dialog.js';
 
 export async function loadRegistry() {
   try {

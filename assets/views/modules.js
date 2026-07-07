@@ -7,6 +7,7 @@
 import { escapeHtml } from '../utils.js';
 import { fetchSubstrateJson } from '../substrate-client.js';
 import { openOverlay, closeOverlay } from '../overlay.js';
+import { showAlert, showConfirm, showPrompt } from '../dialog.js';
 
 const REGISTRY_PATH = 'dashboard/public/data/bus/_registry.json';
 
@@ -166,9 +167,9 @@ function renderModuleCard(m, isInstalled, binding, adminState, installedCount = 
   `;
 }
 
-function openBindingEdit(modId, bu, adminState) {
+async function openBindingEdit(modId, bu, adminState) {
   const binding = bindingFor(adminState, bu, modId);
-  if (!binding) { alert('No binding found for this module on this BU.'); return; }
+  if (!binding) { await showAlert('No binding found for this module on this BU.'); return; }
   const runtimes = adminState.runtimes || [];
   const users = adminState.users || [];
   const bodyHtml = `
@@ -264,7 +265,7 @@ async function installModuleFlow(modId, bu, install) {
       bu, module_id: modId, action: install ? 'install' : 'uninstall',
     });
     if (!res.ok) {
-      alert((install ? 'Install' : 'Uninstall') + ' failed: ' + (res.message || 'unknown'));
+      await showAlert((install ? 'Install' : 'Uninstall') + ' failed: ' + (res.message || 'unknown'));
       return;
     }
     // Fire-and-forget the second-phase init (substrate seed + binding). Don't
@@ -287,14 +288,14 @@ async function installModuleFlow(modId, bu, install) {
         // reports the orphan even if the trigger isn't running.
         return kickReconcileNow(agentId || bu, { mode: 'archive-orphans' });
       })
-      .catch(() => { /* best-effort */ });
+      .catch(async () => { /* best-effort */ });
     if (install) {
       openGenusAgentOnboarding(modId, bu);
     } else {
       location.reload();
     }
   } catch (e) {
-    alert((install ? 'Install' : 'Uninstall') + ' failed: ' + (e.message || e));
+    await showAlert((install ? 'Install' : 'Uninstall') + ' failed: ' + (e.message || e));
   }
 }
 

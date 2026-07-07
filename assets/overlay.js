@@ -3,6 +3,7 @@
 // X button, or Esc key. One overlay at a time (replaces existing).
 
 import { escapeHtml } from './utils.js';
+import { showAlert, showConfirm, showPrompt } from './dialog.js';
 
 let activeCloseHandler = null;
 
@@ -118,8 +119,8 @@ export function openOnboarding(flowKey) {
     footerHtml,
   });
   document.getElementById('onboard-cancel').addEventListener('click', closeOverlay);
-  document.getElementById('onboard-begin').addEventListener('click', () => {
-    alert(`«${f.title}» — backend flow ships in v0.8. For now this is a UI placeholder.`);
+  document.getElementById('onboard-begin').addEventListener('click', async () => {
+    await showAlert(`«${f.title}» — backend flow ships in v0.8. For now this is a UI placeholder.`);
     closeOverlay();
   });
 }

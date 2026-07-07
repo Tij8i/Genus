@@ -3,6 +3,7 @@
 
 import { escapeHtml, currentBu } from './workflows/_shared.js';
 import { moduleMetaFor, renderModuleShell, renderListSection, newButton, fetchModuleData, createModuleItem, openStewardChat } from './module-scaffold.js';
+import { showAlert, showConfirm, showPrompt } from '../dialog.js';
 
 export async function renderHrOverview() {
   const root = document.getElementById('route-hr-overview');
@@ -56,13 +57,13 @@ export async function renderHrOverview() {
 
   document.getElementById('chat-steward-btn')?.addEventListener('click', () => openStewardChat('hr'));
   document.getElementById('mod-new-btn')?.addEventListener('click', async () => {
-    const title = prompt('Opening title (e.g. "Sales Stewart for Sensible Trade"):'); if (!title) return;
-    const need = prompt('What need does this Stewart cover?'); if (!need) return;
-    const module_id = prompt('Which module will this Stewart own? (optional)') || null;
+    const title = await showPrompt('Opening title (e.g. "Sales Stewart for Sensible Trade"):'); if (!title) return;
+    const need = await showPrompt('What need does this Stewart cover?'); if (!need) return;
+    const module_id = await showPrompt('Which module will this Stewart own? (optional)') || null;
     try {
       await createModuleItem({ bu, module: 'hr', file: 'openings.json', item: { title, need, module_id, status: 'open', candidates: [], opened_at: new Date().toISOString() } });
       await renderHrOverview();
-    } catch (e) { alert(`Could not open req: ${e.message}`); }
+    } catch (e) { await showAlert(`Could not open req: ${e.message}`); }
   });
 }
 

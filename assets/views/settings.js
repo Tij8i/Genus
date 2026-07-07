@@ -11,6 +11,7 @@
 import { escapeHtml, ago, icon } from '../utils.js';
 import { ACCENT_OPTIONS, DENSITY_OPTIONS, loadAppearance, saveAppearance } from '../appearance.js';
 import { openOverlay, closeOverlay } from '../overlay.js';
+import { showAlert, showConfirm, showPrompt } from '../dialog.js';
 
 let activeSubTab = 'profile';
 
@@ -244,7 +245,7 @@ async function submitRuntime(prev, isEdit, ctx, opts) {
 }
 
 async function removeRuntimeFlow(id, ctx, opts) {
-  if (!confirm(`Remove runtime '${id}'? This refuses if any agent is bound to it; rebind those first.`)) return;
+  if (!await showConfirm(`Remove runtime '${id}'? This refuses if any agent is bound to it; rebind those first.`)) return;
   try {
     const res = await fetch('/api/runtime-edit', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -254,11 +255,11 @@ async function removeRuntimeFlow(id, ctx, opts) {
     if (!res.ok || !result.ok) {
       const msg = result.message || `HTTP ${res.status}`;
       const refs = (result.referring_bindings || []).map(b => `${b.bu}/${b.module_id}`).join(', ');
-      alert(refs ? `${msg}\n\nReferring bindings: ${refs}` : msg);
+      await showAlert(refs ? `${msg}\n\nReferring bindings: ${refs}` : msg);
       return;
     }
     renderRuntimesSubTab(ctx, opts);
-  } catch (e) { alert('Network error: ' + (e.message || e)); }
+  } catch (e) { await showAlert('Network error: ' + (e.message || e)); }
 }
 
 function wireAppearanceControls(ctx) {
@@ -399,7 +400,7 @@ function wireGovernanceControls(ctx, onChange) {
   const root = document.getElementById('settings-subtab-body');
   if (!root) return;
   root.querySelectorAll('.gov-dot[data-gauge]').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       if (btn.dataset.current === '1' || btn.disabled) return;
       const gauge = btn.dataset.gauge;
       const level = btn.dataset.level;
@@ -412,7 +413,7 @@ function wireGovernanceControls(ctx, onChange) {
         ? `\n\n⚠ This dials ${gauge} ABOVE its current maturity (${matLabel}). Expect rougher output until evidence catches up. The override is logged in the audit trail.`
         : '';
       const msg = `Set ${gauge} → ${levelLabel}?${warning}\n\nThis writes governance.json + appends an audit_log entry.`;
-      if (!window.confirm(msg)) return;
+      if (!await showConfirm(msg)) return;
 
       updateGovernanceGauge(btn, gauge, level, onChange);
     });
@@ -442,7 +443,7 @@ async function updateGovernanceGauge(btn, gauge, level, onChange) {
   } catch (e) {
     btn.classList.remove('gov-dot-pending');
     allBtns.forEach(b => { b.disabled = false; });
-    alert(`Could not update ${gauge}: ${e.message}`);
+    await showAlert(`Could not update ${gauge}: ${e.message}`);
   }
 }
 

@@ -5,6 +5,7 @@
 
 import { escapeHtml, ago } from './utils.js';
 import { openOverlay, closeOverlay } from './overlay.js';
+import { showAlert, showConfirm } from './dialog.js';
 
 const MEETING_SERVER = 'http://localhost:8765';
 
@@ -32,7 +33,7 @@ async function checkMeetingServer() {
 export async function startMeeting({ bu, agent_id, title, purpose, opening_prompt }) {
   const ok = await checkMeetingServer();
   if (!ok) {
-    alert(`Local meeting server unreachable at ${MEETING_SERVER}. Start it (launchctl kickstart -k gui/$(id -u)/com.tij8i.genus-meetings) and try again.`);
+    await showAlert(`Local meeting server unreachable at ${MEETING_SERVER}. Start it (launchctl kickstart -k gui/$(id -u)/com.tij8i.genus-meetings) and try again.`, { subtitle: 'Meeting server', tone: 'danger' });
     return null;
   }
   try {
@@ -52,7 +53,7 @@ export async function startMeeting({ bu, agent_id, title, purpose, opening_promp
     openMeetingChat(j.meeting, { bu });
     return j.meeting;
   } catch (e) {
-    alert(`Could not start meeting: ${e.message}`);
+    await showAlert(`Could not start meeting: ${e.message}`, { subtitle: 'Meeting', tone: 'danger' });
     return null;
   }
 }
@@ -153,7 +154,7 @@ function wireChatHandlers(meeting, { bu }) {
 
   if (closeBtn) {
     closeBtn.addEventListener('click', async () => {
-      if (!window.confirm('Close this meeting?')) return;
+      if (!(await showConfirm('Close this meeting?', { subtitle: 'Meeting', okLabel: 'Close meeting', tone: 'danger' }))) return;
       closeBtn.disabled = true;
       closeBtn.textContent = 'closing…';
       try {
@@ -168,7 +169,7 @@ function wireChatHandlers(meeting, { bu }) {
       } catch (e) {
         closeBtn.disabled = false;
         closeBtn.textContent = 'Close meeting';
-        alert(`Close failed: ${e.message}`);
+        await showAlert(`Close failed: ${e.message}`, { subtitle: 'Meeting', tone: 'danger' });
       }
     });
   }

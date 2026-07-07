@@ -9,6 +9,7 @@
 //   5. Sub-tab nav must NOT clobber the route hash (fixed in router.js)
 
 import { escapeHtml, ago, dateLabel, isoDay, cycleTimeProgress } from '../utils.js';
+import { showAlert, showConfirm, showPrompt } from '../dialog.js';
 
 // Legacy hardcode — planning was pinned to 'tuto' from the pre-multi-BU
 // era. Now resolves the current BU dynamically. Function shape so nothing
@@ -437,7 +438,7 @@ function wireBacklogActions(scope, ctx, onChange) {
 
       let discardedReason = null;
       if (action === 'discard') {
-        discardedReason = window.prompt('Reason for discarding (optional):') || null;
+        discardedReason = await showPrompt('Reason for discarding (optional):') || null;
       }
 
       const originalText = btn.textContent;
@@ -461,7 +462,7 @@ function wireBacklogActions(scope, ctx, onChange) {
       } catch (e) {
         btn.disabled = false;
         btn.textContent = originalText;
-        alert(`Failed: ${e.message}`);
+        await showAlert(`Failed: ${e.message}`);
         console.error('[planning] backlog action failed:', e);
       }
     });
@@ -591,7 +592,7 @@ function renderInitiativeDetailOverlay(ctx, onChange) {
     markBtn.addEventListener('click', async () => {
       const initId = markBtn.dataset.initId;
       const msId = markBtn.dataset.msId;
-      if (!window.confirm(`Mark milestone «${currentMs.name}» done? The next milestone becomes current.`)) return;
+      if (!await showConfirm(`Mark milestone «${currentMs.name}» done? The next milestone becomes current.`)) return;
       markBtn.disabled = true;
       markBtn.textContent = 'marking…';
       try {
@@ -747,15 +748,15 @@ function wireGatewayApprovalPanel(host, init, onChange) {
       let successPhrase;
 
       if (action === 'approve') {
-        if (!window.confirm('Approve this gateway list? Initiative moves to in_progress and task emission unblocks at the next heartbeat.')) return;
+        if (!await showConfirm('Approve this gateway list? Initiative moves to in_progress and task emission unblocks at the next heartbeat.')) return;
         body.status = 'in_progress';
         body.rationale = 'operator approved gateway list (GEN-40 panel)';
         successPhrase = '✓ approved';
       } else if (action === 'reject') {
-        const reason = window.prompt('Reject — send Initiative back to scoping. Reason (Stewart re-proposes on next heartbeat):', '');
+        const reason = await showPrompt('Reject — send Initiative back to scoping. Reason (Stewart re-proposes on next heartbeat):', '');
         if (reason === null) return;
         const trimmed = reason.trim();
-        if (!trimmed) { alert('A rejection reason is required so Stewart knows how to re-propose.'); return; }
+        if (!trimmed) { await showAlert('A rejection reason is required so Stewart knows how to re-propose.'); return; }
         body.status = 'scoping';
         body.rationale = trimmed;
         successPhrase = '✓ rejected';
@@ -868,7 +869,7 @@ async function onCompleteCycle(planId, btn, ctx, onChange) {
   const msg = stillOpen > 0
     ? `Mark cycle "${plan.title}" complete?\n\n${stillOpen} of ${inits.length} initiatives are still open — they will be auto-archived as completed. A retrospective stub will be written.\n\nThis is reversible only by editing data files directly.`
     : `Mark cycle "${plan.title}" complete?\n\nA retrospective stub will be written.`;
-  const notes = window.prompt(msg + '\n\nOptional closing note (blank → default stub):', '');
+  const notes = await showPrompt(msg + '\n\nOptional closing note (blank → default stub):', '');
   if (notes === null) return;  // cancelled
   await runCycleAction(btn, async () => {
     const resp = await fetch('/api/update-plan', {
@@ -885,7 +886,7 @@ async function onCompleteCycle(planId, btn, ctx, onChange) {
 async function onRequestProposals(planId, btn, ctx, onChange) {
   const plan = (ctx.plans || []).find(p => p.id === planId);
   if (!plan) return;
-  if (!window.confirm(`File a task asking the ${BU()}-stewart to draft 3 alternative next-cycle plans?\n\nThe Stewart will produce 3 different shapes/priorities at next heartbeat. You pick ONE to activate.`)) return;
+  if (!await showConfirm(`File a task asking the ${BU()}-stewart to draft 3 alternative next-cycle plans?\n\nThe Stewart will produce 3 different shapes/priorities at next heartbeat. You pick ONE to activate.`)) return;
   await runCycleAction(btn, async () => {
     const body = {
       bu: BU(),
@@ -1027,7 +1028,7 @@ function renderEditPlanOverlay(ctx, onChange) {
 
       // Structural change → offer Stewart resync
       const structural = edits.initiative_ids || edits.period_target_end;
-      if (structural && window.confirm('These edits change the plan structure — should the Stewart re-evaluate existing tasks against the new structure?\n\nIf yes, a Stewart task will be filed to re-sync open tasks against the edited plan at the next heartbeat.')) {
+      if (structural && await showConfirm('These edits change the plan structure — should the Stewart re-evaluate existing tasks against the new structure?\n\nIf yes, a Stewart task will be filed to re-sync open tasks against the edited plan at the next heartbeat.')) {
         const resyncResp = await fetch('/api/file-stewart-task', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

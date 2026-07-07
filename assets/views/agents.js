@@ -11,6 +11,7 @@
 import { escapeHtml } from '../utils.js';
 import { openOverlay, closeOverlay } from '../overlay.js';
 import { fetchSubstrateJson } from '../substrate-client.js';
+import { showAlert, showConfirm, showPrompt } from '../dialog.js';
 
 let CACHED_VIEWER = null;
 
@@ -117,7 +118,7 @@ export async function renderAgents(ctx) {
       const agent_id = btn.dataset.agentRemove;
       const binding = bindings.find(b => b.agent_id === agent_id);
       const label = binding ? agentDisplayName(binding) : agent_id;
-      if (!window.confirm(`Remove ${label} from ${currentBuName}?\n\nThe agent's substrate (memos, tasks) stays; only the binding is dropped.`)) return;
+      if (!await showConfirm(`Remove ${label} from ${currentBuName}?\n\nThe agent's substrate (memos, tasks) stays; only the binding is dropped.`)) return;
       btn.disabled = true;
       try {
         const r = await fetch('/api/agent-binding-edit', {
@@ -128,7 +129,7 @@ export async function renderAgents(ctx) {
         if (!r.ok || !j.ok) throw new Error(j.message || `HTTP ${r.status}`);
         renderAgents(ctx);
       } catch (e) {
-        alert(`Remove failed: ${e.message}`);
+        await showAlert(`Remove failed: ${e.message}`);
         btn.disabled = false;
       }
     });

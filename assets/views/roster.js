@@ -18,6 +18,7 @@ import { openOverlay, closeOverlay } from '../overlay.js';
 import { fetchSubstrateJson } from '../substrate-client.js';
 import { getQueryParam } from '../router.js';
 import { openAddAgentOverlay } from './agents.js';
+import { showAlert, showConfirm, showPrompt } from '../dialog.js';
 
 const TINTS = {
   genus:    { color: '#0e9f6e', soft: 'rgba(14,159,110,.10)', pill: 'GENUS AGENT' },
@@ -510,7 +511,7 @@ function wireRoster({ bu, buName, bindings, users, runtimes, areas, installedMod
       const id = btn.dataset.revoke;
       const ent = externals.find(x => x.id === id);
       if (!ent) return;
-      if (!window.confirm(`Revoke access for ${ent.display_name}? Their token stops working immediately.`)) return;
+      if (!await showConfirm(`Revoke access for ${ent.display_name}? Their token stops working immediately.`)) return;
       btn.textContent = '…';
       try {
         const r = await fetch('/api/external-access-edit', {
@@ -521,7 +522,7 @@ function wireRoster({ bu, buName, bindings, users, runtimes, areas, installedMod
         if (!r.ok || !j.ok) throw new Error(j.message || `HTTP ${r.status}`);
         renderRoster(ctx);
       } catch (err) {
-        alert(`Revoke failed: ${err.message}`);
+        await showAlert(`Revoke failed: ${err.message}`);
         btn.textContent = 'Revoke';
       }
     });

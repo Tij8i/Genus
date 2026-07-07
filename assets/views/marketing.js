@@ -3,6 +3,7 @@
 
 import { escapeHtml, currentBu } from './workflows/_shared.js';
 import { moduleMetaFor, renderModuleShell, renderListSection, newButton, fetchModuleData, createModuleItem, openStewardChat } from './module-scaffold.js';
+import { showAlert, showConfirm, showPrompt } from '../dialog.js';
 
 const STATUS_COLOR = { draft: '#9aa1ae', live: '#238c46', paused: '#c78500', closed: '#5b6270' };
 
@@ -55,16 +56,16 @@ export async function renderMarketingOverview() {
 
   document.getElementById('chat-steward-btn')?.addEventListener('click', () => openStewardChat('marketing'));
   document.getElementById('mod-new-btn')?.addEventListener('click', async () => {
-    const name = prompt('Campaign name:'); if (!name) return;
-    const channel = prompt('Channel (e.g. LinkedIn / Email / Content):') || '';
-    const goal = prompt('Goal (one sentence):') || '';
+    const name = await showPrompt('Campaign name:'); if (!name) return;
+    const channel = await showPrompt('Channel (e.g. LinkedIn / Email / Content):') || '';
+    const goal = await showPrompt('Goal (one sentence):') || '';
     try {
       await createModuleItem({ bu, module: 'marketing', file: 'campaigns.json', item: { name, channel, goal, status: 'draft', budget: 0, spent: 0, started_at: null, closed_at: null, linked_experiment_id: null, notes: '' } });
       await renderMarketingOverview();
-    } catch (e) { alert(`Could not create campaign: ${e.message}`); }
+    } catch (e) { await showAlert(`Could not create campaign: ${e.message}`); }
   });
-  document.getElementById('import-btn')?.addEventListener('click', () => {
-    const paste = prompt('Paste unstructured campaign/content data. Marketing Stewart will decompose on its next run.');
-    if (paste) alert('Import queued. Marketing Stewart will process on its next heartbeat.');
+  document.getElementById('import-btn')?.addEventListener('click', async () => {
+    const paste = await showPrompt('Paste unstructured campaign/content data. Marketing Stewart will decompose on its next run.');
+    if (paste) await showAlert('Import queued. Marketing Stewart will process on its next heartbeat.');
   });
 }

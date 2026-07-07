@@ -15,6 +15,7 @@
 //   });
 
 import { escapeHtml } from '../utils.js';
+import { showAlert, showConfirm, showPrompt } from '../dialog.js';
 
 const KIND_STYLE = {
   rename:  { bg: '#e6ebef', fg: '#4a5a67', label: 'RENAME' },
@@ -68,8 +69,8 @@ export function standardActions(id, { acceptLabel = 'Accept ↗', rejectLabel = 
 
 export function wireProposalCards({ onAccept, onReject, onDismiss, rejectPrompt }) {
   if (onAccept) document.querySelectorAll('.prop-accept').forEach(btn => btn.addEventListener('click', () => onAccept(btn.dataset.propId)));
-  if (onReject) document.querySelectorAll('.prop-reject').forEach(btn => btn.addEventListener('click', () => {
-    const reason = prompt(rejectPrompt || 'Reason for rejection?');
+  if (onReject) document.querySelectorAll('.prop-reject').forEach(btn => btn.addEventListener('click', async () => {
+    const reason = await showPrompt(rejectPrompt || 'Reason for rejection?');
     if (reason === null) return;
     onReject(btn.dataset.propId, reason);
   }));

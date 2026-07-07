@@ -3,6 +3,7 @@
 
 import { escapeHtml, currentBu } from './workflows/_shared.js';
 import { renderStatTiles } from '../components/stat-tiles.js';
+import { showAlert, showConfirm, showPrompt } from '../dialog.js';
 
 export async function renderMeetings() {
   const root = document.getElementById('route-meetings');
@@ -138,7 +139,7 @@ async function _createMeetingHandler(bu) {
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok) {
         btn.disabled = false; btn.textContent = 'Convene →';
-        alert(`Could not convene (HTTP ${res.status}): ${j.message || 'unknown error'}`);
+        await showAlert(`Could not convene (HTTP ${res.status}): ${j.message || 'unknown error'}`);
         return;
       }
       close();
@@ -151,7 +152,7 @@ async function _createMeetingHandler(bu) {
       }
     } catch (e) {
       btn.disabled = false; btn.textContent = 'Convene →';
-      alert(`Could not convene: ${e.message}`);
+      await showAlert(`Could not convene: ${e.message}`);
     }
   });
 }
@@ -234,7 +235,7 @@ export async function renderMeetingDetail() {
     await renderMeetingDetail();
   });
   document.getElementById('meet-add-decision')?.addEventListener('click', async () => {
-    const title = prompt('Decision:'); if (!title) return;
+    const title = await showPrompt('Decision:'); if (!title) return;
     await fetch('/api/meetings', {
       method: 'POST', credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -243,7 +244,7 @@ export async function renderMeetingDetail() {
     await renderMeetingDetail();
   });
   document.getElementById('meet-add-task')?.addEventListener('click', async () => {
-    const title = prompt('Task:'); if (!title) return;
+    const title = await showPrompt('Task:'); if (!title) return;
     await fetch('/api/meetings', {
       method: 'POST', credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -252,7 +253,7 @@ export async function renderMeetingDetail() {
     await renderMeetingDetail();
   });
   document.getElementById('meet-adjourn')?.addEventListener('click', async () => {
-    if (!confirm('Adjourn this meeting? Minutes/decisions/tasks will be filed to their homes.')) return;
+    if (!await showConfirm('Adjourn this meeting? Minutes/decisions/tasks will be filed to their homes.')) return;
     await fetch('/api/meetings', {
       method: 'POST', credentials: 'include',
       headers: { 'Content-Type': 'application/json' },

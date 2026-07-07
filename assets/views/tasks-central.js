@@ -8,6 +8,7 @@
 import { escapeHtml, currentBu } from './workflows/_shared.js';
 import { renderStatTiles } from '../components/stat-tiles.js';
 import { openDrawer } from '../components/decision-drawer.js';
+import { showPrompt } from '../dialog.js';
 
 const STATUS_COLOR = {
   proposed: '#5b6270', awaiting_approval: '#c78500', in_progress: '#3468d6',
@@ -132,7 +133,7 @@ function openTaskDetail(bu, taskId, allTasks) {
   });
 
   document.getElementById('task-spawn-btn')?.addEventListener('click', async () => {
-    const title = prompt('Child task title:');
+    const title = await showPrompt('Child task title:', { subtitle: 'Spawn task' });
     if (!title) return;
     await fetch('/api/tasks-layered', {
       method: 'POST', credentials: 'include',
@@ -143,7 +144,7 @@ function openTaskDetail(bu, taskId, allTasks) {
   });
 
   document.getElementById('task-handoff-btn')?.addEventListener('click', async () => {
-    const to = prompt('Handoff to module (product / finance / strategy / development / learning / hr / sales / marketing):');
+    const to = await showPrompt('Handoff to module (product / finance / strategy / development / learning / hr / sales / marketing):', { subtitle: 'Handoff' });
     if (!to) return;
     await fetch('/api/tasks-layered', {
       method: 'POST', credentials: 'include',

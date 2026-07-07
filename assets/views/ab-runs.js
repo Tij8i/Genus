@@ -3,6 +3,7 @@
 
 import { escapeHtml, currentBu } from './workflows/_shared.js';
 import { renderStatTiles } from '../components/stat-tiles.js';
+import { showAlert, showConfirm, showPrompt } from '../dialog.js';
 
 export async function renderAbRuns() {
   const root = document.getElementById('route-ab-runs');
@@ -69,11 +70,11 @@ export async function renderAbRuns() {
   </div>`;
 
   document.getElementById('ab-new-btn')?.addEventListener('click', async () => {
-    const task_body = prompt('Task to run at both agents:');
+    const task_body = await showPrompt('Task to run at both agents:');
     if (!task_body) return;
-    const a = prompt('Agent A id (e.g. product-stewart-of-genus):');
+    const a = await showPrompt('Agent A id (e.g. product-stewart-of-genus):');
     if (!a) return;
-    const b = prompt('Agent B id:');
+    const b = await showPrompt('Agent B id:');
     if (!b) return;
     try {
       await fetch('/api/ab-run', {
@@ -82,11 +83,11 @@ export async function renderAbRuns() {
         body: JSON.stringify({ bu, action: 'start', task_body, contestants: [a, b] }),
       });
       await renderAbRuns();
-    } catch (e) { alert(`Could not start A/B: ${e.message}`); }
+    } catch (e) { await showAlert(`Could not start A/B: ${e.message}`); }
   });
 
   document.querySelectorAll('.ab-pick').forEach(btn => btn.addEventListener('click', async () => {
-    const notes = prompt('Winner rationale (optional):') || '';
+    const notes = await showPrompt('Winner rationale (optional):') || '';
     await fetch('/api/ab-run', {
       method: 'POST', credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
