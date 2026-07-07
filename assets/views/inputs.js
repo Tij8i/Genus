@@ -497,17 +497,31 @@ function wireMeetingButtons(meetings, ctx, onChange) {
       // same modal.
       const host = document.getElementById('overlay-host');
       if (!host) return;
+      // Default the "later" datetime input to 15 minutes from now so operators
+      // can just tap Schedule without typing a time when the picker opens.
+      const in15 = new Date(Date.now() + 15 * 60 * 1000);
+      const pad = n => String(n).padStart(2, '0');
+      const defaultLater = `${in15.getFullYear()}-${pad(in15.getMonth()+1)}-${pad(in15.getDate())}T${pad(in15.getHours())}:${pad(in15.getMinutes())}`;
+
       host.innerHTML = `
         <div id="msc-scrim" style="position:fixed;inset:0;background:rgba(16,18,28,.34);z-index:60;"></div>
         <div style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:min(560px,94vw);background:#fff;border-radius:16px;box-shadow:0 30px 90px rgba(16,18,28,.28);z-index:61;overflow:hidden;">
           <div style="padding:20px 24px 14px;border-bottom:1px solid rgba(20,22,28,.08);display:flex;align-items:center;justify-content:space-between;">
             <div>
-              <div style="font:600 10px 'JetBrains Mono',ui-monospace,Menlo,monospace;letter-spacing:.14em;color:#3468d6;text-transform:uppercase;">Schedule a meeting</div>
-              <div style="font-size:13px;color:#5b6270;margin-top:4px;">Live operator↔agent session via the local meeting server.</div>
+              <div style="font:600 10px 'JetBrains Mono',ui-monospace,Menlo,monospace;letter-spacing:.14em;color:#3468d6;text-transform:uppercase;">New meeting</div>
+              <div style="font-size:13px;color:#5b6270;margin-top:4px;">Live operator↔agent session — start immediately or schedule for later.</div>
             </div>
             <button type="button" id="msc-close" style="background:none;border:none;font-size:26px;color:#9aa1ae;cursor:pointer;line-height:1;">×</button>
           </div>
-          <div style="padding:18px 24px;display:flex;flex-direction:column;gap:12px;">
+          <div style="padding:18px 24px;display:flex;flex-direction:column;gap:14px;">
+            <!-- Mode segmented toggle -->
+            <div>
+              <label style="display:block;font-size:12px;font-weight:600;color:#5b6270;margin-bottom:6px;">When</label>
+              <div id="msc-mode-wrap" style="display:inline-flex;background:#f5f6f8;border-radius:8px;padding:3px;">
+                <button type="button" data-mode="now"   class="msc-mode-btn" style="padding:7px 14px;border:none;border-radius:6px;background:#fff;color:#16181e;font:600 12.5px inherit;cursor:pointer;box-shadow:0 1px 3px rgba(20,22,28,.06);">Start now</button>
+                <button type="button" data-mode="later" class="msc-mode-btn" style="padding:7px 14px;border:none;border-radius:6px;background:transparent;color:#5b6270;font:500 12.5px inherit;cursor:pointer;">Schedule for later</button>
+              </div>
+            </div>
             <div>
               <label style="display:block;font-size:12px;font-weight:600;color:#5b6270;margin-bottom:4px;">Title</label>
               <input type="text" id="msc-title" value="Working session" style="width:100%;padding:9px 12px;border:1px solid rgba(20,22,28,.14);border-radius:8px;font-family:inherit;font-size:13.5px;color:#16181e;box-sizing:border-box;">
@@ -516,27 +530,82 @@ function wireMeetingButtons(meetings, ctx, onChange) {
               <label style="display:block;font-size:12px;font-weight:600;color:#5b6270;margin-bottom:4px;">Expected output <span style="color:#9aa1ae;font-weight:400;">— one sentence, what success looks like at close</span></label>
               <input type="text" id="msc-expected" placeholder="e.g. Decided pricing tiers; drafted 3 marketing headlines; …" style="width:100%;padding:9px 12px;border:1px solid rgba(20,22,28,.14);border-radius:8px;font-family:inherit;font-size:13.5px;color:#16181e;box-sizing:border-box;">
             </div>
+            <div id="msc-when-row" style="display:none;">
+              <label style="display:block;font-size:12px;font-weight:600;color:#5b6270;margin-bottom:4px;">Date &amp; time</label>
+              <input type="datetime-local" id="msc-when" value="${defaultLater}" style="width:100%;padding:9px 12px;border:1px solid rgba(20,22,28,.14);border-radius:8px;font-family:inherit;font-size:13.5px;color:#16181e;box-sizing:border-box;">
+            </div>
           </div>
           <div style="padding:14px 24px;border-top:1px solid rgba(20,22,28,.08);display:flex;justify-content:flex-end;gap:10px;">
             <button type="button" id="msc-cancel" style="padding:9px 16px;border:1px solid rgba(20,22,28,.14);background:#fff;color:#5b6270;border-radius:9px;font:600 12.5px inherit;cursor:pointer;">Cancel</button>
-            <button type="button" id="msc-submit" style="padding:9px 18px;background:#3468d6;color:#fff;border:none;border-radius:9px;font:600 12.5px inherit;cursor:pointer;">Schedule →</button>
+            <button type="button" id="msc-submit" style="padding:9px 18px;background:#3468d6;color:#fff;border:none;border-radius:9px;font:600 12.5px inherit;cursor:pointer;">Start now →</button>
           </div>
         </div>
       `;
       const close = () => { host.innerHTML = ''; };
+      let mode = 'now';
+      const setMode = (m) => {
+        mode = m;
+        document.querySelectorAll('.msc-mode-btn').forEach(b => {
+          const on = b.dataset.mode === m;
+          b.style.background = on ? '#fff' : 'transparent';
+          b.style.color = on ? '#16181e' : '#5b6270';
+          b.style.fontWeight = on ? '600' : '500';
+          b.style.boxShadow = on ? '0 1px 3px rgba(20,22,28,.06)' : 'none';
+        });
+        document.getElementById('msc-when-row').style.display = m === 'later' ? '' : 'none';
+        document.getElementById('msc-submit').textContent = m === 'later' ? 'Schedule →' : 'Start now →';
+      };
+      document.querySelectorAll('.msc-mode-btn').forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
       document.getElementById('msc-scrim')?.addEventListener('click', close);
       document.getElementById('msc-close')?.addEventListener('click', close);
       document.getElementById('msc-cancel')?.addEventListener('click', close);
       setTimeout(() => document.getElementById('msc-title')?.focus(), 50);
-      document.getElementById('msc-submit').addEventListener('click', () => {
+      document.getElementById('msc-submit').addEventListener('click', async () => {
         const title = document.getElementById('msc-title').value.trim();
         if (!title) { document.getElementById('msc-title').focus(); return; }
         const expected_output = document.getElementById('msc-expected').value.trim();
-        close();
-        startMeeting(
-          { title, purpose: 'general', expected_output: expected_output || undefined },
-          ctx, onChange, newBtn
-        );
+        if (mode === 'now') {
+          close();
+          startMeeting(
+            { title, purpose: 'general', expected_output: expected_output || undefined },
+            ctx, onChange, newBtn
+          );
+          return;
+        }
+        // Schedule for later: persist as substrate meeting with scheduled_at.
+        const whenLocal = document.getElementById('msc-when').value;
+        if (!whenLocal) { document.getElementById('msc-when').focus(); return; }
+        // datetime-local returns 'YYYY-MM-DDTHH:MM' (no seconds, no zone) — treat
+        // as operator-local, convert to ISO for storage.
+        const whenIso = new Date(whenLocal).toISOString();
+        const btn = document.getElementById('msc-submit');
+        btn.disabled = true; btn.textContent = 'Scheduling…';
+        try {
+          const res = await fetch('/api/meetings', {
+            method: 'POST', credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              bu: BU(),
+              action: 'start',
+              title,
+              goal: expected_output || '',
+              agenda: [],
+              module_id: null,
+              scheduled_at: whenIso,
+            }),
+          });
+          const j = await res.json().catch(() => ({}));
+          if (!res.ok || !j.ok) {
+            btn.disabled = false; btn.textContent = 'Schedule →';
+            alert(`Could not schedule (HTTP ${res.status}): ${j.message || 'unknown error'}`);
+            return;
+          }
+          close();
+          onChange?.();
+        } catch (e) {
+          btn.disabled = false; btn.textContent = 'Schedule →';
+          alert(`Could not schedule: ${e.message}`);
+        }
       });
     });
   }

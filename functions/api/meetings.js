@@ -63,6 +63,8 @@ export async function onRequestPost({ request, env }) {
   try {
     if (action === 'start') {
       const id = 'm-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,5);
+      const scheduled_at = (body.scheduled_at || '').toString() || null;
+      const isScheduled = !!scheduled_at;
       created = {
         id, bu,
         title: (body.title || 'Untitled meeting').toString().slice(0, 200),
@@ -72,7 +74,13 @@ export async function onRequestPost({ request, env }) {
         agenda: (body.agenda || []).map((title, i) => ({ id: `a-${i+1}`, title: title.toString().slice(0, 200), status: i === 0 ? 'current' : 'upcoming' })),
         outcomes: [],
         source_chat_ref: body.source_chat_ref || null,
-        started_at: now,
+        // Scheduled-for-later meetings live in substrate until the operator kicks
+        // them off from the meeting page. Live meetings started via the meeting-
+        // server (Inputs → Start now) get status active there; substrate rows
+        // that carry scheduled_at are picked up by the meetings list as pending.
+        status: isScheduled ? 'scheduled' : 'active',
+        scheduled_at: isScheduled ? scheduled_at : null,
+        started_at: isScheduled ? null : now,
         adjourned_at: null,
         minutes_filed_to: null,
         decisions_filed_to: null,
