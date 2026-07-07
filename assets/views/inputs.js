@@ -118,6 +118,10 @@ const TASK_STATUS_STYLE = {
   abandoned:        { bg: 'rgba(154,161,174,.14)',fg: '#5b6270', label: 'ABANDONED',border: '#9aa1ae' },
   proposed:         { bg: 'rgba(154,161,174,.10)',fg: '#5b6270', label: 'PROPOSED', border: '#9aa1ae' },
   awaiting_approval:{ bg: 'rgba(154,161,174,.10)',fg: '#5b6270', label: 'AWAITING', border: '#9aa1ae' },
+  // file-stewart-task returns status:'approved' by default — operator-filed
+  // tasks are inherently approved (the operator IS the approval). Render as
+  // grey queued alongside proposed until the Paperclip agent moves it.
+  approved:         { bg: 'rgba(154,161,174,.10)',fg: '#5b6270', label: 'QUEUED',   border: '#9aa1ae' },
 };
 const TASK_STATUS_DEFAULT = { bg: 'rgba(154,161,174,.10)', fg: '#5b6270', label: 'UNKNOWN', border: '#9aa1ae' };
 
@@ -140,12 +144,12 @@ function renderTasksSubTab(tasks, ctx) {
 
   return `
     <div class="card">
-      <div class="card-header-row">
-        <div class="card-header-left">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:280px;max-width:720px;">
           <span class="card-title">Tasks</span>
-          <p class="card-sub">Drop a task; it's pushed to the assigned agent and picked up on their next Paperclip heartbeat. Colour shows status — grey queued · amber in progress · red blocked · green done.</p>
+          <p class="card-sub" style="margin-top:4px;">Drop a task; it's pushed to the assigned agent and picked up on their next Paperclip heartbeat. Colour shows status — grey queued · amber in progress · red blocked · green done.</p>
         </div>
-        <button type="button" id="new-task-btn" class="onboard-begin" style="padding:9px 16px;font-size:12.5px;">+ New task</button>
+        <button type="button" id="new-task-btn" class="onboard-begin" style="padding:9px 16px;font-size:12.5px;flex-shrink:0;white-space:nowrap;">+ New task</button>
       </div>
       <div id="new-task-form-host" hidden style="margin-top:10px;"></div>
       <div style="display:flex;flex-direction:column;gap:8px;margin-top:14px;">
