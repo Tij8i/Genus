@@ -23,10 +23,13 @@
     <aside class="sidebar">
       <div class="bu-switcher-wrap">
         <button type="button" class="bu-switcher" id="bu-switcher" aria-label="Switch venture" aria-haspopup="true" aria-expanded="false">
-          <span class="bu-avatar" id="bu-avatar">T</span>
+          <!-- Initial avatar + name are placeholders until app.js resolves the
+               current BU from ?bu=, localStorage, and _registry.json. Neutral
+               loading state — no hardcoded venture identity. -->
+          <span class="bu-avatar" id="bu-avatar" style="background:rgba(20,22,28,.14);color:transparent;">·</span>
           <span class="bu-label">
-            <span class="bu-name" id="bu-name">…</span>
-            <span class="bu-meta" id="bu-meta">v0.7 · loading</span>
+            <span class="bu-name" id="bu-name">Loading…</span>
+            <span class="bu-meta" id="bu-meta">resolving venture</span>
           </span>
           <svg class="bu-chevron" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 9 5-5 5 5"/><path d="m7 15 5 5 5-5"/></svg>
         </button>
