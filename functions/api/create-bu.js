@@ -161,6 +161,28 @@ export async function onRequestPost({ request, env }) {
     bindingsParsed.bindings = bindingsParsed.bindings || [];
     const now = new Date().toISOString();
     const installerEmail = gate?.email || 'unknown@genus.dashboard';
+
+    // Always bind genus-agent to every new BU. It's the always-there base
+    // agent that supervises the venture, executes operator-filed tasks,
+    // generates suggestions, and fills in for un-installed module Stewards.
+    // See docs/agents/genus_agent/IDENTITY.md.
+    if (!bindingsParsed.bindings.some(b => b.bu === id && b.agent_id === 'genus-agent')) {
+      bindingsParsed.bindings.push({
+        bu: id,
+        module_id: 'core',
+        agent_id: 'genus-agent',
+        archetype: 'GenusAgent',
+        docs_root: 'docs/agents/genus_agent',
+        paperclip_url_key: 'genus-agent',
+        runtime_id: 'local-paperclip-alessio',
+        hitl_owner_email: installerEmail,
+        lead: true,
+        installer_email: installerEmail,
+        installed_at: now,
+      });
+      bindingsWritten.push({ module_id: 'core', agent_id: 'genus-agent' });
+    }
+
     for (const modId of validModules) {
       const tpl = MODULE_BINDING_TEMPLATES[modId];
       if (!tpl) { bindingsSkipped.push({ module_id: modId, reason: 'no binding template' }); continue; }
