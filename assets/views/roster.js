@@ -66,15 +66,26 @@ function moduleDisplayLabel(b, modulesCatalog) {
 
 function agentDisplayName(b, modulesCatalog) {
   if (b.display_name) return b.display_name;
+  const arch = archetypeForBinding(b);
+  // Masons: derive the actual mason type from agent_id (pattern
+  // "<type>-mason-of-<bu>") rather than just labelling every Mason with
+  // its module name. Otherwise all Masons under Development show as
+  // "Development Agent", which is what the operator flagged.
+  if (arch === 'mason' && b.agent_id) {
+    const m = String(b.agent_id).match(/^(.+?)-mason(?:-of-.+)?$/i);
+    if (m && m[1]) {
+      const words = m[1].split('-').filter(Boolean).map(w => w.charAt(0).toUpperCase() + w.slice(1));
+      return `${words.join(' ')} Mason`;
+    }
+  }
   if (b.module_id) {
     const m = modulesCatalog.find(mm => mm.id === b.module_id);
     const mod = m ? m.display_name : b.module_id;
-    const arch = archetypeForBinding(b);
     if (arch === 'genus') return 'Genus Agent';
     if (arch === 'mason') return `${mod} Agent`;
     return `${mod} Stewart`;
   }
-  if (archetypeForBinding(b) === 'genus') return 'Genus Agent';
+  if (arch === 'genus') return 'Genus Agent';
   return b.agent_id;
 }
 
