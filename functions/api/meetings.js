@@ -59,10 +59,11 @@ export async function onRequestPost({ request, env }) {
   const data = { meetings };  // wrapper used below; serialised as top-level array on write
   const now = todayISO();
 
+  let created = null;
   try {
     if (action === 'start') {
       const id = 'm-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,5);
-      data.meetings.push({
+      created = {
         id, bu,
         title: (body.title || 'Untitled meeting').toString().slice(0, 200),
         module_id: body.module_id || null,
@@ -77,7 +78,8 @@ export async function onRequestPost({ request, env }) {
         decisions_filed_to: null,
         tasks_filed_to: [],
         started_by: viewer.email,
-      });
+      };
+      data.meetings.push(created);
     } else if (action === 'add_outcome') {
       const mid = (body.meeting_id || '').toString();
       const m = data.meetings.find(x => x.id === mid);
@@ -121,5 +123,5 @@ export async function onRequestPost({ request, env }) {
   } catch (e) {
     return jsonResponse(e.status || 500, { ok: false, message: e.message || String(e) });
   }
-  return jsonResponse(200, { ok: true, action, bu });
+  return jsonResponse(200, { ok: true, action, bu, meeting: created });
 }

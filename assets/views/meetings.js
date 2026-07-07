@@ -69,11 +69,66 @@ export async function renderMeetings() {
 }
 
 async function _createMeetingHandler(bu) {
-    const title = prompt('Meeting title:'); if (!title) return;
-    const goal = prompt('Goal (what needs to be decided?):') || '';
-    const agendaStr = prompt('Agenda (comma-separated items):') || '';
-    const agenda = agendaStr.split(',').map(s => s.trim()).filter(Boolean);
-    const module_id = prompt('Module (optional — leave blank for core):') || null;
+  const host = document.getElementById('overlay-host');
+  if (!host) return;
+  host.innerHTML = `
+    <div id="mtg-scrim" style="position:fixed;inset:0;background:rgba(16,18,28,.34);z-index:60;"></div>
+    <div style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:min(560px,94vw);background:#fff;border-radius:16px;box-shadow:0 30px 90px rgba(16,18,28,.28);z-index:61;overflow:hidden;">
+      <div style="padding:20px 24px 14px;border-bottom:1px solid rgba(20,22,28,.08);display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <div style="font:600 10px 'JetBrains Mono',ui-monospace,Menlo,monospace;letter-spacing:.14em;color:#3468d6;text-transform:uppercase;">Convene a meeting</div>
+          <div style="font-size:13px;color:#5b6270;margin-top:4px;">Multi-agent, agenda-driven. Genus chairs.</div>
+        </div>
+        <button type="button" id="mtg-close" style="background:none;border:none;font-size:26px;color:#9aa1ae;cursor:pointer;line-height:1;">×</button>
+      </div>
+      <div style="padding:18px 24px;display:flex;flex-direction:column;gap:12px;">
+        <div>
+          <label style="display:block;font-size:12px;font-weight:600;color:#5b6270;margin-bottom:4px;">Title</label>
+          <input type="text" id="mtg-title" placeholder="e.g. Pricing decision" style="width:100%;padding:9px 12px;border:1px solid rgba(20,22,28,.14);border-radius:8px;font-family:inherit;font-size:13.5px;color:#16181e;box-sizing:border-box;">
+        </div>
+        <div>
+          <label style="display:block;font-size:12px;font-weight:600;color:#5b6270;margin-bottom:4px;">Goal <span style="color:#9aa1ae;font-weight:400;">— what needs to be decided?</span></label>
+          <input type="text" id="mtg-goal" placeholder="e.g. Ship pricing tiers by Friday" style="width:100%;padding:9px 12px;border:1px solid rgba(20,22,28,.14);border-radius:8px;font-family:inherit;font-size:13.5px;color:#16181e;box-sizing:border-box;">
+        </div>
+        <div>
+          <label style="display:block;font-size:12px;font-weight:600;color:#5b6270;margin-bottom:4px;">Agenda <span style="color:#9aa1ae;font-weight:400;">— one item per line</span></label>
+          <textarea id="mtg-agenda" rows="4" placeholder="Review last week&#39;s data&#10;Draft two pricing options&#10;Decide + assign follow-ups" style="width:100%;padding:9px 12px;border:1px solid rgba(20,22,28,.14);border-radius:8px;font-family:inherit;font-size:13px;line-height:1.5;color:#16181e;box-sizing:border-box;resize:vertical;"></textarea>
+        </div>
+        <div>
+          <label style="display:block;font-size:12px;font-weight:600;color:#5b6270;margin-bottom:4px;">Module <span style="color:#9aa1ae;font-weight:400;">— optional, leave blank for core</span></label>
+          <select id="mtg-module" style="width:100%;padding:9px 12px;border:1px solid rgba(20,22,28,.14);border-radius:8px;font-family:inherit;font-size:13.5px;color:#16181e;background:#fff;box-sizing:border-box;">
+            <option value="">(none — Core)</option>
+            <option value="strategy">Strategy</option>
+            <option value="finance">Finance</option>
+            <option value="product">Product</option>
+            <option value="development">Development</option>
+            <option value="learning">Learning</option>
+            <option value="hr">HR</option>
+            <option value="sales">Sales</option>
+            <option value="marketing">Marketing</option>
+          </select>
+        </div>
+      </div>
+      <div style="padding:14px 24px;border-top:1px solid rgba(20,22,28,.08);display:flex;justify-content:flex-end;gap:10px;">
+        <button type="button" id="mtg-cancel" style="padding:9px 16px;border:1px solid rgba(20,22,28,.14);background:#fff;color:#5b6270;border-radius:9px;font:600 12.5px inherit;cursor:pointer;">Cancel</button>
+        <button type="button" id="mtg-submit" style="padding:9px 18px;background:#3468d6;color:#fff;border:none;border-radius:9px;font:600 12.5px inherit;cursor:pointer;">Convene →</button>
+      </div>
+    </div>
+  `;
+  const close = () => { host.innerHTML = ''; };
+  document.getElementById('mtg-scrim')?.addEventListener('click', close);
+  document.getElementById('mtg-close')?.addEventListener('click', close);
+  document.getElementById('mtg-cancel')?.addEventListener('click', close);
+  setTimeout(() => document.getElementById('mtg-title')?.focus(), 50);
+
+  document.getElementById('mtg-submit').addEventListener('click', async () => {
+    const title = document.getElementById('mtg-title').value.trim();
+    if (!title) { document.getElementById('mtg-title').focus(); return; }
+    const goal = document.getElementById('mtg-goal').value.trim();
+    const agenda = document.getElementById('mtg-agenda').value.split('\n').map(s => s.trim()).filter(Boolean);
+    const module_id = document.getElementById('mtg-module').value || null;
+    const btn = document.getElementById('mtg-submit');
+    btn.disabled = true; btn.textContent = 'Convening…';
     try {
       const res = await fetch('/api/meetings', {
         method: 'POST', credentials: 'include',
@@ -82,11 +137,23 @@ async function _createMeetingHandler(bu) {
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok) {
-        alert(`Could not convene (HTTP ${res.status}): ${j.message || 'unknown error — check DevTools Network tab for details'}`);
+        btn.disabled = false; btn.textContent = 'Convene →';
+        alert(`Could not convene (HTTP ${res.status}): ${j.message || 'unknown error'}`);
         return;
       }
-      await renderMeetings();
-    } catch (e) { alert(`Could not convene: ${e.message}`); }
+      close();
+      // Navigate to the new meeting's live detail view. Skips the list
+      // re-render entirely — no blank screen, no stale state.
+      if (j.meeting?.id) {
+        location.hash = `#meetings/${j.meeting.id}`;
+      } else {
+        await renderMeetings();
+      }
+    } catch (e) {
+      btn.disabled = false; btn.textContent = 'Convene →';
+      alert(`Could not convene: ${e.message}`);
+    }
+  });
 }
 
 // Live-meeting three-column detail view. Route: #meetings/{id}
