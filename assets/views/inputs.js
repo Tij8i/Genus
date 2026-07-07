@@ -502,12 +502,7 @@ function renderMeetingRow(m, ctx) {
         <div class="meeting-row-initiated mono">${escapeHtml(initiatedLine)}</div>
         ${m.purpose ? `<div class="meeting-row-purpose">${escapeHtml(m.purpose)}</div>` : ''}
       </div>
-      ${isScheduled ? `
-        <div class="meeting-row-actions">
-          <button type="button" class="meeting-scheduled-start-btn" data-meeting-id="${escapeHtml(m.id)}" data-meeting-title="${escapeHtml(m.title || '')}" data-meeting-goal="${escapeHtml(m.goal || '')}">Start now →</button>
-          <button type="button" class="meeting-dismiss-btn" data-meeting-id="${escapeHtml(m.id)}">Dismiss</button>
-        </div>
-      ` : m.status === 'requested_by_agent' ? `
+      ${m.status === 'requested_by_agent' ? `
         <div class="meeting-row-actions">
           <button type="button" class="meeting-convert-btn" data-meeting-id="${escapeHtml(m.id)}">Start meeting →</button>
           <button type="button" class="meeting-dismiss-btn" data-meeting-id="${escapeHtml(m.id)}">Dismiss</button>
@@ -914,8 +909,24 @@ function wireChatHandlers(meeting, ctx, onChange) {
         });
         const j = await r.json();
         if (!r.ok || !j.ok) throw new Error(j.message || `HTTP ${r.status}`);
-        // Reflect new status in-overlay, then close after a moment
+        // Reflect new status in-overlay
         if (j.meeting) Object.assign(meeting, j.meeting);
+        // Patch ctx.meetings locally with the server's updated meeting so the
+        // list re-render shows 'closed' immediately. Rehydrating from GitHub
+        // races the async git commit — the commit takes seconds; the UI
+        // shouldn't wait. onChange still fires in the background so a full
+        // refresh eventually reconciles with substrate.
+        if (ctx?.meetings && j.meeting) {
+          const idx = ctx.meetings.findIndex(m => m && m.id === j.meeting.id);
+          if (idx >= 0) ctx.meetings[idx] = { ...ctx.meetings[idx], ...j.meeting };
+          else ctx.meetings.push(j.meeting);
+        }
+        // Re-render just the meetings sub-tab with the patched ctx.meetings so
+        // the row flips to gray "closed" without waiting for the git commit +
+        // GitHub read to propagate.
+        rerenderMeetingsSubTab(ctx?.meetings || [], ctx, onChange);
+        // Fire onChange in the background too — the eventual rehydrate will
+        // confirm the substrate-side change (and pick up transcript/etc.).
         if (typeof onChange === 'function') setTimeout(onChange, 0);
         closeOverlay();
       } catch (e) {
