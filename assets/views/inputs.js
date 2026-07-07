@@ -356,6 +356,9 @@ function renderMeetingsSubTab(meetings, ctx) {
   const failureBanner = renderMeetingDismissFailureBanner(meetings);
 
   const deadlineKey = (m) => {
+    // Scheduled meetings use their own scheduled_at as the sort key so they
+    // slot into the timeline at their intended time.
+    if (m.scheduled_at) return m.scheduled_at.slice(0, 10);
     const init = (ctx.initiatives || []).find(i => i.id === (m.related_item || {}).initiative_id);
     return (init?.target_close_date || '9999-12-31').slice(0, 10);
   };
@@ -364,8 +367,8 @@ function renderMeetingsSubTab(meetings, ctx) {
     const kb = deadlineKey(b);
     if (ka !== kb) return ka.localeCompare(kb);
     // Tie-break: most recent activity first (active beats requested beats closed when same deadline).
-    const tA = a.started_at || a.requested_at || a.closed_at || '';
-    const tB = b.started_at || b.requested_at || b.closed_at || '';
+    const tA = a.started_at || a.requested_at || a.scheduled_at || a.closed_at || '';
+    const tB = b.started_at || b.requested_at || b.scheduled_at || b.closed_at || '';
     return tB.localeCompare(tA);
   });
 
@@ -452,7 +455,24 @@ function renderMeetingRow(m, ctx) {
   };
   let statusClass;
   let initiatedLine;
-  if (m.status === 'requested_by_agent') {
+  // Scheduled meetings (created via the '+ Schedule for later' flow) have a
+  // scheduled_at ISO but no started_at yet. Show them as pending with a
+  // 'scheduled for …' line + a Start button that kicks off the meeting-server
+  // session inline (reuses the same startMeeting path as '+ Start now').
+  const isScheduled = m.status === 'scheduled' || (!!m.scheduled_at && !m.started_at);
+  const scheduledIso = m.scheduled_at || null;
+
+  if (isScheduled) {
+    statusClass = 'pending';
+    const scheduledDate = scheduledIso ? new Date(scheduledIso) : null;
+    if (scheduledDate && !Number.isNaN(scheduledDate.getTime())) {
+      const pad = n => String(n).padStart(2, '0');
+      const dayLabel = `${scheduledDate.getFullYear()}-${pad(scheduledDate.getMonth()+1)}-${pad(scheduledDate.getDate())} ${pad(scheduledDate.getHours())}:${pad(scheduledDate.getMinutes())}`;
+      initiatedLine = `scheduled for ${dayLabel}`;
+    } else {
+      initiatedLine = 'scheduled (no time set)';
+    }
+  } else if (m.status === 'requested_by_agent') {
     statusClass = 'pending';
     initiatedLine = `requested ${agoPhrase(m.requested_at)}`;
   } else if (m.status === 'active') {
@@ -469,15 +489,24 @@ function renderMeetingRow(m, ctx) {
     if (deadline < today) statusClass = 'overdue';
   }
 
+  // Scheduled meetings show the scheduled_at date in the date box; other
+  // rows keep the initiative-deadline treatment.
+  const dateBoxIso = isScheduled && scheduledIso ? scheduledIso.slice(0, 10) : deadline;
+
   return `
     <div class="meeting-row meeting-row-${statusClass}" data-meeting-id="${escapeHtml(m.id)}" data-meeting-status="${statusClass}">
-      ${renderDateBox(deadline)}
+      ${renderDateBox(dateBoxIso)}
       <div class="meeting-row-body">
         <div class="meeting-row-title">${escapeHtml(m.title || 'Untitled meeting')}</div>
         <div class="meeting-row-initiated mono">${escapeHtml(initiatedLine)}</div>
         ${m.purpose ? `<div class="meeting-row-purpose">${escapeHtml(m.purpose)}</div>` : ''}
       </div>
-      ${m.status === 'requested_by_agent' ? `
+      ${isScheduled ? `
+        <div class="meeting-row-actions">
+          <button type="button" class="meeting-scheduled-start-btn" data-meeting-id="${escapeHtml(m.id)}" data-meeting-title="${escapeHtml(m.title || '')}" data-meeting-goal="${escapeHtml(m.goal || '')}">Start now →</button>
+          <button type="button" class="meeting-dismiss-btn" data-meeting-id="${escapeHtml(m.id)}">Dismiss</button>
+        </div>
+      ` : m.status === 'requested_by_agent' ? `
         <div class="meeting-row-actions">
           <button type="button" class="meeting-convert-btn" data-meeting-id="${escapeHtml(m.id)}">Start meeting →</button>
           <button type="button" class="meeting-dismiss-btn" data-meeting-id="${escapeHtml(m.id)}">Dismiss</button>
@@ -621,6 +650,23 @@ function wireMeetingButtons(meetings, ctx, onChange) {
         from_request_id: req.id,
         related_item: req.related_item || null,
         opening_prompt: req.opening_prompt || null,
+      }, ctx, onChange, btn);
+    });
+  });
+  // Kick off a scheduled meeting (created via '+ Schedule for later'): fires
+  // the same meeting-server startMeeting path used by '+ Start now'. The
+  // scheduled substrate row stays for now — operator can Dismiss it once the
+  // live meeting has replaced it.
+  document.querySelectorAll('.meeting-scheduled-start-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.meetingId;
+      const req = meetings.find(m => m.id === id);
+      if (!req) return;
+      startMeeting({
+        title: req.title,
+        purpose: req.purpose || 'general',
+        expected_output: req.goal || undefined,
       }, ctx, onChange, btn);
     });
   });
