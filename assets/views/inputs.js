@@ -1,4 +1,4 @@
-// Inputs view — sub-tabs: Memos / Meetings / Suggestions.
+// Inputs view — sub-tabs: Suggestions / Meetings / Memos / Tasks.
 //
 // Per operator feedback 2026-06-19: the 3-column grid groups things visually
 // but operator wants them as proper sub-tabs (one full-width column per tab)
@@ -51,7 +51,7 @@ export function renderInputs(ctx, { onChange }) {
   const queryStr = (window.location.hash || '').split('?')[1] || '';
   const params = new URLSearchParams(queryStr);
   const tab = params.get('tab');
-  if (['memos', 'meetings', 'suggestions'].includes(tab)) activeSubTab = tab;
+  if (['memos', 'meetings', 'suggestions', 'tasks'].includes(tab)) activeSubTab = tab;
 
   const memos = ctx.memos || [];
   const meetings = ctx.meetings || [];
@@ -61,6 +61,11 @@ export function renderInputs(ctx, { onChange }) {
   const memosBadge = memos.filter(m => (m.status || '').toLowerCase() === 'unprocessed').length;
   const meetingsBadge = meetings.filter(m => m.status === 'requested_by_agent').length;
   const suggestionsBadge = tasks.filter(t => ['awaiting_approval', 'proposed'].includes((t.status || '').toLowerCase())).length;
+  // Task badge = open (not-done, not-abandoned) count. Operator drops tasks
+  // here; each one is pushed to whichever agent is set as executor and picked
+  // up on that agent's next Paperclip heartbeat.
+  const openTaskStatuses = new Set(['in_progress', 'blocked', 'proposed', 'awaiting_approval', 'active']);
+  const tasksBadge = tasks.filter(t => openTaskStatuses.has((t.status || '').toLowerCase())).length;
 
   const root = (document.getElementById('subtab-host') || document.getElementById('route-inputs'));
   root.innerHTML = `
@@ -68,6 +73,7 @@ export function renderInputs(ctx, { onChange }) {
       ${renderSubTab('suggestions', 'Suggestions', suggestionsBadge)}
       ${renderSubTab('meetings', 'Meetings', meetingsBadge)}
       ${renderSubTab('memos', 'Memos', memosBadge)}
+      ${renderSubTab('tasks', 'Tasks', tasksBadge)}
     </nav>
     <div id="inputs-subtab-body"></div>
   `;
@@ -84,12 +90,173 @@ export function renderInputs(ctx, { onChange }) {
   if (activeSubTab === 'suggestions') body.innerHTML = renderSuggestionsSubTab(tasks, ctx);
   else if (activeSubTab === 'meetings') body.innerHTML = renderMeetingsSubTab(meetings, ctx);
   else if (activeSubTab === 'memos') body.innerHTML = renderMemosSubTab(memos);
+  else if (activeSubTab === 'tasks') body.innerHTML = renderTasksSubTab(tasks, ctx);
 
   if (activeSubTab === 'meetings') probeMeetingServerBanner();
   wireMemoButtons(memos, onChange);
   wireMeetingButtons(meetings, ctx, onChange);
   wireSuggestionButtons(tasks, onChange, ctx);
   wireMemoRowClick(memos, ctx);
+  wireTaskButtons(tasks, ctx, onChange);
+}
+
+// ============ Tasks sub-tab ============
+//
+// Every task in bus/{bu}/tasks.json rendered with status colouring.
+// Green = done, Yellow = in-progress, Grey = proposed/queued, Red = blocked
+// or failed. '+ New task' opens a modal — submits to /api/file-stewart-task
+// which writes the task with target.executor set. The Paperclip agent picks
+// it up on its next heartbeat.
+
+const TASK_STATUS_STYLE = {
+  done:             { bg: 'rgba(35,140,70,.10)',  fg: '#238c46', label: 'DONE',     border: '#238c46' },
+  completed:        { bg: 'rgba(35,140,70,.10)',  fg: '#238c46', label: 'DONE',     border: '#238c46' },
+  in_progress:      { bg: 'rgba(214,154,43,.12)', fg: '#c78500', label: 'IN PROG',  border: '#c78500' },
+  active:           { bg: 'rgba(214,154,43,.12)', fg: '#c78500', label: 'ACTIVE',   border: '#c78500' },
+  blocked:          { bg: 'rgba(193,37,37,.10)',  fg: '#c12525', label: 'BLOCKED',  border: '#c12525' },
+  failed:           { bg: 'rgba(193,37,37,.10)',  fg: '#c12525', label: 'FAILED',   border: '#c12525' },
+  abandoned:        { bg: 'rgba(154,161,174,.14)',fg: '#5b6270', label: 'ABANDONED',border: '#9aa1ae' },
+  proposed:         { bg: 'rgba(154,161,174,.10)',fg: '#5b6270', label: 'PROPOSED', border: '#9aa1ae' },
+  awaiting_approval:{ bg: 'rgba(154,161,174,.10)',fg: '#5b6270', label: 'AWAITING', border: '#9aa1ae' },
+};
+const TASK_STATUS_DEFAULT = { bg: 'rgba(154,161,174,.10)', fg: '#5b6270', label: 'UNKNOWN', border: '#9aa1ae' };
+
+function renderTasksSubTab(tasks, ctx) {
+  // Sort: open tasks first (proposed / awaiting / active / in_progress / blocked),
+  // then closed (done / abandoned / failed) at the bottom. Within each, most
+  // recently updated first.
+  const orderKey = (t) => {
+    const s = (t.status || '').toLowerCase();
+    if (['done','completed','abandoned','failed'].includes(s)) return 2;
+    if (['in_progress','active','blocked'].includes(s)) return 0;
+    return 1;
+  };
+  const stamp = (t) => (t.updated_at || t.proposed_at || t.created_at || t.decided_at || '');
+  const sorted = tasks.slice().sort((a, b) => {
+    const oa = orderKey(a); const ob = orderKey(b);
+    if (oa !== ob) return oa - ob;
+    return (stamp(b) || '').localeCompare(stamp(a) || '');
+  });
+
+  return `
+    <div class="card">
+      <div class="card-header-row">
+        <div class="card-header-left">
+          <span class="card-title">Tasks</span>
+          <p class="card-sub">Drop a task; it's pushed to the assigned agent and picked up on their next Paperclip heartbeat. Colour shows status — grey queued · amber in progress · red blocked · green done.</p>
+        </div>
+        <button type="button" id="new-task-btn" class="onboard-begin" style="padding:9px 16px;font-size:12.5px;">+ New task</button>
+      </div>
+      <div id="new-task-form-host" hidden style="margin-top:10px;"></div>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-top:14px;">
+        ${sorted.length === 0
+          ? `<div class="finance-note">No tasks yet. Click <strong>+ New task</strong> to drop one.</div>`
+          : sorted.map(renderTaskRow).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function renderTaskRow(t) {
+  const s = TASK_STATUS_STYLE[(t.status || '').toLowerCase()] || TASK_STATUS_DEFAULT;
+  const executor = t.target?.executor || t.owner_agent_id || '—';
+  const ownerModule = t.owner_module || t.mod || '—';
+  const when = t.updated_at || t.proposed_at || t.created_at || '';
+  return `
+    <div style="display:flex;align-items:flex-start;gap:12px;padding:12px 14px;background:#fff;border:1px solid rgba(20,22,28,.08);border-left:4px solid ${s.border};border-radius:10px;">
+      <span style="font:700 10px 'JetBrains Mono',ui-monospace,Menlo,monospace;text-transform:uppercase;letter-spacing:.12em;padding:2px 8px;border-radius:5px;background:${s.bg};color:${s.fg};flex-shrink:0;margin-top:2px;">${s.label}</span>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13.5px;color:#16181e;font-weight:600;line-height:1.35;">${escapeHtml(t.title || 'Untitled task')}</div>
+        ${t.description ? `<div style="font-size:12.5px;color:#5b6270;line-height:1.5;margin-top:4px;">${escapeHtml((t.description || '').slice(0, 240))}${(t.description || '').length > 240 ? '…' : ''}</div>` : ''}
+        <div style="margin-top:6px;font:500 11px 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#9aa1ae;display:flex;gap:12px;flex-wrap:wrap;">
+          <span>→ ${escapeHtml(executor)}</span>
+          <span>module: ${escapeHtml(ownerModule)}</span>
+          ${when ? `<span>${escapeHtml(when.slice(0,10))}</span>` : ''}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function wireTaskButtons(tasks, ctx, onChange) {
+  const newBtn = document.getElementById('new-task-btn');
+  if (!newBtn) return;
+  newBtn.addEventListener('click', () => {
+    const host = document.getElementById('new-task-form-host');
+    if (!host) return;
+    if (!host.hidden) { host.hidden = true; host.innerHTML = ''; return; }
+    // Build executor options from the current BU's bindings if available; fall
+    // back to a stable set of common agents. The operator can also type any id.
+    const bindings = ctx?.bindings || [];
+    const currentBu = BU();
+    const localBindings = bindings.filter(b => b.bu === currentBu);
+    const executorOptions = [
+      { id: 'genus-agent', label: 'Genus Agent (default)' },
+      ...localBindings.map(b => ({ id: b.agent_id, label: b.agent_id })),
+    ];
+    // Dedupe by id
+    const seen = new Set();
+    const uniqueExecutors = executorOptions.filter(o => (seen.has(o.id) ? false : (seen.add(o.id), true)));
+    host.hidden = false;
+    host.innerHTML = `
+      <div style="background:#fff;border:1px solid rgba(20,22,28,.10);border-radius:10px;padding:14px 16px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+          <label style="display:flex;flex-direction:column;gap:4px;">
+            <span style="font-size:11px;font-weight:600;color:#5b6270;">Title</span>
+            <input id="nt-title" type="text" placeholder="e.g. Draft the outreach for Acme" style="padding:8px 10px;border:1px solid rgba(20,22,28,.14);border-radius:7px;font-family:inherit;font-size:13px;">
+          </label>
+          <label style="display:flex;flex-direction:column;gap:4px;">
+            <span style="font-size:11px;font-weight:600;color:#5b6270;">Push to (agent)</span>
+            <select id="nt-executor" style="padding:8px 10px;border:1px solid rgba(20,22,28,.14);border-radius:7px;font-family:inherit;font-size:13px;background:#fff;">
+              ${uniqueExecutors.map(o => `<option value="${escapeHtml(o.id)}">${escapeHtml(o.label)}</option>`).join('')}
+            </select>
+          </label>
+        </div>
+        <label style="display:flex;flex-direction:column;gap:4px;margin-bottom:10px;">
+          <span style="font-size:11px;font-weight:600;color:#5b6270;">Description <span style="color:#9aa1ae;font-weight:400;">— what needs doing, and what "done" looks like</span></span>
+          <textarea id="nt-desc" rows="4" placeholder="Genus / the agent reads this to decide what to do." style="padding:8px 10px;border:1px solid rgba(20,22,28,.14);border-radius:7px;font-family:inherit;font-size:13px;line-height:1.5;resize:vertical;"></textarea>
+        </label>
+        <div style="display:flex;justify-content:flex-end;gap:8px;">
+          <button type="button" class="new-task-cancel onboard-cancel" style="padding:7px 14px;font-size:12px;">Cancel</button>
+          <button type="button" class="new-task-save onboard-begin" style="padding:7px 14px;font-size:12px;">Push to agent →</button>
+          <span class="new-task-status mono" style="font-size:11px;color:#9aa1ae;align-self:center;"></span>
+        </div>
+      </div>
+    `;
+    setTimeout(() => document.getElementById('nt-title')?.focus(), 30);
+    document.querySelector('.new-task-cancel').addEventListener('click', () => { host.hidden = true; host.innerHTML = ''; });
+    document.querySelector('.new-task-save').addEventListener('click', async () => {
+      const title = document.getElementById('nt-title').value.trim();
+      if (!title) { document.getElementById('nt-title').focus(); return; }
+      const description = document.getElementById('nt-desc').value.trim();
+      const executor = document.getElementById('nt-executor').value.trim() || 'genus-agent';
+      const statusEl = document.querySelector('.new-task-status');
+      statusEl.textContent = 'pushing…'; statusEl.style.color = '#9aa1ae';
+      try {
+        const resp = await fetch('/api/file-stewart-task', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            bu: BU(),
+            title,
+            description,
+            origin: 'operator_manual',
+            proposer: 'operator',
+            category: 'operator_task',
+            target: { type: 'stewart_action', executor },
+            status: 'proposed',
+          }),
+        });
+        const json = await resp.json().catch(() => ({}));
+        if (!resp.ok || !json.ok) throw new Error(json.message || `HTTP ${resp.status}`);
+        statusEl.textContent = `✓ pushed to ${executor}`;
+        statusEl.style.color = '#238c46';
+        setTimeout(() => { host.hidden = true; host.innerHTML = ''; if (typeof onChange === 'function') onChange(); }, 800);
+      } catch (e) {
+        statusEl.textContent = `✗ ${e.message}`;
+        statusEl.style.color = '#c12525';
+      }
+    });
+  });
 }
 
 function wireMemoRowClick(memos, ctx) {
