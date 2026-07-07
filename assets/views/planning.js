@@ -10,7 +10,14 @@
 
 import { escapeHtml, ago, dateLabel, isoDay, cycleTimeProgress } from '../utils.js';
 
-const BU = 'tuto';
+// Legacy hardcode — planning was pinned to 'tuto' from the pre-multi-BU
+// era. Now resolves the current BU dynamically. Function shape so nothing
+// captures the value at module load.
+function BU() {
+  return new URLSearchParams(location.search).get('bu')
+    || localStorage.getItem('genus.currentBu')
+    || 'tuto';
+}
 
 let openInitiativeId = null;
 let activeSubTab = 'active';
@@ -441,7 +448,7 @@ function wireBacklogActions(scope, ctx, onChange) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            bu: BU,
+            bu: BU(),
             item_type: itemType,
             item_id: itemId,
             action,
@@ -591,7 +598,7 @@ function renderInitiativeDetailOverlay(ctx, onChange) {
         const resp = await fetch('/api/update-initiative', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ bu: BU, init_id: initId, action: 'mark_milestone_done', milestone_id: msId, actor: 'operator' }),
+          body: JSON.stringify({ bu: BU(), init_id: initId, action: 'mark_milestone_done', milestone_id: msId, actor: 'operator' }),
         });
         const json = await resp.json().catch(() => ({}));
         if (!resp.ok || !json.ok) throw new Error(json.message || `HTTP ${resp.status}`);
@@ -690,7 +697,7 @@ function wireGatewayApprovalPanel(host, init, onChange) {
         const resp = await fetch('/api/update-initiative', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ bu: BU, init_id: init.id, action: 'edit_gateway', gateway_id: gatewayId, edits, actor: 'operator' }),
+          body: JSON.stringify({ bu: BU(), init_id: init.id, action: 'edit_gateway', gateway_id: gatewayId, edits, actor: 'operator' }),
         });
         const json = await resp.json().catch(() => ({}));
         if (!resp.ok || !json.ok) throw new Error(json.message || `HTTP ${resp.status}`);
@@ -736,7 +743,7 @@ function wireGatewayApprovalPanel(host, init, onChange) {
   buttons.forEach(btn => {
     btn.addEventListener('click', async () => {
       const action = btn.dataset.gatewayAction;
-      const body = { bu: BU, init_id: init.id, action: 'set_status', actor: 'operator' };
+      const body = { bu: BU(), init_id: init.id, action: 'set_status', actor: 'operator' };
       let successPhrase;
 
       if (action === 'approve') {
@@ -867,7 +874,7 @@ async function onCompleteCycle(planId, btn, ctx, onChange) {
     const resp = await fetch('/api/update-plan', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bu: BU, plan_id: planId, action: 'complete_cycle', closing_notes: notes.trim() || undefined, actor: 'operator' }),
+      body: JSON.stringify({ bu: BU(), plan_id: planId, action: 'complete_cycle', closing_notes: notes.trim() || undefined, actor: 'operator' }),
     });
     const json = await resp.json().catch(() => ({}));
     if (!resp.ok || !json.ok) throw new Error(json.message || `HTTP ${resp.status}`);
@@ -878,14 +885,14 @@ async function onCompleteCycle(planId, btn, ctx, onChange) {
 async function onRequestProposals(planId, btn, ctx, onChange) {
   const plan = (ctx.plans || []).find(p => p.id === planId);
   if (!plan) return;
-  if (!window.confirm(`File a task asking the ${BU}-stewart to draft 3 alternative next-cycle plans?\n\nThe Stewart will produce 3 different shapes/priorities at next heartbeat. You pick ONE to activate.`)) return;
+  if (!window.confirm(`File a task asking the ${BU()}-stewart to draft 3 alternative next-cycle plans?\n\nThe Stewart will produce 3 different shapes/priorities at next heartbeat. You pick ONE to activate.`)) return;
   await runCycleAction(btn, async () => {
     const body = {
-      bu: BU,
+      bu: BU(),
       title: `Draft 3 alternative next-cycle plans (after ${plan.id})`,
-      description: `Operator requested 3 alternative next-cycle plan proposals from the dashboard. Produce them in dashboard/public/data/bus/${BU}/plan_proposals.json. Each proposal should be a DIFFERENT SHAPE: different goal mix, different priorities, different cadence — not three near-duplicates. Reference the just-closed cycle "${plan.title}" (${plan.id}) when grounding the proposals. After they appear, the operator picks one in the dashboard and it gets activated.`,
+      description: `Operator requested 3 alternative next-cycle plan proposals from the dashboard. Produce them in dashboard/public/data/bus/${BU()}/plan_proposals.json. Each proposal should be a DIFFERENT SHAPE: different goal mix, different priorities, different cadence — not three near-duplicates. Reference the just-closed cycle "${plan.title}" (${plan.id}) when grounding the proposals. After they appear, the operator picks one in the dashboard and it gets activated.`,
       category: 'plan_proposal',
-      target: { type: 'json_file', scope: `dashboard/public/data/bus/${BU}/plan_proposals.json`, executor: `${BU}-stewart` },
+      target: { type: 'json_file', scope: `dashboard/public/data/bus/${BU()}/plan_proposals.json`, executor: `${BU()}-stewart` },
       estimated_minutes: 90,
       risk_level: 'low',
       reversibility: 'high',
@@ -1013,7 +1020,7 @@ function renderEditPlanOverlay(ctx, onChange) {
       const resp = await fetch('/api/update-plan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bu: BU, plan_id: plan.id, action: 'edit_plan', edits, actor: 'operator' }),
+        body: JSON.stringify({ bu: BU(), plan_id: plan.id, action: 'edit_plan', edits, actor: 'operator' }),
       });
       const json = await resp.json().catch(() => ({}));
       if (!resp.ok || !json.ok) throw new Error(json.message || `HTTP ${resp.status}`);
@@ -1025,11 +1032,11 @@ function renderEditPlanOverlay(ctx, onChange) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            bu: BU,
+            bu: BU(),
             title: `Re-sync open tasks against edited plan ${plan.id}`,
             description: `Operator edited the active plan ${plan.id} structure (${Object.keys(edits).join(', ')}). Re-evaluate all open / awaiting_approval / approved tasks: do any now point at archived initiatives, contradict the new initiative roster, or no longer fit the cycle end date? Reconcile by closing / re-pointing / re-prioritizing as appropriate. Surface anything ambiguous as a memo for operator review.`,
             category: 'plan_resync',
-            target: { type: 'json_file', scope: `dashboard/public/data/bus/${BU}/tasks.json`, executor: `${BU}-stewart` },
+            target: { type: 'json_file', scope: `dashboard/public/data/bus/${BU()}/tasks.json`, executor: `${BU()}-stewart` },
             estimated_minutes: 45,
             risk_level: 'low',
             reversibility: 'high',

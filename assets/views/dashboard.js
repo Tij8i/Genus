@@ -546,7 +546,7 @@ function wireAdapterRunButton() {
       const r = await fetch(`${MEETING_SERVER}/adapter/run`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bu: 'tuto' }),
+        body: JSON.stringify({ bu: (new URLSearchParams(location.search).get('bu') || localStorage.getItem('genus.currentBu') || 'tuto') }),
       });
       const j = await r.json();
       if (j.ok) {

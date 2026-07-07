@@ -481,7 +481,7 @@ function wireLogButtons(hooks) {
         const resp = await fetch('/api/log-kpi-measurement', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ bu: 'tuto', kpi_id: kpiId, value, notes }),
+          body: JSON.stringify({ bu: (new URLSearchParams(location.search).get('bu') || localStorage.getItem('genus.currentBu') || 'tuto'), kpi_id: kpiId, value, notes }),
         });
         const json = await resp.json().catch(() => ({}));
         if (!resp.ok || !json.ok) throw new Error(json.message || `HTTP ${resp.status}`);

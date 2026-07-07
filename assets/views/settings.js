@@ -428,7 +428,7 @@ async function updateGovernanceGauge(btn, gauge, level, onChange) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        bu: 'tuto', gauge, new_level: level, actor: 'operator',
+        bu: (new URLSearchParams(location.search).get('bu') || localStorage.getItem('genus.currentBu') || 'tuto'), gauge, new_level: level, actor: 'operator',
         rationale: 'Set via Genus dashboard governance card',
       }),
     });
