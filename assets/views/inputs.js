@@ -491,21 +491,53 @@ function wireMeetingButtons(meetings, ctx, onChange) {
   const newBtn = document.getElementById('new-meeting-btn');
   if (newBtn) {
     newBtn.addEventListener('click', () => {
-      const title = window.prompt('Meeting title:', 'Working session');
-      if (!title) return;
-      // Per docs/system/MEETING_PROTOCOL.md — every meeting has a one-sentence
-      // expected output. The agent uses it as the success criterion and treats
-      // off-topic drift as new-meeting-request material instead of absorbing it.
-      const expected = window.prompt(
-        'Expected output (one sentence — what success looks like at close):',
-        ''
-      );
-      if (expected === null) return;  // operator cancelled the second prompt
-      const expected_output = (expected || '').trim();
-      startMeeting(
-        { title, purpose: 'general', expected_output: expected_output || undefined },
-        ctx, onChange, newBtn
-      );
+      // In-app modal (was two chained window.prompt()s — replaced 2026-07-07
+      // per operator direction to use proper in-app UI). Per MEETING_PROTOCOL.md
+      // every meeting still needs a one-sentence expected-output; asked in the
+      // same modal.
+      const host = document.getElementById('overlay-host');
+      if (!host) return;
+      host.innerHTML = `
+        <div id="msc-scrim" style="position:fixed;inset:0;background:rgba(16,18,28,.34);z-index:60;"></div>
+        <div style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:min(560px,94vw);background:#fff;border-radius:16px;box-shadow:0 30px 90px rgba(16,18,28,.28);z-index:61;overflow:hidden;">
+          <div style="padding:20px 24px 14px;border-bottom:1px solid rgba(20,22,28,.08);display:flex;align-items:center;justify-content:space-between;">
+            <div>
+              <div style="font:600 10px 'JetBrains Mono',ui-monospace,Menlo,monospace;letter-spacing:.14em;color:#3468d6;text-transform:uppercase;">Schedule a meeting</div>
+              <div style="font-size:13px;color:#5b6270;margin-top:4px;">Live operator↔agent session via the local meeting server.</div>
+            </div>
+            <button type="button" id="msc-close" style="background:none;border:none;font-size:26px;color:#9aa1ae;cursor:pointer;line-height:1;">×</button>
+          </div>
+          <div style="padding:18px 24px;display:flex;flex-direction:column;gap:12px;">
+            <div>
+              <label style="display:block;font-size:12px;font-weight:600;color:#5b6270;margin-bottom:4px;">Title</label>
+              <input type="text" id="msc-title" value="Working session" style="width:100%;padding:9px 12px;border:1px solid rgba(20,22,28,.14);border-radius:8px;font-family:inherit;font-size:13.5px;color:#16181e;box-sizing:border-box;">
+            </div>
+            <div>
+              <label style="display:block;font-size:12px;font-weight:600;color:#5b6270;margin-bottom:4px;">Expected output <span style="color:#9aa1ae;font-weight:400;">— one sentence, what success looks like at close</span></label>
+              <input type="text" id="msc-expected" placeholder="e.g. Decided pricing tiers; drafted 3 marketing headlines; …" style="width:100%;padding:9px 12px;border:1px solid rgba(20,22,28,.14);border-radius:8px;font-family:inherit;font-size:13.5px;color:#16181e;box-sizing:border-box;">
+            </div>
+          </div>
+          <div style="padding:14px 24px;border-top:1px solid rgba(20,22,28,.08);display:flex;justify-content:flex-end;gap:10px;">
+            <button type="button" id="msc-cancel" style="padding:9px 16px;border:1px solid rgba(20,22,28,.14);background:#fff;color:#5b6270;border-radius:9px;font:600 12.5px inherit;cursor:pointer;">Cancel</button>
+            <button type="button" id="msc-submit" style="padding:9px 18px;background:#3468d6;color:#fff;border:none;border-radius:9px;font:600 12.5px inherit;cursor:pointer;">Schedule →</button>
+          </div>
+        </div>
+      `;
+      const close = () => { host.innerHTML = ''; };
+      document.getElementById('msc-scrim')?.addEventListener('click', close);
+      document.getElementById('msc-close')?.addEventListener('click', close);
+      document.getElementById('msc-cancel')?.addEventListener('click', close);
+      setTimeout(() => document.getElementById('msc-title')?.focus(), 50);
+      document.getElementById('msc-submit').addEventListener('click', () => {
+        const title = document.getElementById('msc-title').value.trim();
+        if (!title) { document.getElementById('msc-title').focus(); return; }
+        const expected_output = document.getElementById('msc-expected').value.trim();
+        close();
+        startMeeting(
+          { title, purpose: 'general', expected_output: expected_output || undefined },
+          ctx, onChange, newBtn
+        );
+      });
     });
   }
   document.querySelectorAll('.meeting-convert-btn').forEach(btn => {
