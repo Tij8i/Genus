@@ -75,11 +75,16 @@ async function _createMeetingHandler(bu) {
     const agenda = agendaStr.split(',').map(s => s.trim()).filter(Boolean);
     const module_id = prompt('Module (optional — leave blank for core):') || null;
     try {
-      await fetch('/api/meetings', {
+      const res = await fetch('/api/meetings', {
         method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ bu, action: 'start', title, goal, agenda, module_id }),
       });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) {
+        alert(`Could not convene (HTTP ${res.status}): ${j.message || 'unknown error — check DevTools Network tab for details'}`);
+        return;
+      }
       await renderMeetings();
     } catch (e) { alert(`Could not convene: ${e.message}`); }
 }
