@@ -166,6 +166,10 @@ function renderTaskRow(t) {
   const executor = t.target?.executor || t.owner_agent_id || '—';
   const ownerModule = t.owner_module || t.mod || '—';
   const when = t.updated_at || t.proposed_at || t.created_at || '';
+  // Fire-now: only queued (approved / proposed) tasks aimed at a specific
+  // agent can be fired. Closed / in-progress / blocked can't.
+  const status = (t.status || '').toLowerCase();
+  const canFire = ['approved','proposed','awaiting_approval'].includes(status) && executor && executor !== '—';
   return `
     <div style="display:flex;align-items:flex-start;gap:12px;padding:12px 14px;background:#fff;border:1px solid rgba(20,22,28,.08);border-left:4px solid ${s.border};border-radius:10px;">
       <span style="font:700 10px 'JetBrains Mono',ui-monospace,Menlo,monospace;text-transform:uppercase;letter-spacing:.12em;padding:2px 8px;border-radius:5px;background:${s.bg};color:${s.fg};flex-shrink:0;margin-top:2px;">${s.label}</span>
@@ -178,11 +182,39 @@ function renderTaskRow(t) {
           ${when ? `<span>${escapeHtml(when.slice(0,10))}</span>` : ''}
         </div>
       </div>
+      ${canFire ? `<button type="button" class="task-fire-btn" data-task-id="${escapeHtml(t.id)}" data-agent-id="${escapeHtml(executor)}" title="Skip the cron and fire this agent's routine now" style="padding:6px 12px;font-size:11.5px;font-weight:600;background:#3468d6;color:#fff;border:none;border-radius:7px;cursor:pointer;flex-shrink:0;align-self:center;">Fire now →</button>` : ''}
     </div>
   `;
 }
 
 function wireTaskButtons(tasks, ctx, onChange) {
+  // Fire-now: kicks the trigger daemon which pokes Paperclip's routine-execute
+  // endpoint for the specified agent. If the daemon or Paperclip isn't reachable,
+  // surface a specific error via showAlert.
+  document.querySelectorAll('.task-fire-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const task_id = btn.dataset.taskId;
+      const agent_id = btn.dataset.agentId;
+      const original = btn.textContent;
+      btn.disabled = true; btn.textContent = 'firing…';
+      try {
+        const res = await fetch('http://127.0.0.1:3101/paperclip/fire-agent', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ agent_id, bu: BU(), task_id }),
+        });
+        const j = await res.json().catch(() => ({}));
+        if (!res.ok || !j.ok) throw new Error(j.message || `HTTP ${res.status}`);
+        btn.textContent = '✓ fired';
+        btn.style.background = '#238c46';
+        // Give the agent a moment to actually pick it up, then refresh
+        setTimeout(() => { if (typeof onChange === 'function') onChange(); }, 2000);
+      } catch (e) {
+        btn.disabled = false; btn.textContent = original;
+        await showAlert(`Fire failed: ${e.message}. The trigger daemon at localhost:3101 or Paperclip at localhost:3100 may not be running.`, { subtitle: 'Fire agent', tone: 'danger' });
+      }
+    });
+  });
+
   const newBtn = document.getElementById('new-task-btn');
   if (!newBtn) return;
   newBtn.addEventListener('click', () => {
