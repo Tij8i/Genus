@@ -64,6 +64,7 @@ export function renderSettings(ctx, opts = {}) {
 const RUNTIME_KIND_LABELS = {
   'paperclip-local': 'Paperclip — local',
   'paperclip-cloud': 'Paperclip — cloud',
+  'github-actions': 'GitHub Actions',
   'n8n': 'n8n',
   'custom': 'Custom',
 };
@@ -89,11 +90,22 @@ async function renderRuntimesSubTab(ctx, opts) {
   const usageCount = (rid) => bindings.filter(b => b.runtime_id === rid).length;
 
   body.innerHTML = `
-    <div class="card">
+    <div class="card" style="border-left:4px solid #8a5cf6;">
+      <div class="card-body" style="padding:14px 18px;">
+        <div style="font:600 10px 'JetBrains Mono',ui-monospace,Menlo,monospace;letter-spacing:.14em;color:#8a5cf6;text-transform:uppercase;margin-bottom:6px;">System requirements</div>
+        <div style="font-size:13px;color:var(--text);line-height:1.55;">Genus itself needs two external things to run:</div>
+        <ul style="margin:8px 0 4px 20px;padding:0;font-size:13px;color:var(--text-dim);line-height:1.7;">
+          <li><strong>GitHub</strong> — required. The substrate (bus/*.json, docs/, agent bindings) lives in a GitHub repo. Mason agents also execute as GitHub Actions workflows.</li>
+          <li><strong>Paperclip</strong> — required if any Stewart or Genus Agent is installed. Stewarts run on Paperclip routines (local or cloud).</li>
+        </ul>
+        <div style="font-size:12px;color:var(--text-faint);margin-top:8px;">If you don't have a GitHub account, Genus can't be installed. If you have no Stewarts (unusual), you can skip Paperclip.</div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:14px;">
       <div class="card-header-row">
         <div class="card-header-left">
           <span class="card-title">Runtimes</span>
-          <p class="card-sub">${runtimes.length} runtime${runtimes.length === 1 ? '' : 's'} registered. Each agent binding picks one — that's whose Claude account is billed when the agent runs.</p>
+          <p class="card-sub">${runtimes.length} runtime${runtimes.length === 1 ? '' : 's'} registered. Each agent binding picks one — that's whose Claude account or GitHub account is billed when the agent runs.</p>
         </div>
         ${isOwner ? '<button type="button" class="onboard-begin" id="rt-add-btn">Add a runtime</button>' : ''}
       </div>

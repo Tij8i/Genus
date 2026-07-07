@@ -111,6 +111,29 @@ export async function onRequestPost({ request, env }) {
       t.status = status;
       t.history = t.history || [];
       t.history.push({ at: now, actor: viewer.email, action: 'status_change', from: prev, to: status });
+
+      // Parent-status auto-rollup: when a child flips to done, check whether all
+      // sibling children are also done → mark parent done too. Cascades up the
+      // chain so a deep tree closes cleanly when the last leaf finishes. We only
+      // roll UP, never sideways or down, and we never overwrite a parent that's
+      // already in a terminal state (done/cancelled/rejected).
+      const TERMINAL = new Set(['done', 'cancelled', 'rejected', 'closed']);
+      const cascade = (childId) => {
+        const child = tasks.find(x => x.id === childId);
+        if (!child?.parent_task_id) return;
+        const parent = tasks.find(x => x.id === child.parent_task_id);
+        if (!parent) return;
+        if (TERMINAL.has((parent.status || '').toLowerCase())) return;
+        const siblings = (parent.spawned_task_ids || []).map(sid => tasks.find(x => x.id === sid)).filter(Boolean);
+        if (siblings.length === 0) return;
+        if (!siblings.every(s => (s.status || '').toLowerCase() === 'done')) return;
+        const parentPrev = parent.status;
+        parent.status = 'done';
+        parent.history = parent.history || [];
+        parent.history.push({ at: now, actor: 'system', action: 'auto_rollup', from: parentPrev, to: 'done', reason: `all ${siblings.length} children done` });
+        cascade(parent.id);
+      };
+      if (status === 'done') cascade(tid);
     } else {
       return jsonResponse(400, { ok: false, message: `unknown action: ${action}` });
     }

@@ -136,32 +136,55 @@ function renderTasksSubTab(tasks, ctx) {
     return 1;
   };
   const stamp = (t) => (t.updated_at || t.proposed_at || t.created_at || t.decided_at || '');
-  const sorted = tasks.slice().sort((a, b) => {
+
+  // Hierarchy: a task with parent_task_id set to a task in this list is a child.
+  // Parents render at top level; children indent underneath, collapsed by default
+  // if the parent isn't already interesting (all-done). We render as a linear
+  // list with data-depth so the CSS handles the indent — simpler than tree DOM.
+  const byId = new Map(tasks.map(t => [t.id, t]));
+  const isChild = (t) => t.parent_task_id && byId.has(t.parent_task_id);
+  const roots = tasks.filter(t => !isChild(t));
+  const childrenOf = (id) => tasks.filter(t => t.parent_task_id === id);
+
+  const sortLevel = (arr) => arr.slice().sort((a, b) => {
     const oa = orderKey(a); const ob = orderKey(b);
     if (oa !== ob) return oa - ob;
     return (stamp(b) || '').localeCompare(stamp(a) || '');
   });
+
+  const rows = [];
+  const walk = (t, depth) => {
+    const kids = childrenOf(t.id);
+    const kidStates = kids.map(k => (k.status || '').toLowerCase());
+    const doneCount = kidStates.filter(s => ['done', 'completed'].includes(s)).length;
+    rows.push(renderTaskRow(t, { depth, hasChildren: kids.length > 0, doneCount, totalChildren: kids.length }));
+    if (kids.length > 0) {
+      for (const kid of sortLevel(kids)) walk(kid, depth + 1);
+    }
+  };
+  for (const root of sortLevel(roots)) walk(root, 0);
 
   return `
     <div class="card">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;">
         <div style="flex:1;min-width:280px;max-width:720px;">
           <span class="card-title">Tasks</span>
-          <p class="card-sub" style="margin-top:4px;">Drop a task; it's pushed to the assigned agent and picked up on their next Paperclip heartbeat. Colour shows status — grey queued · amber in progress · red blocked · green done.</p>
+          <p class="card-sub" style="margin-top:4px;">Drop a task; it's routed to the assigned agent's runtime (Stewart → Paperclip, Mason → GitHub Actions). Parents with children collapse — click the chevron to expand.</p>
         </div>
         <button type="button" id="new-task-btn" class="onboard-begin" style="padding:9px 16px;font-size:12.5px;flex-shrink:0;white-space:nowrap;">+ New task</button>
       </div>
       <div id="new-task-form-host" hidden style="margin-top:10px;"></div>
-      <div style="display:flex;flex-direction:column;gap:8px;margin-top:14px;">
-        ${sorted.length === 0
+      <div id="tasks-tree" style="display:flex;flex-direction:column;gap:8px;margin-top:14px;">
+        ${rows.length === 0
           ? `<div class="finance-note">No tasks yet. Click <strong>+ New task</strong> to drop one.</div>`
-          : sorted.map(renderTaskRow).join('')}
+          : rows.join('')}
       </div>
     </div>
   `;
 }
 
-function renderTaskRow(t) {
+function renderTaskRow(t, opts = {}) {
+  const { depth = 0, hasChildren = false, doneCount = 0, totalChildren = 0 } = opts;
   const s = TASK_STATUS_STYLE[(t.status || '').toLowerCase()] || TASK_STATUS_DEFAULT;
   const executor = t.target?.executor || t.owner_agent_id || '—';
   const ownerModule = t.owner_module || t.mod || '—';
@@ -170,11 +193,27 @@ function renderTaskRow(t) {
   // agent can be fired. Closed / in-progress / blocked can't.
   const status = (t.status || '').toLowerCase();
   const canFire = ['approved','proposed','awaiting_approval'].includes(status) && executor && executor !== '—';
+
+  // Hierarchy: each depth level indents 26px. Parent tasks with children get
+  // a chevron button; children start collapsed (data-depth > 0 hidden by default).
+  const indentPx = depth * 26;
+  const isChild = depth > 0;
+  const chevron = hasChildren
+    ? `<button type="button" class="task-tree-toggle" data-parent-id="${escapeHtml(t.id)}" aria-expanded="false" title="Expand children" style="border:none;background:transparent;padding:0 4px 0 0;cursor:pointer;font-size:11px;color:#5b6270;line-height:1;">▶</button>`
+    : (isChild ? '<span style="display:inline-block;width:14px;"></span>' : '');
+  const childProgress = hasChildren
+    ? `<span title="Children done / total" style="font:600 10.5px 'JetBrains Mono',ui-monospace,Menlo,monospace;color:${doneCount === totalChildren ? '#238c46' : '#5b6270'};padding:2px 6px;background:${doneCount === totalChildren ? 'rgba(35,140,70,.08)' : 'rgba(154,161,174,.10)'};border-radius:4px;">↳ ${doneCount}/${totalChildren}</span>`
+    : '';
+
   return `
-    <div style="display:flex;align-items:flex-start;gap:12px;padding:12px 14px;background:#fff;border:1px solid rgba(20,22,28,.08);border-left:4px solid ${s.border};border-radius:10px;">
+    <div data-task-id="${escapeHtml(t.id)}" data-depth="${depth}" data-parent-id="${escapeHtml(t.parent_task_id || '')}" ${isChild ? 'hidden' : ''} style="display:flex;align-items:flex-start;gap:12px;padding:12px 14px;background:#fff;border:1px solid rgba(20,22,28,.08);border-left:4px solid ${s.border};border-radius:10px;margin-left:${indentPx}px;">
+      ${chevron}
       <span style="font:700 10px 'JetBrains Mono',ui-monospace,Menlo,monospace;text-transform:uppercase;letter-spacing:.12em;padding:2px 8px;border-radius:5px;background:${s.bg};color:${s.fg};flex-shrink:0;margin-top:2px;">${s.label}</span>
       <div style="flex:1;min-width:0;">
-        <div style="font-size:13.5px;color:#16181e;font-weight:600;line-height:1.35;">${escapeHtml(t.title || 'Untitled task')}</div>
+        <div style="font-size:13.5px;color:#16181e;font-weight:600;line-height:1.35;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <span>${escapeHtml(t.title || 'Untitled task')}</span>
+          ${childProgress}
+        </div>
         ${t.description ? `<div style="font-size:12.5px;color:#5b6270;line-height:1.5;margin-top:4px;">${escapeHtml((t.description || '').slice(0, 240))}${(t.description || '').length > 240 ? '…' : ''}</div>` : ''}
         <div style="margin-top:6px;font:500 11px 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#9aa1ae;display:flex;gap:12px;flex-wrap:wrap;">
           <span>→ ${escapeHtml(executor)}</span>
@@ -182,12 +221,48 @@ function renderTaskRow(t) {
           ${when ? `<span>${escapeHtml(when.slice(0,10))}</span>` : ''}
         </div>
       </div>
-      ${canFire ? `<button type="button" class="task-fire-btn" data-task-id="${escapeHtml(t.id)}" data-agent-id="${escapeHtml(executor)}" title="Skip the cron and fire this agent's routine now" style="padding:6px 12px;font-size:11.5px;font-weight:600;background:#3468d6;color:#fff;border:none;border-radius:7px;cursor:pointer;flex-shrink:0;align-self:center;">Fire now →</button>` : ''}
+      ${canFire ? (() => {
+        const isMason = /mason/i.test(executor);
+        const label = isMason ? 'Dispatch →' : 'Fire now →';
+        const tip = isMason
+          ? `Dispatch a GitHub Actions workflow now (Mason execution). See Actions tab for run status.`
+          : `Skip the cron and fire this agent's routine now.`;
+        return `<button type="button" class="task-fire-btn" data-task-id="${escapeHtml(t.id)}" data-agent-id="${escapeHtml(executor)}" title="${escapeHtml(tip)}" style="padding:6px 12px;font-size:11.5px;font-weight:600;background:${isMason ? '#1f6e59' : '#3468d6'};color:#fff;border:none;border-radius:7px;cursor:pointer;flex-shrink:0;align-self:center;">${label}</button>`;
+      })() : ''}
     </div>
   `;
 }
 
 function wireTaskButtons(tasks, ctx, onChange) {
+  // Tree toggle: expand/collapse children of a parent row. Only walks one level;
+  // if grandchildren exist, their own row's data-parent-id points to their direct
+  // parent, so nested collapsing keeps working.
+  document.querySelectorAll('.task-tree-toggle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const pid = btn.dataset.parentId;
+      const expanded = btn.getAttribute('aria-expanded') === 'true';
+      btn.setAttribute('aria-expanded', String(!expanded));
+      btn.textContent = expanded ? '▶' : '▼';
+      btn.title = expanded ? 'Expand children' : 'Collapse children';
+      document.querySelectorAll(`#tasks-tree [data-parent-id="${pid}"]`).forEach(row => {
+        if (expanded) {
+          // Collapsing this parent: hide direct children AND recursively any of
+          // their subtrees that happen to be currently expanded.
+          row.hidden = true;
+          const cid = row.dataset.taskId;
+          const subToggle = row.querySelector('.task-tree-toggle');
+          if (subToggle && subToggle.getAttribute('aria-expanded') === 'true') {
+            subToggle.setAttribute('aria-expanded', 'false');
+            subToggle.textContent = '▶';
+            document.querySelectorAll(`#tasks-tree [data-parent-id="${cid}"]`).forEach(r => { r.hidden = true; });
+          }
+        } else {
+          row.hidden = false;
+        }
+      });
+    });
+  });
+
   // Fire-now: kicks the trigger daemon which pokes Paperclip's routine-execute
   // endpoint for the specified agent. If the daemon or Paperclip isn't reachable,
   // surface a specific error via showAlert.
@@ -197,20 +272,31 @@ function wireTaskButtons(tasks, ctx, onChange) {
       const agent_id = btn.dataset.agentId;
       const original = btn.textContent;
       btn.disabled = true; btn.textContent = 'firing…';
+      // Route: Mason → GitHub Actions workflow_dispatch (via daemon /mason/dispatch).
+      // Everyone else (Stewart, Genus Agent) → Paperclip routine execute.
+      const isMason = /-mason(-of-.+)?$/i.test(agent_id) || /mason/i.test(agent_id);
+      const endpoint = isMason
+        ? 'http://127.0.0.1:3101/mason/dispatch'
+        : 'http://127.0.0.1:3101/paperclip/fire-agent';
       try {
-        const res = await fetch('http://127.0.0.1:3101/paperclip/fire-agent', {
+        const res = await fetch(endpoint, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ agent_id, bu: BU(), task_id }),
         });
         const j = await res.json().catch(() => ({}));
         if (!res.ok || !j.ok) throw new Error(j.message || `HTTP ${res.status}`);
-        btn.textContent = '✓ fired';
+        btn.textContent = isMason ? '✓ dispatched' : '✓ fired';
         btn.style.background = '#238c46';
-        // Give the agent a moment to actually pick it up, then refresh
+        if (isMason && j.run_url_hint) {
+          btn.title = `See Actions tab: ${j.run_url_hint}`;
+        }
         setTimeout(() => { if (typeof onChange === 'function') onChange(); }, 2000);
       } catch (e) {
         btn.disabled = false; btn.textContent = original;
-        await showAlert(`Fire failed: ${e.message}. The trigger daemon at localhost:3101 or Paperclip at localhost:3100 may not be running.`, { subtitle: 'Fire agent', tone: 'danger' });
+        const help = isMason
+          ? 'Ensure the trigger daemon at localhost:3101 is running and gh CLI is authenticated (gh auth status).'
+          : 'The trigger daemon at localhost:3101 or Paperclip at localhost:3100 may not be running.';
+        await showAlert(`Fire failed: ${e.message}. ${help}`, { subtitle: isMason ? 'Dispatch Mason workflow' : 'Fire agent', tone: 'danger' });
       }
     });
   });

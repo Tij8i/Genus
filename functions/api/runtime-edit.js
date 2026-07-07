@@ -11,7 +11,7 @@ import { requireAdmin } from './_identity.js';
 const RUNTIMES_PATH = 'dashboard/public/data/system/runtimes.json';
 const BINDINGS_PATH = 'dashboard/public/data/system/agent_bindings.json';
 const ROLES_PATH = 'dashboard/public/data/system/roles.json';
-const VALID_KINDS = new Set(['paperclip-local', 'paperclip-cloud', 'n8n', 'custom']);
+const VALID_KINDS = new Set(['paperclip-local', 'paperclip-cloud', 'github-actions', 'n8n', 'custom']);
 const SLUG_RE = /^[a-z][a-z0-9-]{1,60}$/;
 
 export async function onRequestPost({ request, env }) {
