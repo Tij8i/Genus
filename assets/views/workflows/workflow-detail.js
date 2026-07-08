@@ -6,6 +6,7 @@
 // Back button origin: 'from' query param ('overview' | 'workflows' | 'tasks-finance' | 'tasks-strategy' | 'area')
 
 import { C, MODULES, escapeHtml, currentBu, loadWorkflows, pathSegment, queryParam } from './_shared.js';
+import { showAlert, showConfirm } from '../../dialog.js';
 
 export async function renderWorkflowDetail() {
   const root = document.getElementById('route-workflow-detail');
@@ -53,6 +54,68 @@ export async function renderWorkflowDetail() {
       </div>
     </div>
   `;
+
+  wireDetailButtons(w, bu);
+}
+
+function wireDetailButtons(w, bu) {
+  const runBtn = document.getElementById('run-now-btn');
+  const pauseBtn = document.getElementById('pause-btn');
+  const editBtn = document.getElementById('edit-btn');
+
+  runBtn?.addEventListener('click', async () => {
+    const ownerAgent = w.owner?.agent_id || w.owner?.id;
+    if (!ownerAgent) {
+      await showAlert('No owner agent bound to this workflow — can\'t fire.', { subtitle: 'Run workflow', tone: 'danger' });
+      return;
+    }
+    const isMason = /mason/i.test(ownerAgent);
+    const endpoint = isMason ? 'http://127.0.0.1:3101/mason/dispatch' : 'http://127.0.0.1:3101/paperclip/fire-agent';
+    const original = runBtn.textContent;
+    runBtn.disabled = true; runBtn.textContent = 'firing…';
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agent_id: ownerAgent, bu, workflow_id: w.id }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) throw new Error(j.message || `HTTP ${res.status}`);
+      runBtn.textContent = '✓ fired';
+      runBtn.style.background = '#238c46';
+      runBtn.style.color = '#fff';
+    } catch (e) {
+      runBtn.disabled = false; runBtn.textContent = original;
+      await showAlert(`Fire failed: ${e.message}. The trigger daemon at localhost:3101 may not be running.`, { subtitle: 'Run workflow', tone: 'danger' });
+    }
+  });
+
+  pauseBtn?.addEventListener('click', async () => {
+    const target = w.status === 'active' ? 'paused' : 'active';
+    const label = target === 'paused' ? 'Pause' : 'Resume';
+    if (!await showConfirm(`${label} this workflow?`, { subtitle: w.title })) return;
+    try {
+      const res = await fetch('/api/workflow-status', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ bu, workflow_id: w.id, status: target }),
+      });
+      if (res.status === 404 || res.status === 405) {
+        // Endpoint doesn't exist yet — acknowledge the click without lying
+        await showAlert(`Pause/Resume runs via /api/workflow-status which isn\'t wired yet. The workflow's state is unchanged. This will land in the next sync.`, { subtitle: 'Not yet wired' });
+        return;
+      }
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) throw new Error(j.message || `HTTP ${res.status}`);
+      w.status = target;
+      await renderWorkflowDetail();
+    } catch (e) {
+      await showAlert(`${label} failed: ${e.message}`, { subtitle: 'Update workflow status', tone: 'danger' });
+    }
+  });
+
+  editBtn?.addEventListener('click', async () => {
+    await showAlert(`Editing workflows in-place ships in the follow-up slice. For now, edit \`bus/${bu}/workflows.json\` directly in the repo — search for id \`${w.id}\`.`, { subtitle: 'Edit workflow' });
+  });
 }
 
 function backTarget(from) {

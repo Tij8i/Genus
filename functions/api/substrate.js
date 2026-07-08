@@ -18,6 +18,7 @@
 
 import { getFile, jsonResponse } from './_gh.js';
 import { requireExternalRead } from './_external_auth.js';
+import { getViewerIdentity } from './_identity.js';
 
 // Substrate scope allowlist — only paths under these prefixes are readable.
 // Keep tight: this Function is exposed publicly, and any GET goes via the
@@ -74,7 +75,21 @@ export async function onRequestGet({ request, env }) {
     jsonResponse,
   });
   if (external instanceof Response) return external;
-  // external === null means no Bearer — dashboard path — proceed unrestricted
+  // external === null means no Bearer — dashboard path. Enforce BU isolation
+  // check for dashboard viewers too: a viewer with ventures: ['tuto']
+  // can't read bus/medivara/…. Owners + admins with ventures: ['*'] get
+  // through. Unauthenticated → 403 (unless dev_fallback identity).
+  if (external === null && targetBu) {
+    const viewer = await getViewerIdentity(request, env);
+    if (!viewer || viewer.role === 'unauthenticated') {
+      return jsonResponse(403, { ok: false, message: 'auth required' });
+    }
+    const allowed = viewer.role === 'owner'
+      || (Array.isArray(viewer.ventures) && (viewer.ventures.includes('*') || viewer.ventures.includes(targetBu)));
+    if (!allowed) {
+      return jsonResponse(403, { ok: false, message: `viewer not authorised for BU '${targetBu}'`, requested_path: path });
+    }
+  }
   // external is verified → we already scoped by BU inside requireExternalRead
 
   try {
