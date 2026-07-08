@@ -27,8 +27,7 @@ const VALID_ROUTES = [
   'learning-overview', 'hr-overview', 'hr-catalog', 'hr-plan-optimizer',
   'sales-overview', 'marketing-overview',
   // Misc
-  'workflow-detail', 'confidence-demo',
-];
+  'workflow-detail', 'confidence-demo', 'operations-settings-rules', 'operations-settings-general', 'operations-settings-connections', 'operations-settings-permissions', 'operations-discipline', 'sales-pipeline', 'sales-contacts'];
 let currentRoute = null;
 let onChangeCb = () => {};
 
