@@ -3372,6 +3372,17 @@ body {
 }
 .chat-panel-body { overflow: hidden; }
 
+/* Links inside chat bubbles — subtle, brand-tinted, dashed on hover so
+   they read as "jump to somewhere in the app" rather than external. */
+.chat-link {
+  color: var(--accent, #2f6bff);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+}
+.chat-link:hover { text-decoration-style: dashed; }
+.chat-turn-operator .chat-link { color: #fff; text-decoration-color: rgba(255,255,255,.7); }
+
 /* ============ KPIs › Sources & Health (sub-tab) ============ */
 /* Restored from legacy parity audit (GEN-49). KPI×connector join table:
    one row per KPI, badge derived from connector status + measurement
