@@ -60,19 +60,24 @@ export async function renderWorkflowDetail() {
 
 function wireDetailButtons(w, bu) {
   const runBtn = document.getElementById('run-now-btn');
+  const triggerBtn = document.getElementById('trigger-now-btn');
   const pauseBtn = document.getElementById('pause-btn');
   const editBtn = document.getElementById('edit-btn');
 
-  runBtn?.addEventListener('click', async () => {
+  // Fires the workflow's owner agent via the trigger daemon. Same logic for
+  // both entry points: `run-now-btn` (top-right on automated workflows) and
+  // `trigger-now-btn` (Trigger card on manual workflows). Extracted so the
+  // two buttons stay in sync.
+  const fireWorkflow = async (btn, subtitle) => {
     const ownerAgent = w.owner?.agent_id || w.owner?.id;
     if (!ownerAgent) {
-      await showAlert('No owner agent bound to this workflow — can\'t fire.', { subtitle: 'Run workflow', tone: 'danger' });
+      await showAlert('No owner agent bound to this workflow — can\'t fire.', { subtitle, tone: 'danger' });
       return;
     }
     const isMason = /mason/i.test(ownerAgent);
     const endpoint = isMason ? 'http://127.0.0.1:3101/mason/dispatch' : 'http://127.0.0.1:3101/paperclip/fire-agent';
-    const original = runBtn.textContent;
-    runBtn.disabled = true; runBtn.textContent = 'firing…';
+    const original = btn.textContent;
+    btn.disabled = true; btn.textContent = 'firing…';
     try {
       const res = await fetch(endpoint, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -80,14 +85,17 @@ function wireDetailButtons(w, bu) {
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok) throw new Error(j.message || `HTTP ${res.status}`);
-      runBtn.textContent = '✓ fired';
-      runBtn.style.background = '#238c46';
-      runBtn.style.color = '#fff';
+      btn.textContent = '✓ fired';
+      btn.style.background = '#238c46';
+      btn.style.color = '#fff';
     } catch (e) {
-      runBtn.disabled = false; runBtn.textContent = original;
-      await showAlert(`Fire failed: ${e.message}. The trigger daemon at localhost:3101 may not be running.`, { subtitle: 'Run workflow', tone: 'danger' });
+      btn.disabled = false; btn.textContent = original;
+      await showAlert(`Fire failed: ${e.message}. The trigger daemon at localhost:3101 may not be running.`, { subtitle, tone: 'danger' });
     }
-  });
+  };
+
+  runBtn?.addEventListener('click', () => fireWorkflow(runBtn, 'Run workflow'));
+  triggerBtn?.addEventListener('click', () => fireWorkflow(triggerBtn, 'Trigger workflow'));
 
   pauseBtn?.addEventListener('click', async () => {
     const target = w.status === 'active' ? 'paused' : 'active';
