@@ -243,8 +243,37 @@ function renderChatTurn(t) {
   `;
 }
 
+// Whitelist: bare relative in-app URLs (?bu=..., #route, ?bu=...#route) and
+// absolute http/https. Everything else (javascript:, data:, file:, custom
+// schemes) is left as literal text — never rendered as a clickable anchor.
+function isSafeChatUrl(u) {
+  if (!u) return false;
+  const trimmed = u.trim();
+  if (trimmed.startsWith('?') || trimmed.startsWith('#')) return true;
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return true;
+  return false;
+}
+
+// Render markdown [label](url) links + bare http(s) URLs as clickable anchors.
+// Runs AFTER escapeHtml — the escaped text still contains literal [, ], (, )
+// characters we can pattern-match on.
+function linkifyEscaped(text) {
+  // Markdown links first (they may embed a URL that would otherwise auto-link).
+  let out = text.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, label, url) => {
+    if (!isSafeChatUrl(url)) return m;
+    const external = url.startsWith('http');
+    const attrs = external ? ' target="_blank" rel="noopener"' : '';
+    return `<a href="${url}" class="chat-link"${attrs}>${label}</a>`;
+  });
+  // Then bare absolute URLs that weren't already wrapped.
+  out = out.replace(/(?<!["'>])(https?:\/\/[^\s<]+[^\s<.,:;!?)\]])/g, (m) => {
+    return `<a href="${m}" class="chat-link" target="_blank" rel="noopener">${m}</a>`;
+  });
+  return out;
+}
+
 function escapeAndLinebreak(s) {
-  return escapeHtml(s || '').replace(/\n/g, '<br>');
+  return linkifyEscaped(escapeHtml(s || '')).replace(/\n/g, '<br>');
 }
 
 function scrollToBottom(el) { if (el) el.scrollTop = el.scrollHeight; }
