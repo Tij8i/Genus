@@ -3316,6 +3316,62 @@ body {
   text-align: right;
 }
 
+/* ---- Chat-dock panel mode overrides (340×460 compact widget) ---- */
+.chat-mode-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  height: 100%;
+  gap: 0;
+  padding: 0 10px 8px;
+  box-sizing: border-box;
+}
+.chat-mode-panel .chat-bar {
+  padding: 4px 8px;
+  margin: 6px 0 4px;
+  background: transparent;
+  border: none;
+}
+.chat-mode-panel .chat-status { font-size: 10.5px; }
+.chat-mode-panel .chat-thread {
+  min-height: 0;
+  padding: 4px 2px;
+  gap: 8px;
+}
+.chat-mode-panel .chat-empty {
+  padding: 20px 12px;
+  font-size: 12px;
+}
+.chat-mode-panel .chat-turn { max-width: 88%; }
+.chat-mode-panel .chat-bubble {
+  padding: 7px 11px;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.chat-mode-panel .chat-meta { font-size: 9.5px; padding: 0 4px; margin-top: 2px; }
+.chat-mode-panel .chat-thinking { font-size: 11.5px; padding: 2px 6px; }
+.chat-mode-panel .chat-error { font-size: 11px; padding: 4px 8px; }
+.chat-mode-panel .chat-input-row {
+  padding-top: 6px;
+  gap: 6px;
+  border-top: 1px solid var(--border);
+}
+.chat-mode-panel .chat-input-row textarea {
+  min-height: 32px;
+  max-height: 84px;
+  padding: 6px 9px;
+  font-size: 12.5px;
+  border-radius: 6px;
+  resize: none;
+}
+.chat-mode-panel .chat-send-btn {
+  padding: 6px 12px;
+  font-size: 12px;
+  height: 32px;
+  border-radius: 6px;
+}
+.chat-panel-body { overflow: hidden; }
+
 /* ============ KPIs › Sources & Health (sub-tab) ============ */
 /* Restored from legacy parity audit (GEN-49). KPI×connector join table:
    one row per KPI, badge derived from connector status + measurement
