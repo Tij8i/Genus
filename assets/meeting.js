@@ -64,40 +64,47 @@ function notifyMeetingChanged(bu, meeting_id) {
   entry.subscribers.forEach(fn => { try { fn(); } catch (_) {} });
 }
 
-// Start a meeting with an agent. opts:
-//   bu       — BU id ('genus' | 'medivara' | ...)
-//   agent_id — agent id ('genus-agent' | 'tuto-stewart' | ...)
-//   title    — meeting title shown in chat overlay header
-//   purpose  — short purpose tag (used in ownership directive)
-//   opening_prompt — optional seed message the agent will reply to first
-// Returns the started meeting, or null on failure (alert is surfaced).
-export async function startMeeting({ bu, agent_id, title, purpose, opening_prompt }) {
+// Create a meeting server-side without opening any UI. Prefer this over
+// startMeeting when the caller manages its own surface (e.g. chat-dock
+// wants to render the panel itself and does not want the full overlay
+// to flash open). Returns the meeting, or null on failure (alert surfaced).
+export async function createMeeting({ bu, agent_id, title, purpose, opening_prompt, related_item }) {
   const ok = await checkMeetingServer();
   if (!ok) {
     await showAlert(`Local meeting server unreachable at ${MEETING_SERVER}. Start it (launchctl kickstart -k gui/$(id -u)/com.tij8i.genus-meetings) and try again.`, { subtitle: 'Meeting server', tone: 'danger' });
     return null;
   }
   try {
+    const body = {
+      bu,
+      agent_id,
+      title: title || 'Meeting',
+      purpose: purpose || 'general',
+      opening_prompt: opening_prompt || null,
+    };
+    if (related_item) body.related_item = related_item;
     const r = await fetch(`${MEETING_SERVER}/meeting/new`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        bu,
-        agent_id,
-        title: title || 'Meeting',
-        purpose: purpose || 'general',
-        opening_prompt: opening_prompt || null,
-      }),
+      body: JSON.stringify(body),
     });
     const j = await r.json();
     if (!r.ok || !j.ok) throw new Error(j.message || `HTTP ${r.status}`);
     registerMeeting(bu, j.meeting);
-    openMeetingChat(j.meeting, { bu });
     return j.meeting;
   } catch (e) {
     await showAlert(`Could not start meeting: ${e.message}`, { subtitle: 'Meeting', tone: 'danger' });
     return null;
   }
+}
+
+// Backward-compat: create the meeting AND open the full overlay. Prefer
+// openChatDocked (from chat-dock.js) for new callers so chats default
+// to the small docked panel instead of taking over the screen.
+export async function startMeeting(opts) {
+  const meeting = await createMeeting(opts);
+  if (meeting) openMeetingChat(meeting, { bu: opts.bu });
+  return meeting;
 }
 
 // Fetch an existing meeting by id. Used by the chat dock to resume a

@@ -10,7 +10,7 @@
 // - meeting_id is persisted per tab in localStorage so closing + reopening
 //   (or minimising + restoring) resumes the same conversation.
 
-import { startMeeting, resumeMeeting, openMeetingChat, mountChatSurface } from './meeting.js';
+import { createMeeting, resumeMeeting, openMeetingChat, mountChatSurface } from './meeting.js';
 import { escapeHtml, currentBu } from './views/workflows/_shared.js';
 
 const STORE_KEY = 'genus.chat-dock.state';
@@ -168,8 +168,20 @@ function mountInto(host, meeting, bu, tabId) {
 }
 
 async function createMeetingForTab(t, bu) {
+  // If the tab carries a caller-supplied prompt (from openChatDocked), use
+  // that. Otherwise fall back to the archetype default.
+  if (t.opening_prompt || t.purpose) {
+    return await createMeeting({
+      bu,
+      agent_id: t.agent_id || (t.kind === 'genus' ? 'genus-agent' : null),
+      title: t.label,
+      purpose: t.purpose || (t.kind === 'genus' ? 'chat-dock' : 'steward-chat'),
+      opening_prompt: t.opening_prompt || null,
+      related_item: t.related_item || null,
+    });
+  }
   if (t.kind === 'genus') {
-    return await startMeeting({
+    return await createMeeting({
       bu,
       agent_id: 'genus-agent',
       title: 'Genus',
@@ -178,7 +190,7 @@ async function createMeetingForTab(t, bu) {
     });
   }
   if (t.kind === 'steward') {
-    return await startMeeting({
+    return await createMeeting({
       bu,
       agent_id: t.agent_id,
       title: t.label,
@@ -237,18 +249,15 @@ async function openFullPage(t) {
     meeting = await resumeMeeting({ bu, meeting_id: t.meeting_id });
     if (meeting) tabMeetings.set(t.id, meeting);
   }
-  if (meeting) {
-    openMeetingChat(meeting, { bu });
-    return;
+  if (!meeting) {
+    meeting = await createMeetingForTab(t, bu);
+    if (meeting) {
+      tabMeetings.set(t.id, meeting);
+      t.meeting_id = meeting.id;
+      saveState();
+    }
   }
-  // No meeting_id yet — cold-start via startMeeting like before, then persist id.
-  const created = await createMeetingForTab(t, bu);
-  if (created) {
-    tabMeetings.set(t.id, created);
-    t.meeting_id = created.id;
-    saveState();
-    // startMeeting already opened the overlay; nothing more to do.
-  }
+  if (meeting) openMeetingChat(meeting, { bu });
 }
 
 // Public helper for spawning a Steward tab from a module page.
@@ -259,6 +268,54 @@ export function openStewardTab({ id, label, agent_id }) {
   } else {
     const t = dockState.tabs.find(tt => tt.id === id);
     t.minimised = false;
+  }
+  saveState();
+  renderDock();
+}
+
+// Rich entry point for callers that want to open a chat with a specific
+// starting prompt / purpose / related item, always docked as a small panel
+// (not the full-screen overlay). Replaces direct startMeeting() calls from
+// views that used to take over the screen.
+//
+// opts:
+//   bu, agent_id, label         — required
+//   kind                        — 'steward' | 'genus' | 'agent'  (default: 'agent')
+//   purpose, opening_prompt     — passed through to the meeting server
+//   related_item                — passed through to the meeting server
+//   tab_id                      — override the auto-generated tab id
+//   fresh                       — if true, start a new conversation even if a
+//                                 tab already exists for this id (drops the
+//                                 in-memory meeting; server-side history stays)
+export function openChatDocked({
+  bu, agent_id, label,
+  kind = 'agent',
+  purpose = null, opening_prompt = null, related_item = null,
+  tab_id = null, fresh = false,
+} = {}) {
+  loadState();
+  const id = tab_id || `${kind}-${agent_id}-${bu}`;
+  const existing = dockState.tabs.find(t => t.id === id);
+  if (existing) {
+    existing.minimised = false;
+    existing.label = label || existing.label;
+    if (fresh) {
+      existing.meeting_id = null;
+      tabMeetings.delete(id);
+    }
+    // Only set caller-supplied prompt/purpose on a fresh meeting — mid-thread
+    // resumption should keep whatever prompt seeded the current transcript.
+    if (fresh || !existing.meeting_id) {
+      existing.purpose = purpose;
+      existing.opening_prompt = opening_prompt;
+      existing.related_item = related_item;
+    }
+  } else {
+    dockState.tabs.push({
+      id, label, kind, agent_id,
+      minimised: false, unread: 0, meeting_id: null,
+      purpose, opening_prompt, related_item,
+    });
   }
   saveState();
   renderDock();

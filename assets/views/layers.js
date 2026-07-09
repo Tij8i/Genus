@@ -17,7 +17,7 @@
 
 import { escapeHtml } from '../utils.js';
 import { openOverlay, closeOverlay } from '../overlay.js';
-import { startMeeting } from '../meeting.js';
+import { openChatDocked } from '../chat-dock.js';
 import { openAddAgentOverlay } from './agents.js';
 import { fetchSubstrateJson } from '../substrate-client.js';
 import { showAlert, showConfirm, showPrompt } from '../dialog.js';
@@ -929,12 +929,15 @@ async function startGenusAgentMeeting(bu, mode = 'areas') {
   const opening = mode === 'add-area'
     ? `The operator wants to add a new business area to ${bu}. Ask what's missing from the current model — a recurring theme, a new revenue line, a stage shift — and propose the area's name + description.`
     : `The operator opened a meeting to review the business model for ${bu}. Read the current business_areas.json and your genus_agent_state. Lead with the current state (wired or suggestion) and ask what they want to refine.`;
-  await startMeeting({
+  openChatDocked({
     bu,
     agent_id: 'genus-agent',
-    title,
+    label: 'Genus',
+    kind: 'genus',
+    tab_id: 'genus',            // reuse the pinned Genus tab
     purpose: 'business-modelling',
     opening_prompt: opening,
+    fresh: true,                // business-modelling is a new working thread
   });
 }
 
