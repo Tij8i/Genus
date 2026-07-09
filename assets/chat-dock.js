@@ -10,7 +10,7 @@
 // - meeting_id is persisted per tab in localStorage so closing + reopening
 //   (or minimising + restoring) resumes the same conversation.
 
-import { createMeeting, resumeMeeting, openMeetingChat, mountChatSurface } from './meeting.js';
+import { createMeeting, resumeMeeting, findRecentActiveMeeting, openMeetingChat, mountChatSurface } from './meeting.js';
 import { escapeHtml, currentBu } from './views/workflows/_shared.js';
 
 const STORE_KEY = 'genus.chat-dock.state';
@@ -139,11 +139,27 @@ async function ensureChatMounted(t) {
       meeting = await resumeMeeting({ bu, meeting_id: t.meeting_id });
     }
 
-    // Fresh start if resume failed or no prior meeting_id
+    // No prior id (or resume failed) — look for the most recent still-active
+    // meeting on the server for this (agent_id, bu). Covers the case where the
+    // operator closed the tab (or lost it to a bug) and reopens: we resume the
+    // existing thread instead of silently starting a new conversation.
+    // Skipped when the caller explicitly asked for a fresh thread via
+    // openChatDocked({fresh: true}) — that path clears meeting_id AND sets a
+    // fresh_requested marker on the tab.
+    if (!meeting && !t.fresh_requested && t.agent_id) {
+      meeting = await findRecentActiveMeeting({ bu, agent_id: t.agent_id });
+      if (meeting) {
+        t.meeting_id = meeting.id;
+        saveState();
+      }
+    }
+
+    // Fresh start if resume + recent-active-lookup both failed
     if (!meeting) {
       meeting = await createMeetingForTab(t, bu);
       if (meeting) {
         t.meeting_id = meeting.id;
+        t.fresh_requested = false;
         saveState();
       }
     }
@@ -301,6 +317,7 @@ export function openChatDocked({
     existing.label = label || existing.label;
     if (fresh) {
       existing.meeting_id = null;
+      existing.fresh_requested = true;
       tabMeetings.delete(id);
     }
     // Only set caller-supplied prompt/purpose on a fresh meeting — mid-thread
@@ -314,6 +331,7 @@ export function openChatDocked({
     dockState.tabs.push({
       id, label, kind, agent_id,
       minimised: false, unread: 0, meeting_id: null,
+      fresh_requested: !!fresh,
       purpose, opening_prompt, related_item,
     });
   }
