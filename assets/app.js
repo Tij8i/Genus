@@ -32,6 +32,7 @@ import { renderModules as renderModulesView } from './views/modules.js';
 import { renderPeople as renderPeopleView } from './views/people.js';
 import { renderTasksCentral as renderTasksCentralView } from './views/tasks-central.js';
 import { mountChatDock } from './chat-dock.js';
+import { mountScheduledNudger } from './scheduled-nudger.js';
 import { renderLearningOverview } from './views/learning-module.js';
 import { renderHrOverview, renderHrCatalog, renderPlanOptimizer } from './views/hr.js';
 import { renderSalesOverview } from './views/sales.js';
@@ -1080,6 +1081,7 @@ function renderWsMenu(identity) {
 
 boot().then(() => {
   try { mountChatDock(); } catch (e) { console.warn('chat dock mount', e); }
+  try { mountScheduledNudger(); } catch (e) { console.warn('scheduled nudger mount', e); }
   // i44 — Chat with Stewart tab handler (bubbles from any module page)
   document.body.addEventListener('click', async (e) => {
     const link = e.target.closest('[data-action-tab="steward-chat"]');
