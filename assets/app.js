@@ -484,7 +484,7 @@ async function boot() {
     buAvatar.textContent = registryBu?.avatar_initial || buDisplay.charAt(0).toUpperCase();
     if (registryBu?.color) buAvatar.style.background = registryBu.color;
   }
-  if (buMeta) buMeta.textContent = `${identity?.category || (registryBu?.modules_installed || []).join(', ') || 'BU'} · v0.7`;
+  if (buMeta) buMeta.textContent = `${identity?.category || (registryBu?.modules_installed || []).join(', ') || 'BU'} · v0.9`;
 
   // Workspace switcher dropdown
   const wsBtn = document.getElementById('bu-switcher');
