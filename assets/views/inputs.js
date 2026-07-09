@@ -118,10 +118,13 @@ const TASK_STATUS_STYLE = {
   abandoned:        { bg: 'rgba(154,161,174,.14)',fg: '#5b6270', label: 'ABANDONED',border: '#9aa1ae' },
   proposed:         { bg: 'rgba(154,161,174,.10)',fg: '#5b6270', label: 'PROPOSED', border: '#9aa1ae' },
   awaiting_approval:{ bg: 'rgba(154,161,174,.10)',fg: '#5b6270', label: 'AWAITING', border: '#9aa1ae' },
-  // file-stewart-task returns status:'approved' by default — operator-filed
-  // tasks are inherently approved (the operator IS the approval). Render as
-  // grey queued alongside proposed until the Paperclip agent moves it.
-  approved:         { bg: 'rgba(154,161,174,.10)',fg: '#5b6270', label: 'QUEUED',   border: '#9aa1ae' },
+  // approved = ready to push to Paperclip. Operator-filed tasks land here
+  // directly (file-stewart-task returns status:'approved' by default) and can
+  // Fire-now from the Tasks list. Label reads "READY" to distinguish from the
+  // post-push "QUEUED" state (task is on Paperclip, waiting for the agent).
+  approved:         { bg: 'rgba(154,161,174,.10)',fg: '#5b6270', label: 'READY',    border: '#9aa1ae' },
+  pushed:           { bg: 'rgba(52,104,214,.10)', fg: '#3468d6', label: 'QUEUED',   border: '#3468d6' },
+  executing:        { bg: 'rgba(214,154,43,.12)', fg: '#c78500', label: 'RUNNING',  border: '#c78500' },
 };
 const TASK_STATUS_DEFAULT = { bg: 'rgba(154,161,174,.10)', fg: '#5b6270', label: 'UNKNOWN', border: '#9aa1ae' };
 
@@ -263,56 +266,65 @@ function wireTaskButtons(tasks, ctx, onChange) {
     });
   });
 
-  // Fire-now: kicks the trigger daemon which pokes Paperclip's routine-execute
-  // endpoint for the specified agent. If the daemon or Paperclip isn't reachable,
-  // surface a specific error via showAlert.
+  // Fire-now: pushes the specific task to Paperclip.
+  // - Mason: dispatches a GitHub Actions workflow via the trigger daemon.
+  //   (Handoff is immediate; success = the workflow was accepted by GH.)
+  // - Everyone else: shells the meeting server through paperclip_adapter.py
+  //   with --task-id, which creates a real Paperclip Issue, updates the task
+  //   to status='pushed' with paperclip_issue_id + url, and commits tasks.json.
+  //   The subsequent rehydrate makes the button disappear because canFire
+  //   no longer matches (status is now 'pushed', not 'approved').
   document.querySelectorAll('.task-fire-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const task_id = btn.dataset.taskId;
       const agent_id = btn.dataset.agentId;
       const original = btn.textContent;
-      btn.disabled = true; btn.textContent = 'firing…';
-      // Route: Mason → GitHub Actions workflow_dispatch (via daemon /mason/dispatch).
-      // Everyone else (Stewart, Genus Agent) → Paperclip routine execute.
+      btn.disabled = true; btn.textContent = 'sending…';
       const isMason = /-mason(-of-.+)?$/i.test(agent_id) || /mason/i.test(agent_id);
-      const endpoint = isMason
-        ? 'http://127.0.0.1:3101/mason/dispatch'
-        : 'http://127.0.0.1:3101/paperclip/fire-agent';
       try {
-        const res = await fetch(endpoint, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ agent_id, bu: BU(), task_id }),
-        });
-        const j = await res.json().catch(() => ({}));
-        if (!res.ok || !j.ok) throw new Error(j.message || `HTTP ${res.status}`);
-        btn.textContent = isMason ? '✓ dispatched' : '✓ queued';
-        // Mason: green (done — GH Actions dispatch is a real handoff).
-        // Paperclip: amber (queued — work is accepted, but the routine execution
-        // itself is still pending in the Paperclip queue). Reads as "in progress"
-        // matching the IN PROG status style at TASK_STATUS_STYLE.in_progress.
-        btn.style.background = isMason ? '#238c46' : '#c78500';
-        if (isMason && j.run_url_hint) {
-          btn.title = `See Actions tab: ${j.run_url_hint}`;
-        }
-        // Paperclip: tell the operator which company got the execution. When
-        // the routine isn't in the BU's own Paperclip company (shared agents
-        // like genus-agent live in ONE base company), surface that explicitly
-        // — otherwise the operator looks in the wrong queue and thinks the
-        // fire silently failed.
-        if (!isMason && j.company_name) {
-          if (j.landed_in_bu_company === false) {
-            await showAlert(`Fired in Paperclip company "${j.company_name}", not in this BU's own queue. The routine "${j.routine_title}" is shared across BUs and only lives in "${j.company_name}". Look there for the execution.`, { subtitle: 'Fire agent', tone: 'info' });
-          } else {
-            btn.title = `Fired in ${j.company_name} · ${j.routine_title}`;
+        if (isMason) {
+          const res = await fetch('http://127.0.0.1:3101/mason/dispatch', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ agent_id, bu: BU(), task_id }),
+          });
+          const j = await res.json().catch(() => ({}));
+          if (!res.ok || !j.ok) throw new Error(j.message || `HTTP ${res.status}`);
+          btn.textContent = '✓ dispatched';
+          btn.style.background = '#238c46';
+          if (j.run_url_hint) btn.title = `See Actions tab: ${j.run_url_hint}`;
+        } else {
+          // Paperclip path via the adapter — actually pushes the task.
+          const res = await fetch('http://127.0.0.1:8765/adapter/run', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ bu: BU(), task_id, push_only: true }),
+          });
+          const j = await res.json().catch(() => ({}));
+          if (!res.ok || !j.ok) {
+            const msg = (j.stderr_tail || j.message || `HTTP ${res.status}`).slice(-500);
+            throw new Error(msg);
           }
+          // Confirm the push actually happened — the adapter's stdout ends with
+          // "summary: N tasks pushed, …". If N=0, surface the reason.
+          const tail = j.stdout_tail || '';
+          const summaryMatch = tail.match(/summary:\s*(\d+)\s+tasks pushed/);
+          if (summaryMatch && summaryMatch[1] === '0') {
+            const hint = tail.match(/HOLD\s+.*/) ? 'Task held by tier window (should not happen with explicit fire — file a bug).'
+              : tail.match(/BU '.*' is registered/) ? 'This BU is missing Paperclip company/agent IDs in the adapter config.'
+              : 'Adapter completed but didn\'t push the task. Check the tail of the response.';
+            throw new Error(hint + '\n\n' + tail.slice(-400));
+          }
+          btn.textContent = '✓ sent';
+          btn.style.background = '#3468d6';
+          btn.title = 'Pushed to Paperclip — reload to see updated status';
         }
+        // Rehydrate to pick up the new status from tasks.json.
         setTimeout(() => { if (typeof onChange === 'function') onChange(); }, 2000);
       } catch (e) {
         btn.disabled = false; btn.textContent = original;
         const help = isMason
           ? 'Ensure the trigger daemon at localhost:3101 is running and gh CLI is authenticated (gh auth status).'
-          : 'The trigger daemon at localhost:3101 or Paperclip at localhost:3100 may not be running.';
-        await showAlert(`Fire failed: ${e.message}. ${help}`, { subtitle: isMason ? 'Dispatch Mason workflow' : 'Fire agent', tone: 'danger' });
+          : 'The meeting server at localhost:8765 must be running (launchctl kickstart -k gui/$(id -u)/com.tij8i.genus-meetings) and Paperclip must be reachable at localhost:3100.';
+        await showAlert(`Fire failed: ${e.message}\n\n${help}`, { subtitle: isMason ? 'Dispatch Mason workflow' : 'Send task to Paperclip', tone: 'danger' });
       }
     });
   });
