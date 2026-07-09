@@ -3,16 +3,25 @@
 // Gmail-grammar floating conversations docked bottom-right.
 // - Genus tab pinned leftmost (dark).
 // - Steward + topic chats spawn as sibling tabs.
-// - Three sizes: minimised tab ↔ open panel (340px × 460px) ↔ full page
-//   (opens the existing meeting-server overlay).
-// - State persists in localStorage across reloads.
+// - Three sizes: minimised tab ↔ open panel (340px × 460px, live chat) ↔ full page
+//   (opens the existing meeting overlay against the same meeting_id).
+// - Panel is a real chat surface: mounts meeting.js's mountChatSurface so the
+//   operator can send/receive while the widget stays docked.
+// - meeting_id is persisted per tab in localStorage so closing + reopening
+//   (or minimising + restoring) resumes the same conversation.
 
-import { startMeeting } from './meeting.js';
+import { startMeeting, resumeMeeting, openMeetingChat, mountChatSurface } from './meeting.js';
 import { escapeHtml, currentBu } from './views/workflows/_shared.js';
 
 const STORE_KEY = 'genus.chat-dock.state';
 
-let dockState = { tabs: [{ id: 'genus', label: 'Genus', kind: 'genus', minimised: true, unread: 0 }] };
+let dockState = { tabs: [{ id: 'genus', label: 'Genus', kind: 'genus', minimised: true, unread: 0, meeting_id: null }] };
+
+// Per-tab live-meeting objects (kept in memory only — meeting_id + bu round-trip
+// to localStorage; the meeting body is refetched via resumeMeeting on reopen).
+const tabMeetings = new Map();       // tabId → meeting
+const tabUnmounts = new Map();       // tabId → unmount() from mountChatSurface
+const tabPending = new Map();        // tabId → true (mount in flight, avoid dupes)
 
 function loadState() {
   try {
@@ -24,8 +33,10 @@ function loadState() {
   } catch (_) {}
   // Always keep exactly one genus tab, pinned leftmost
   if (!dockState.tabs.find(t => t.kind === 'genus')) {
-    dockState.tabs.unshift({ id: 'genus', label: 'Genus', kind: 'genus', minimised: true, unread: 0 });
+    dockState.tabs.unshift({ id: 'genus', label: 'Genus', kind: 'genus', minimised: true, unread: 0, meeting_id: null });
   }
+  // Migrate: ensure every tab has meeting_id field
+  dockState.tabs.forEach(t => { if (!('meeting_id' in t)) t.meeting_id = null; });
 }
 
 function saveState() {
@@ -44,11 +55,19 @@ export function mountChatDock() {
   renderDock();
 }
 
+function unmountAll() {
+  tabUnmounts.forEach((fn) => { try { fn(); } catch (_) {} });
+  tabUnmounts.clear();
+}
+
 function renderDock() {
   const host = document.getElementById('chat-dock-host');
   if (!host) return;
+  // Tear down any live chat surfaces before wiping innerHTML — otherwise
+  // their poll timers keep running against orphaned DOM (leaks + noise).
+  unmountAll();
   host.innerHTML = dockState.tabs.map(t => t.minimised ? renderTab(t) : renderPanel(t)).join('');
-  // Wire tab clicks (open panel)
+
   dockState.tabs.forEach(t => {
     if (t.minimised) {
       document.getElementById(`chat-tab-${t.id}`)?.addEventListener('click', () => setSize(t.id, 'panel'));
@@ -56,6 +75,8 @@ function renderDock() {
       document.getElementById(`chat-min-${t.id}`)?.addEventListener('click', () => setSize(t.id, 'tab'));
       document.getElementById(`chat-full-${t.id}`)?.addEventListener('click', () => openFullPage(t));
       document.getElementById(`chat-close-${t.id}`)?.addEventListener('click', () => closeTab(t.id));
+      // Kick off the chat surface for open panels
+      ensureChatMounted(t);
     }
   });
 }
@@ -76,9 +97,8 @@ function renderPanel(t) {
   const isGenus = t.kind === 'genus';
   const headerBg = isGenus ? '#16181e' : '#fbfbfa';
   const headerFg = isGenus ? '#fbfbfa' : '#16181e';
-  const inputPlaceholder = isGenus ? 'Ask Genus…' : `Ask ${escapeHtml(t.label)}…`;
-  return `<div style="pointer-events:auto;width:340px;height:460px;background:#fff;border:1px solid rgba(20,22,28,.14);border-radius:12px 12px 0 0;box-shadow:0 -8px 32px rgba(20,22,28,.18);display:flex;flex-direction:column;overflow:hidden;">
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:${headerBg};color:${headerFg};border-bottom:1px solid rgba(20,22,28,.08);">
+  return `<div id="chat-panel-${escapeHtml(t.id)}" style="pointer-events:auto;width:340px;height:460px;background:#fff;border:1px solid rgba(20,22,28,.14);border-radius:12px 12px 0 0;box-shadow:0 -8px 32px rgba(20,22,28,.18);display:flex;flex-direction:column;overflow:hidden;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:${headerBg};color:${headerFg};border-bottom:1px solid rgba(20,22,28,.08);flex:0 0 auto;">
       <div style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         ${escapeHtml(t.label)}
@@ -89,16 +109,91 @@ function renderPanel(t) {
         ${isGenus ? '' : `<button type="button" id="chat-close-${escapeHtml(t.id)}" title="Close" style="background:none;border:none;color:${headerFg};font-size:16px;line-height:1;padding:2px 6px;cursor:pointer;opacity:.75;">✕</button>`}
       </div>
     </div>
-    <div style="flex:1;overflow-y:auto;padding:14px 16px;font-size:13px;color:#5b6270;line-height:1.55;background:#fbfbfa;">
-      <div style="text-align:center;padding:20px 0;color:#9aa1ae;">
-        <div style="font-size:12.5px;margin-bottom:6px;">Ready when you are.</div>
-        <div style="font-size:11.5px;">Click ⤢ to open the full chat window with ${escapeHtml(t.label)}.</div>
-      </div>
-    </div>
-    <div style="padding:10px 14px;border-top:1px solid rgba(20,22,28,.08);background:#fff;">
-      <button type="button" id="chat-full-${escapeHtml(t.id)}-bottom" onclick="document.getElementById('chat-full-${escapeHtml(t.id)}').click()" style="width:100%;padding:9px 14px;background:${isGenus ? '#16181e' : '#3468d6'};color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:600;">Open full chat →</button>
+    <div id="chat-panel-body-${escapeHtml(t.id)}" class="chat-panel-body" style="flex:1;min-height:0;display:flex;flex-direction:column;background:#fbfbfa;">
+      <div class="chat-panel-loading" style="flex:1;display:flex;align-items:center;justify-content:center;color:#9aa1ae;font-size:12px;">connecting…</div>
     </div>
   </div>`;
+}
+
+async function ensureChatMounted(t) {
+  if (tabPending.get(t.id)) return;
+  tabPending.set(t.id, true);
+  try {
+    const host = document.getElementById(`chat-panel-body-${t.id}`);
+    if (!host) return;
+    const bu = currentBu();
+    let meeting = tabMeetings.get(t.id);
+
+    // If we already have a live meeting in memory, mount straight away.
+    if (meeting) {
+      mountInto(host, meeting, bu, t.id);
+      return;
+    }
+
+    // Try to resume by meeting_id first
+    if (t.meeting_id) {
+      meeting = await resumeMeeting({ bu, meeting_id: t.meeting_id });
+    }
+
+    // Fresh start if resume failed or no prior meeting_id
+    if (!meeting) {
+      meeting = await createMeetingForTab(t, bu);
+      if (meeting) {
+        t.meeting_id = meeting.id;
+        saveState();
+      }
+    }
+
+    if (!meeting) {
+      // Local server offline or start failed — show a fallback CTA
+      renderOfflineFallback(host, t);
+      return;
+    }
+
+    tabMeetings.set(t.id, meeting);
+    mountInto(host, meeting, bu, t.id);
+  } finally {
+    tabPending.delete(t.id);
+  }
+}
+
+function mountInto(host, meeting, bu, tabId) {
+  host.innerHTML = '';
+  const unmount = mountChatSurface(host, meeting, { bu, mode: 'panel' });
+  tabUnmounts.set(tabId, unmount);
+}
+
+async function createMeetingForTab(t, bu) {
+  if (t.kind === 'genus') {
+    return await startMeeting({
+      bu,
+      agent_id: 'genus-agent',
+      title: 'Genus',
+      purpose: 'chat-dock',
+      opening_prompt: 'The operator opened the Genus chat. Greet briefly, ask what they want to work on. Chat context is the whole venture.',
+    });
+  }
+  if (t.kind === 'steward') {
+    return await startMeeting({
+      bu,
+      agent_id: t.agent_id,
+      title: t.label,
+      purpose: 'steward-chat',
+      opening_prompt: `Operator opened chat with you (${t.label}), scoped to your module.`,
+    });
+  }
+  return null;
+}
+
+function renderOfflineFallback(host, t) {
+  host.innerHTML = `
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:20px;color:#5b6270;font-size:12.5px;line-height:1.55;gap:10px;">
+      <div style="font-weight:600;color:#16181e;">Local chat server offline</div>
+      <div style="font-size:11.5px;color:#9aa1ae;">Start it to chat with ${escapeHtml(t.label)}.</div>
+      <button type="button" id="chat-retry-${escapeHtml(t.id)}" style="margin-top:6px;padding:8px 14px;background:#3468d6;color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:inherit;font-size:12px;font-weight:600;">Retry</button>
+    </div>
+  `;
+  document.getElementById(`chat-retry-${t.id}`)?.addEventListener('click', () => ensureChatMounted(t));
 }
 
 function setSize(id, size) {
@@ -113,34 +208,42 @@ function setSize(id, size) {
 function closeTab(id) {
   const idx = dockState.tabs.findIndex(t => t.id === id);
   if (idx < 0) return;
-  // Never close the Genus tab; just minimise it.
+  // Never close the Genus tab; just minimise it. Keep meeting_id so resume works.
   if (dockState.tabs[idx].kind === 'genus') {
     dockState.tabs[idx].minimised = true;
   } else {
+    // For steward tabs: clear the in-memory meeting; leave the server-side
+    // meeting alive so a reopen with the same tab id could still resume it.
+    // Removing the tab also clears the tab record entirely.
+    tabMeetings.delete(id);
+    const unmount = tabUnmounts.get(id);
+    if (unmount) { try { unmount(); } catch (_) {} tabUnmounts.delete(id); }
     dockState.tabs.splice(idx, 1);
   }
   saveState();
   renderDock();
 }
 
-function openFullPage(t) {
+async function openFullPage(t) {
   const bu = currentBu();
-  if (t.kind === 'genus') {
-    startMeeting({
-      bu,
-      agent_id: 'genus-agent',
-      title: 'Genus',
-      purpose: 'chat-dock',
-      opening_prompt: 'The operator opened the Genus chat. Greet briefly, ask what they want to work on. Chat context is the whole venture.',
-    });
-  } else if (t.kind === 'steward') {
-    startMeeting({
-      bu,
-      agent_id: t.agent_id,
-      title: t.label,
-      purpose: 'steward-chat',
-      opening_prompt: `Operator opened chat with you (${t.label}), scoped to your module.`,
-    });
+  let meeting = tabMeetings.get(t.id);
+  // If we don't have a live one in memory but a meeting_id is on the tab,
+  // resume it so the full page opens the same conversation.
+  if (!meeting && t.meeting_id) {
+    meeting = await resumeMeeting({ bu, meeting_id: t.meeting_id });
+    if (meeting) tabMeetings.set(t.id, meeting);
+  }
+  if (meeting) {
+    openMeetingChat(meeting, { bu });
+    return;
+  }
+  // No meeting_id yet — cold-start via startMeeting like before, then persist id.
+  const created = await createMeetingForTab(t, bu);
+  if (created) {
+    tabMeetings.set(t.id, created);
+    t.meeting_id = created.id;
+    saveState();
+    // startMeeting already opened the overlay; nothing more to do.
   }
 }
 
@@ -148,7 +251,7 @@ function openFullPage(t) {
 export function openStewardTab({ id, label, agent_id }) {
   loadState();
   if (!dockState.tabs.find(t => t.id === id)) {
-    dockState.tabs.push({ id, label, kind: 'steward', agent_id, minimised: false, unread: 0 });
+    dockState.tabs.push({ id, label, kind: 'steward', agent_id, minimised: false, unread: 0, meeting_id: null });
   } else {
     const t = dockState.tabs.find(tt => tt.id === id);
     t.minimised = false;
