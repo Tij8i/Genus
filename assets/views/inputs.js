@@ -290,6 +290,18 @@ function wireTaskButtons(tasks, ctx, onChange) {
         if (isMason && j.run_url_hint) {
           btn.title = `See Actions tab: ${j.run_url_hint}`;
         }
+        // Paperclip: tell the operator which company got the execution. When
+        // the routine isn't in the BU's own Paperclip company (shared agents
+        // like genus-agent live in ONE base company), surface that explicitly
+        // — otherwise the operator looks in the wrong queue and thinks the
+        // fire silently failed.
+        if (!isMason && j.company_name) {
+          if (j.landed_in_bu_company === false) {
+            await showAlert(`Fired in Paperclip company "${j.company_name}", not in this BU's own queue. The routine "${j.routine_title}" is shared across BUs and only lives in "${j.company_name}". Look there for the execution.`, { subtitle: 'Fire agent', tone: 'info' });
+          } else {
+            btn.title = `Fired in ${j.company_name} · ${j.routine_title}`;
+          }
+        }
         setTimeout(() => { if (typeof onChange === 'function') onChange(); }, 2000);
       } catch (e) {
         btn.disabled = false; btn.textContent = original;
