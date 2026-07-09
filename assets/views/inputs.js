@@ -285,8 +285,12 @@ function wireTaskButtons(tasks, ctx, onChange) {
         });
         const j = await res.json().catch(() => ({}));
         if (!res.ok || !j.ok) throw new Error(j.message || `HTTP ${res.status}`);
-        btn.textContent = isMason ? '✓ dispatched' : '✓ fired';
-        btn.style.background = '#238c46';
+        btn.textContent = isMason ? '✓ dispatched' : '✓ queued';
+        // Mason: green (done — GH Actions dispatch is a real handoff).
+        // Paperclip: amber (queued — work is accepted, but the routine execution
+        // itself is still pending in the Paperclip queue). Reads as "in progress"
+        // matching the IN PROG status style at TASK_STATUS_STYLE.in_progress.
+        btn.style.background = isMason ? '#238c46' : '#c78500';
         if (isMason && j.run_url_hint) {
           btn.title = `See Actions tab: ${j.run_url_hint}`;
         }
