@@ -1,8 +1,8 @@
 # Genus — Specification
 
-**Version**: 0.5 (partial — ConfidenceFrame v1 only; MODULES.md still pending)
+**Version**: 0.6 (partial — adds Monitor as the fourth family; MODULES.md still pending)
 **Status**: Public specification.
-**Last updated**: 2026-06-24 (v0.5 partial — promotes ConfidenceFrame to protocol-level structured form of non-negotiable #2; see [CONFIDENCE_FRAME.md](./CONFIDENCE_FRAME.md))
+**Last updated**: 2026-06-25 (v0.6 partial — declares Monitor as the fourth Genus agent family; Finance is the first Monitor instance. See [MONITOR.md](./MONITOR.md))
 
 ---
 
@@ -93,9 +93,9 @@ Tasks are the atomic operating currency. They have a clear outcome, an owner age
 
 ### 6. Agent Family
 
-The archetype of an agent. There are exactly three: **Virgil**, **Stewart**, **Mason**.
+The archetype of an agent. There are four: **Virgil**, **Stewart**, **Monitor**, **Mason**.
 
-The Family discriminates an agent's *cadence* (continuous vs called) and *scope* (business vs personal vs craft). See "Archetype taxonomy" below.
+The Family discriminates an agent's *cadence* (continuous vs per-invocation), *scope* (business vs personal vs craft), and — for continuous-business agents — *work shape* (delivery vs watch). See "Archetype taxonomy" below.
 
 ### 7. Constraint
 
@@ -143,19 +143,27 @@ Permissions are declared per agent and per workflow. Expanding an agent's permis
 
 ## Archetype taxonomy
 
-Three agent families, discriminated on two axes — **cadence** (continuous vs called) and **scope** (business vs personal vs craft):
+Four agent families. The two primary discriminators are **cadence** (continuous vs per-invocation) and **scope** (business vs personal vs craft). Within continuous-business agents, a third discriminator — **work shape** (delivery vs watch) — separates Stewart from Monitor.
 
 | | Continuous cadence (heartbeat-bearing) | Per-invocation cadence (called as needed) |
 |---|---|---|
-| **Business scope** | **Stewart** | — |
+| **Business scope** | **Stewart** (delivery-shaped) · **Monitor** (watch-shaped) | — |
 | **Personal scope** | **Virgil** | — |
 | **Craft scope** | — | **Mason** |
 
-### Stewart — business-unit owner
+### Stewart — business-unit owner (delivery-shaped)
 
-Continuous cadence. Owns the KPIs of one business unit. Operates in three modes (Monitor / Recommend / Execute), climbing toward Execute as it earns operator trust. Has a heartbeat (daily background maintenance cycle), a domain model, a contract with its operator, and an authority envelope. Coordinates work across workflows. Delegates execution to Masons when craft specialists are appropriate.
+Continuous cadence. Owns the KPIs of one business unit. Operates in three operational modes (Monitor / Recommend / Execute — see the disambiguation note below), climbing toward Execute as it earns operator trust. Has a heartbeat (daily background maintenance cycle), a domain model, a contract with its operator, an authority envelope, and a **Campaign discipline** (1–3 Active Campaigns per Stream — finite deliveries that ship). Coordinates work across workflows. Delegates execution to Masons when craft specialists are appropriate.
 
 *See `STEWART.md` for the archetype spec.*
+
+### Monitor — domain-bound watcher (watch-shaped)
+
+Continuous cadence. Watches **one business in one domain** (finance, marketing-health, compliance, ops-uptime, etc.). Read-mostly: its substrate writes are restricted to a small, declared allow-list — typically a Recommendation feed plus alerts and an optional digest. **ConfidenceFrame-native** — never renders a figure it cannot defend. **No Campaign or Initiative mechanics** — does not inherit Stewart's delivery loop. Has a heartbeat (daily or domain-appropriate cadence), a domain model, a contract with its operator (per-action authority envelope on the allow-list), and trust progression that takes the form of ranking calibration + allow-list expansion (not Stewart's Execute-mode climb).
+
+The Finance Module's Finance Monitor is the first Monitor instance.
+
+*See `MONITOR.md` for the archetype spec.*
 
 ### Virgil — personal agent
 
@@ -165,20 +173,30 @@ Continuous cadence. Operates in personal scope — companion, planner, coach, PA
 
 ### Mason — craft specialist
 
-Per-invocation cadence with **no clock of its own**. Mason is never invoked at will — it is called as part of the calling Stewart's flow, which has its own rhythm (heartbeat, scheduled workflow, or operator-triggered task). When called, Mason executes within structured context provided by the Stewart; produces an artifact; returns craft notes; goes idle. No heartbeat. No continuous mind layer.
+Per-invocation cadence with **no clock of its own**. Mason is never invoked at will — it is called as part of the calling Stewart's (or Monitor's, or Virgil's) flow, which has its own rhythm (heartbeat, scheduled workflow, or operator-triggered task). When called, Mason executes within structured context provided by the caller; produces an artifact; returns craft notes; goes idle. No heartbeat. No continuous mind layer.
 
 The contractor analogy sharpens: contractor has no payroll *and* no schedule of its own. They show up when the project plan says they should, do the work, and leave.
 
 *See `MASON.md` for the archetype spec.*
 
+### Disambiguation: "Monitor" mode vs "Monitor" family
+
+The word *Monitor* appears in two places in the protocol and they are distinct:
+- **Stewart's Monitor mode** (and Virgil's Monitor mode) — the *operational stance* of one Stewart/Virgil workflow at a moment in time: observing-without-executing while trust is built. A Stewart in Monitor mode is still a Stewart (carries Campaigns, runs delivery loops, climbs toward Execute).
+- **Monitor family** — a separate archetype with a different *work shape*: watching, not delivering. Has its own heartbeat and its own Mind Family functions; does not run Campaigns and does not climb to Execute by default.
+
+When ambiguity matters in writing, use *Stewart's Monitor mode* vs *Monitor family*.
+
 ### Hard rules of the taxonomy
 
-- A persistent business agent **is** a Stewart by definition.
+- A persistent business agent **is** either a Stewart or a Monitor by definition. The discriminator is work shape: ships finite deliveries (Campaigns) → Stewart; watches and recommends within a narrow allow-list → Monitor.
 - A persistent personal agent **is** a Virgil by definition.
 - A per-invocation craft agent **is** a Mason by definition.
-- Mason does NOT get a heartbeat or continuous mind layer. That re-introduces the Stewart shape and erodes the boundary.
-- Mason does NOT have a clock of its own. Cadence is inherited from the calling Stewart's flow.
-- Anything that doesn't fit one of the three needs explicit justification — not a fourth box.
+- Mason does NOT get a heartbeat or continuous mind layer. That re-introduces the Stewart/Monitor shape and erodes the boundary.
+- Mason does NOT have a clock of its own. Cadence is inherited from the calling agent's flow.
+- A Monitor does NOT carry Campaign or Initiative mechanics. A monitoring-shaped agent that opens Campaigns has become a Stewart and should be re-classified.
+- A Monitor is bound to **one business + one domain**. Multi-domain or multi-business is a misclassification.
+- Anything that doesn't fit one of the four needs explicit justification — not a fifth box.
 
 ---
 
@@ -195,7 +213,7 @@ The conventions that make an agent Genus-compatible. These are checked by the pl
 3. **Approval gates.** Every action with irreversible or external impact passes through a declared Approval Gate. Agents never act outside their authority envelope without explicit approval.
 4. **Memory persistence.** Continuous-cadence agents (Stewart, Virgil) maintain auditable memory between sessions. State is not held in conversation context alone.
 5. **Permission boundary.** Every agent operates within a declared permission scope. Expanding scope requires explicit operator action — never agent-initiated.
-6. **Heartbeat (Stewart only).** Continuous business agents run a daily background maintenance cycle that refreshes their domain model, reflects on outcomes, and surfaces anomalies — independent of operator presence.
+6. **Heartbeat (Stewart + Monitor + Virgil).** Continuous-cadence agents run a background maintenance cycle on a declared schedule that refreshes their domain model, reflects on outcomes, and surfaces anomalies — independent of operator presence. Cadence is per-archetype and per-instance (daily for most Stewarts; daily or domain-appropriate for Monitors; daily or sub-daily for Virgils). Mason has no heartbeat and never will.
 7. **Comparison protocol (Mason only).** Every Mason declares a quality dimension and a baseline (default: simple model call with the same brief). Masons that fail to outperform baseline get deprecated.
 8. **Primitives addressed, file structure flexible.** Every conformant agent addresses the same primitives — identity, contract, workflows/skills, memory, manifest. The *file layout* through which these primitives are addressed may vary per archetype and per runtime convention. A Stewart may use a top-level `IDENTITY.md`; a Virgil hosted on Claude Code may use `CLAUDE.md` for the same purpose; both are conformant if the primitives are visible to the installation through the manifest. **Document architecture alignment is recommended for consistency but not required for conformance.** What is required is that the primitives are addressed and that the manifest declares where each one lives — so the Genus app can map and manage them. The necessary-and-sufficient test: can the installation discover and operate against every primitive via the manifest? If yes, the agent conforms.
 9. **Universal primitives, configurable definitions.** The 12 primitives, the 3 archetypes, the 7 prior non-negotiables, and the manifest contract are universal across all installations. The *specific definitions* — which KPIs an installation tracks, which thresholds, which workflow shapes, which constraints, which approval gates — are configurable per installation. The protocol layer is immutable; the operating culture is shaped by the operator.
@@ -420,3 +438,5 @@ If you are:
 *v0.4 (2026-06-04) — **Productivity Taxonomy promoted to first-class spec.** See companion file `PRODUCTIVITY_TAXONOMY.md` for the full model. Key changes: (1) **Goal** promoted to top-level primitive — strategic outcomes, multi-month-to-year horizon, human-only authorship. (2) **Campaign** primitive **splits into Initiative + Package**. Initiative = the multi-week meaning (Active Hypothesis required at promotion; Pattern #12 close-before-open discipline still applies here). Package = single-session bundles of Tasks (new layer; agent primary author). (3) **Task** unchanged structurally but gains a mandatory `Parent Package` relation. (4) **Stream** becomes implicit (the BU itself is the Stream) — no longer load-bearing as a separate primitive. (5) Locked **ownership inversion principle**: human authorship dominates at Goal/Initiative; agent authorship dominates at Package/Task. (6) Locked **5-20 cadence rule**: a Goal takes 5-20 Initiatives to achieve (scales down for sprint Goals < 1 month). Outside the band is a failure signal. (7) Locked **Active Hypothesis** as a required field on Initiative promotion to Active — forces hypothesis-driven thinking, enables retrospective learning. Substrate suggestion (Notion reference impl): one DB per layer with `Area` (BU) as filter dimension. Implementations using a different substrate shape are valid as long as the vertical binding rules are enforced.*
 
 *v0.5 partial (2026-06-24) — **ConfidenceFrame v1 promoted to protocol-level primitive.** See companion file `CONFIDENCE_FRAME.md` for the full spec. Non-negotiable #2 (*Confidence honesty*) rewritten: agents emitting claims to Genus surfaces (substrate stores, dashboards, module views, operator-facing artifacts) MUST attach a ConfidenceFrame — three independent layers (Mental Model / Data Grounding / Coherence), aggregated by `min`, with an L1 hard gate, per-claim rather than per-module. The legacy ✅/⚠️/❓ tag is grandfathered for agents that do not emit claims to substrate surfaces (e.g. raw chat output). Manifest contract gains `confidence_frame_mode: silent | warn | block` per bound surface — see `GENUS_MANIFEST.md`. Proving implementation: Finance Module v1 (the design pressure-tested in Medivara). **Partial bump**: this v0.5 ships ConfidenceFrame only. `MODULES.md` (the originally-planned other half of v0.5) remains pending; when it lands, it bumps to v0.6 or completes v0.5 depending on the order of operations. The ConfidenceFrame change is independently usable and does not depend on MODULES.md.*
+
+*v0.6 partial (2026-06-25) — **Monitor declared as the fourth Genus family.** See companion file `MONITOR.md` for the full archetype spec. Changes in this file: (1) Primitive #6 (*Agent Family*) updated from "exactly three" to "four", adding a third discriminator (work shape: delivery vs watch) within continuous-business agents. (2) Archetype taxonomy section adds the *Monitor* subsection and a new disambiguation note separating Stewart's *Monitor mode* (operational stance) from the *Monitor family* (archetype). (3) Hard rules of the taxonomy updated: continuous-business now resolves to Stewart OR Monitor based on work shape; the count moves from "three" to "four"; Monitor-specific binding rule added (one business + one domain). (4) Non-negotiable #6 (*Heartbeat*) widened from "Stewart only" to "Stewart + Monitor + Virgil" — it always applied to continuous-cadence agents; v0.6 makes that explicit and inclusive of Monitor. The first Monitor instance is the Finance Monitor (Orchestrator repo, `docs/genus/modules/finance/agent/`). Companion v0.6 revisions in `AGENT_FAMILIES.md` (four families, decision flowchart updated), `GENUS_MANIFEST.md` (`archetype` enum + Monitor-specific fields), `STEWART.md` (disambiguation note in § Three modes), `VIRGIL.md` (disambiguation note in § Three modes). **Partial bump**: this v0.6 ships the Monitor declaration only. `MODULES.md` remains pending. The Monitor declaration is independently usable; the canonical worked example (Finance overlay) is forward-linked while it lands in the Orchestrator repo.*

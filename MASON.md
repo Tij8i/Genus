@@ -13,7 +13,7 @@ The archetype specification for **Mason** — the per-invocation craft specialis
 - Publishing a Mason to the Genus ecosystem
 - Integrating a runtime that needs to host Mason agents
 
-Prior reading: `GENUS_SPEC.md` (the protocol) and `AGENT_FAMILIES.md` (the three families overview).
+Prior reading: `GENUS_SPEC.md` (the protocol) and `AGENT_FAMILIES.md` (the four families overview).
 
 ---
 
