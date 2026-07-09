@@ -126,6 +126,35 @@ export async function resumeMeeting({ bu, meeting_id }) {
   }
 }
 
+// Find the most recent still-active meeting for (bu, agent_id). Used by the
+// chat dock when a tab was previously removed (✕) and the operator reopens
+// the same chat — we resume the existing thread rather than spawning a new
+// one, so no conversation is silently lost.
+export async function findRecentActiveMeeting({ bu, agent_id }) {
+  const ok = await checkMeetingServer();
+  if (!ok) return null;
+  try {
+    const r = await fetch(`${MEETING_SERVER}/meetings?bu=${encodeURIComponent(bu)}`, { cache: 'no-store' });
+    if (!r.ok) return null;
+    const j = await r.json();
+    if (!j || !j.ok || !Array.isArray(j.meetings)) return null;
+    // Match either the full agent_id or its short form
+    // ('product-stewart-of-genus' ↔ 'product-stewart') since the server aliases
+    // them in AGENT_DIRS.
+    const short = String(agent_id || '').replace(/-of-[a-z0-9]+$/, '');
+    const candidates = j.meetings.filter(m =>
+      (m.agent_id === agent_id || m.agent_id === short) && m.status === 'active'
+    );
+    if (candidates.length === 0) return null;
+    candidates.sort((a, b) => (b.started_at || '').localeCompare(a.started_at || ''));
+    const picked = candidates[0];
+    registerMeeting(bu, picked);
+    return picked;
+  } catch (_) {
+    return null;
+  }
+}
+
 export function openMeetingChat(meeting, { bu }) {
   const subtitle = `${meeting.agent_id || 'agent'} · ${meeting.purpose || 'meeting'} · started ${ago(meeting.started_at || meeting.requested_at)}`;
   openOverlay({
