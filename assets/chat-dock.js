@@ -72,9 +72,13 @@ function renderDock() {
     if (t.minimised) {
       document.getElementById(`chat-tab-${t.id}`)?.addEventListener('click', () => setSize(t.id, 'panel'));
     } else {
-      document.getElementById(`chat-min-${t.id}`)?.addEventListener('click', () => setSize(t.id, 'tab'));
-      document.getElementById(`chat-full-${t.id}`)?.addEventListener('click', () => openFullPage(t));
-      document.getElementById(`chat-close-${t.id}`)?.addEventListener('click', () => closeTab(t.id));
+      document.getElementById(`chat-min-${t.id}`)?.addEventListener('click', (e) => { e.stopPropagation(); setSize(t.id, 'tab'); });
+      document.getElementById(`chat-full-${t.id}`)?.addEventListener('click', (e) => { e.stopPropagation(); openFullPage(t); });
+      document.getElementById(`chat-close-${t.id}`)?.addEventListener('click', (e) => { e.stopPropagation(); closeTab(t.id); });
+      // Click anywhere on the header (outside the buttons) minimises the panel —
+      // standard Gmail-style behaviour. stopPropagation on the buttons above
+      // prevents this from firing when they were the actual target.
+      document.getElementById(`chat-header-${t.id}`)?.addEventListener('click', () => setSize(t.id, 'tab'));
       // Kick off the chat surface for open panels
       ensureChatMounted(t);
     }
@@ -98,7 +102,7 @@ function renderPanel(t) {
   const headerBg = isGenus ? '#16181e' : '#fbfbfa';
   const headerFg = isGenus ? '#fbfbfa' : '#16181e';
   return `<div id="chat-panel-${escapeHtml(t.id)}" style="pointer-events:auto;width:340px;height:460px;background:#fff;border:1px solid rgba(20,22,28,.14);border-radius:12px 12px 0 0;box-shadow:0 -8px 32px rgba(20,22,28,.18);display:flex;flex-direction:column;overflow:hidden;">
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:${headerBg};color:${headerFg};border-bottom:1px solid rgba(20,22,28,.08);flex:0 0 auto;">
+    <div id="chat-header-${escapeHtml(t.id)}" title="Click to minimise" style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:${headerBg};color:${headerFg};border-bottom:1px solid rgba(20,22,28,.08);flex:0 0 auto;cursor:pointer;user-select:none;">
       <div style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         ${escapeHtml(t.label)}
@@ -106,7 +110,7 @@ function renderPanel(t) {
       <div style="display:flex;gap:4px;">
         <button type="button" id="chat-min-${escapeHtml(t.id)}" title="Minimise to tab" style="background:none;border:none;color:${headerFg};font-size:16px;line-height:1;padding:2px 6px;cursor:pointer;opacity:.75;">▁</button>
         <button type="button" id="chat-full-${escapeHtml(t.id)}" title="Open full page" style="background:none;border:none;color:${headerFg};font-size:14px;line-height:1;padding:2px 6px;cursor:pointer;opacity:.75;">⤢</button>
-        ${isGenus ? '' : `<button type="button" id="chat-close-${escapeHtml(t.id)}" title="Close" style="background:none;border:none;color:${headerFg};font-size:16px;line-height:1;padding:2px 6px;cursor:pointer;opacity:.75;">✕</button>`}
+        <button type="button" id="chat-close-${escapeHtml(t.id)}" title="Close" style="background:none;border:none;color:${headerFg};font-size:16px;line-height:1;padding:2px 6px;cursor:pointer;opacity:.75;">✕</button>
       </div>
     </div>
     <div id="chat-panel-body-${escapeHtml(t.id)}" class="chat-panel-body" style="flex:1;min-height:0;display:flex;flex-direction:column;background:#fbfbfa;">
