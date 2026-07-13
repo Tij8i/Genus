@@ -1,0 +1,19 @@
+{
+  "$schema": "https://genus.work/schemas/ga4-snapshot-v0.json",
+  "version": 1,
+  "connector_id": "ga4-demo",
+  "property_id": "213025502",
+  "property_display_name": "Google Merchandise Store",
+  "fetched_at": null,
+  "fetched_by": null,
+  "windows": {
+    "last_7_days": null,
+    "last_28_days": null,
+    "last_90_days": null
+  },
+  "channel_breakdown": null,
+  "top_pages": null,
+  "ecommerce": null,
+  "status": "not_yet_fetched",
+  "note": "Run `python3 dashboard/scripts/ga4_snapshot.py synthetic` after `gcloud auth application-default login --scopes=https://www.googleapis.com/auth/analytics.readonly,https://www.googleapis.com/auth/cloud-platform`. This file will be overwritten with real data."
+}

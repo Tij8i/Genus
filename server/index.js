@@ -199,12 +199,12 @@ async function runHandler(fn, req, res) {
 // serves the dashboard's index.html.
 
 const WIZARD_DIR = path.join(REPO_ROOT, 'dashboard', 'public', 'wizard');
-const DESIGN_OUTPUT_SPLASH_PATHS = [
-  // Preferred: rendered by design-output/01-splash.html shipped in the sister
-  // Orchestrator repo alongside this one. Kept optional so the container
-  // image can ship without the sister repo mounted.
-  path.resolve(REPO_ROOT, '..', 'Orchestrator', 'docs', 'products', 'i56-forkable-install', 'design-output', '01-splash.html'),
-];
+// i56 phase 4c: splash is now a shipped static asset in dashboard/public/wizard/.
+// Previously the /_boot handler read from the sibling Orchestrator repo
+// (docs/products/i56-forkable-install/design-output/01-splash.html) which does
+// not exist inside the Docker Compose container. Now it reads from the same
+// repo tree, so a stripped-down container image serves the splash correctly.
+const SPLASH_PATH = path.join(WIZARD_DIR, 'splash.html');
 
 async function hasAnyUserBu() {
   // GENUS_BUS_ROOT points AT the bus/ directory (per local-fs.js VIRTUAL_PREFIXES).
@@ -248,15 +248,14 @@ function renderWizardHtml(templateHtml) {
 }
 
 async function loadSplashHtml() {
-  // Look for the shipped design-output splash. Strip the .rail + its <script>.
-  for (const p of DESIGN_OUTPUT_SPLASH_PATHS) {
-    try {
-      const raw = await fs.readFile(p, 'utf8');
-      return stripRail(raw);
-    } catch { /* try next */ }
-  }
+  // Preferred: the shipped static splash at dashboard/public/wizard/splash.html.
+  // Phase 4c copied this in from the Orchestrator design-output tree, so the
+  // container image is self-contained (no sibling-repo dependency).
+  try {
+    return await fs.readFile(SPLASH_PATH, 'utf8');
+  } catch { /* fall through to inline fallback */ }
   // Fallback: minimal inline splash matching the design intent so /_boot still
-  // returns something coherent in a stripped-down container.
+  // returns something coherent if the shipped file was removed post-build.
   return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Genus is starting…</title>
 <style>body{font-family:system-ui,sans-serif;background:#f4f5f7;color:#16181d;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;margin:0;gap:18px}
 .dot{width:11px;height:11px;border-radius:99px;background:#2f6bff;animation:p 1.6s ease-in-out infinite;box-shadow:0 2px 8px rgba(47,107,255,.4)}
@@ -265,14 +264,6 @@ async function loadSplashHtml() {
 </style></head><body><div class="dot"></div><div style="font-size:17px;font-weight:600">Genus is starting…</div>
 <div class="mono" style="font-size:11.5px">waiting for the dashboard at localhost:${PORT}<br>first run can take a minute</div>
 <div class="mono" style="font-size:10px;color:#aab0bb">this page refreshes automatically</div></body></html>`;
-}
-
-function stripRail(html) {
-  // Remove the mock-only .rail div + its adjacent <script> that toggles variants.
-  // Both are single-line minified in the design-output files.
-  return html
-    .replace(/<div class="rail">[\s\S]*?<\/div>/g, '')
-    .replace(/<script>document\.querySelectorAll\("\.rail button"\)[\s\S]*?<\/script>/g, '');
 }
 
 function mountWizardAndBoot(app) {
@@ -320,6 +311,105 @@ function mountWizardAndBoot(app) {
   });
 }
 
+// ---- i56 phase 4c: first-run seed -------------------------------------------
+//
+// On empty-volume boot the container has an empty GENUS_BUS_ROOT (fresh Docker
+// named volume). We copy:
+//
+//   1. The `synthetic` demo BU (Acme Roastery) from the image-baked fixtures
+//      at /app/synthetic-fixtures/ → <BUS_ROOT>/synthetic/. This makes the
+//      demo BU usable on first boot without the operator seeding it manually.
+//
+//   2. A minimal bus/_registry.json listing only the `synthetic` BU. Handlers
+//      like create-bu.js will append to this file when the operator names
+//      their first real BU via the wizard.
+//
+// Rules:
+//   • Never overwrite. If either target exists we skip silently so operator
+//     edits survive container restarts.
+//   • Failures are logged, not fatal — the server still boots. Worst case is
+//     the operator has to run the wizard's "start from scratch" path.
+//   • Fixture dir may be missing (e.g. during `node --check` / local dev
+//     without running docker build); in that case we log + skip.
+
+const SYNTHETIC_FIXTURES_DIR = process.env.GENUS_SYNTHETIC_FIXTURES_DIR
+  || '/app/synthetic-fixtures';
+
+async function pathExists(p) {
+  try { await fs.access(p); return true; } catch { return false; }
+}
+
+async function copyDirRecursive(src, dest) {
+  // fs.cp is available in Node 20+ (matches package.json engines >=20).
+  await fs.mkdir(path.dirname(dest), { recursive: true });
+  await fs.cp(src, dest, { recursive: true, errorOnExist: false, force: false });
+}
+
+async function seedFirstRun() {
+  const busRoot = process.env.GENUS_BUS_ROOT;
+  if (!busRoot) {
+    console.log('[seed] GENUS_BUS_ROOT not set; skipping first-run seed.');
+    return;
+  }
+  try {
+    await fs.mkdir(busRoot, { recursive: true });
+  } catch (e) {
+    console.error('[seed] failed to create bus root:', e && e.message);
+    return;
+  }
+
+  // 1. Synthetic BU fixtures ------------------------------------------------
+  const syntheticTarget = path.join(busRoot, 'synthetic');
+  if (await pathExists(syntheticTarget)) {
+    // Already seeded (or operator edited); do not overwrite.
+  } else if (await pathExists(SYNTHETIC_FIXTURES_DIR)) {
+    try {
+      await copyDirRecursive(SYNTHETIC_FIXTURES_DIR, syntheticTarget);
+      console.log(`[seed] Seeded synthetic BU into ${syntheticTarget}`);
+    } catch (e) {
+      console.error('[seed] failed to seed synthetic BU:', e && e.message);
+    }
+  } else {
+    console.log(`[seed] synthetic fixtures not found at ${SYNTHETIC_FIXTURES_DIR}; skipping (this is normal outside Docker).`);
+  }
+
+  // 2. bus/_registry.json ---------------------------------------------------
+  //
+  // Handlers read/write dashboard/public/data/bus/_registry.json (see e.g.
+  // server/api/create-bu.js). Under local-fs.js the `bus/` prefix maps to
+  // BUS_ROOT, so on disk the registry lives at <BUS_ROOT>/_registry.json.
+  const registryPath = path.join(busRoot, '_registry.json');
+  if (!(await pathExists(registryPath))) {
+    const starter = {
+      $schema: 'https://genus.work/schemas/bu-registry-v0.json',
+      version: '1.0.0',
+      default_bu: 'synthetic',
+      business_units: [
+        {
+          id: 'synthetic',
+          display_name: 'Acme Roastery',
+          avatar_initial: 'A',
+          color: '#a85b32',
+          modules_installed: [],
+          description: 'Synthetic showcase BU — fictional coffee subscription business. Used to show what a fully wired Genus instance looks like.'
+        }
+      ],
+      module_route_map: {},
+      core_routes: [
+        'agents', 'dashboard', 'inputs', 'layers', 'modules',
+        'onboarding', 'outputs', 'people', 'roster', 'settings'
+      ],
+      available_modules: []
+    };
+    try {
+      await fs.writeFile(registryPath, JSON.stringify(starter, null, 2) + '\n', 'utf8');
+      console.log(`[seed] Seeded starter _registry.json at ${registryPath}`);
+    } catch (e) {
+      console.error('[seed] failed to seed _registry.json:', e && e.message);
+    }
+  }
+}
+
 // ---- Bootstrap --------------------------------------------------------------
 
 async function readVersion() {
@@ -335,6 +425,13 @@ async function readVersion() {
 }
 
 async function main() {
+  // i56 phase 4c: first-run seed BEFORE the app is wired so handlers that
+  // read the registry / synthetic BU on their first request find populated
+  // files. Failures are non-fatal (see seedFirstRun for details).
+  if (process.env.GENUS_LOCAL_MODE === '1') {
+    await seedFirstRun();
+  }
+
   const app = express();
 
   // Body parsing. Cloudflare Pages Functions get raw request.json() lazily;

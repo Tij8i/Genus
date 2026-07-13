@@ -1,0 +1,148 @@
+[
+  {
+    "id": "meeting-2026-07-07-001",
+    "bu": "synthetic",
+    "title": "test",
+    "agent_id": "tuto-stewart",
+    "purpose": "general",
+    "status": "active",
+    "started_at": "2026-07-07T08:22:20+00:00",
+    "closed_at": null,
+    "transcript": [],
+    "expected_output": "sss"
+  },
+  {
+    "id": "meeting-2026-07-07-002",
+    "bu": "synthetic",
+    "title": "sssWorking session",
+    "agent_id": "tuto-stewart",
+    "purpose": "general",
+    "status": "closed",
+    "started_at": "2026-07-07T09:08:57+00:00",
+    "closed_at": "2026-07-07T09:09:48+00:00",
+    "transcript": [],
+    "expected_output": "sss",
+    "processed_at": "2026-07-07T09:09:48.862486+00:00",
+    "processed_by": "tuto-stewart",
+    "extracted": {
+      "memos": 0,
+      "tasks": 0
+    },
+    "connected_artefacts": []
+  },
+  {
+    "id": "meeting-2026-07-07-003",
+    "bu": "synthetic",
+    "title": "sssWorking session",
+    "agent_id": "tuto-stewart",
+    "purpose": "general",
+    "status": "active",
+    "started_at": "2026-07-07T09:13:20+00:00",
+    "closed_at": null,
+    "transcript": []
+  },
+  {
+    "id": "m-mrafm3vh-ele",
+    "bu": "synthetic",
+    "title": "sssWorking session",
+    "module_id": null,
+    "attendees": [
+      "alessiotixi@gmail.com",
+      "genus-agent"
+    ],
+    "goal": "",
+    "agenda": [],
+    "outcomes": [],
+    "source_chat_ref": null,
+    "status": "scheduled",
+    "scheduled_at": "2026-07-07T09:28:00.000Z",
+    "started_at": null,
+    "adjourned_at": null,
+    "minutes_filed_to": null,
+    "decisions_filed_to": null,
+    "tasks_filed_to": [],
+    "started_by": "alessiotixi@gmail.com"
+  },
+  {
+    "id": "m-mrafmoen-fwe",
+    "bu": "synthetic",
+    "title": "Test me",
+    "module_id": null,
+    "attendees": [
+      "alessiotixi@gmail.com",
+      "genus-agent"
+    ],
+    "goal": "",
+    "agenda": [],
+    "outcomes": [],
+    "source_chat_ref": null,
+    "status": "closed",
+    "scheduled_at": "2026-07-08T09:28:00.000Z",
+    "started_at": null,
+    "adjourned_at": null,
+    "minutes_filed_to": null,
+    "decisions_filed_to": null,
+    "tasks_filed_to": [],
+    "started_by": "alessiotixi@gmail.com",
+    "closed_at": "2026-07-07T12:45:47+00:00",
+    "processed_at": "2026-07-07T12:45:29.586356+00:00",
+    "processed_by": "tuto-stewart",
+    "extracted": {
+      "memos": 0,
+      "tasks": 0
+    },
+    "connected_artefacts": []
+  },
+  {
+    "id": "meeting-2026-07-07-004",
+    "bu": "synthetic",
+    "title": "Test me",
+    "agent_id": "tuto-stewart",
+    "purpose": "general",
+    "status": "closed",
+    "started_at": "2026-07-07T12:45:27+00:00",
+    "closed_at": "2026-07-07T12:50:56+00:00",
+    "transcript": [],
+    "processed_at": "2026-07-07T12:50:56.705086+00:00",
+    "processed_by": "tuto-stewart",
+    "extracted": {
+      "memos": 0,
+      "tasks": 0
+    },
+    "connected_artefacts": []
+  },
+  {
+    "id": "meeting-2026-07-09-001",
+    "bu": "synthetic",
+    "title": "Genus",
+    "agent_id": "genus-agent",
+    "purpose": "chat-dock",
+    "status": "active",
+    "started_at": "2026-07-09T09:53:34+00:00",
+    "closed_at": null,
+    "transcript": [
+      {
+        "role": "genus-agent",
+        "content": "The operator opened the Genus chat. Greet briefly, ask what they want to work on. Chat context is the whole venture.",
+        "at": "2026-07-09T09:53:34+00:00"
+      }
+    ]
+  },
+  {
+    "id": "meeting-2026-07-09-002",
+    "bu": "synthetic",
+    "title": "Product Stewart",
+    "agent_id": "product-stewart",
+    "purpose": "steward-chat",
+    "status": "active",
+    "started_at": "2026-07-09T10:30:38+00:00",
+    "closed_at": null,
+    "transcript": [
+      {
+        "role": "product-stewart",
+        "content": "Operator opened chat with you (Product Stewart), scoped to your module.",
+        "at": "2026-07-09T10:30:38+00:00"
+      }
+    ]
+  }
+]

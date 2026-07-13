@@ -1,0 +1,18 @@
+[
+  {
+    "id": "ga4-demo",
+    "kind": "google-analytics-4",
+    "display_name": "GA4 — Google Merchandise Store (demo)",
+    "summary": "Public GA4 demo property maintained by Google. Real anonymized ecommerce traffic data — sessions, users, channels, revenue, conversion. Read-only.",
+    "property_id": "213025502",
+    "auth_model": "user_oauth_adc",
+    "auth_notes": "Operator must join the demo Google Group (google-analytics-demo-readonly@googlegroups.com) with their Google account, then run `gcloud auth application-default login --scopes=https://www.googleapis.com/auth/analytics.readonly,https://www.googleapis.com/auth/cloud-platform`. The fetcher script uses Application Default Credentials.",
+    "areas": ["marketing"],
+    "snapshot_path": "dashboard/public/data/bus/synthetic/connectors/ga4/snapshot.json",
+    "fetcher": "dashboard/scripts/ga4_snapshot.py",
+    "refresh_cadence": "manual",
+    "last_synced_at": null,
+    "status": "registered",
+    "notes": "v1 architecture: fetcher script runs locally with operator's Google credentials, dumps a JSON snapshot to substrate, dashboard reads the snapshot. Live API access from Pages Functions would require OAuth refresh-token plumbing — deferred."
+  }
+]

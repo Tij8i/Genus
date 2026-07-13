@@ -1,0 +1,82 @@
+# i56 phase 4c — Genus install stack (Docker Compose).
+#
+# Two services:
+#   • dashboard  — Node/Express port of the Genus Cloudflare Pages Functions
+#                  (server/) + the shipped static UI + wizard. Exposed on the
+#                  host at http://localhost:8080.
+#   • paperclip — ghcr.io/paperclipai/paperclip runtime for BU agents. Not
+#                  exposed to the host; reached via the compose network by
+#                  the dashboard at http://paperclip:3100.
+#
+# Persistent state lives in two named volumes so `docker compose down` +
+# `docker compose up` picks up where you left off:
+#   • bus-data       — Genus substrate (bus/<bu>/*.json + system/*.json).
+#   • paperclip-data — Paperclip's own state / agent runtimes.
+#
+# `docker compose down -v` removes the volumes and destroys operator data
+# (documented in docs/install/README.md — uninstall).
+#
+# Paperclip may need first-run onboarding via
+#   `docker compose exec paperclip npx paperclipai onboard`
+# — see docs/install/README.md → Troubleshooting for the flow.
+#
+# Compose spec: no top-level `version` — modern Docker Compose ignores it and
+# emits a deprecation warning if present.
+
+services:
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: genus-dashboard:local
+    container_name: genus-dashboard
+    restart: unless-stopped
+    ports:
+      # Host:Container. PORT in .env may override the host side (via ${PORT}).
+      - "${PORT:-8080}:8080"
+    environment:
+      NODE_ENV: production
+      GENUS_LOCAL_MODE: '1'
+      PORT: '8080'
+      GENUS_BUS_ROOT: /app/bus
+      GENUS_SYNTHETIC_FIXTURES_DIR: /app/synthetic-fixtures
+      # Server-to-server URL for Paperclip. Compose service DNS resolves
+      # `paperclip` to the sibling container inside the private network.
+      PAPERCLIP_URL: http://paperclip:3100
+      # Anthropic key sourced from .env (never committed). Empty string is OK
+      # — the wizard surfaces a warning banner when this is missing.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    volumes:
+      # Genus substrate — bus/<bu>/*.json files. seedFirstRun() populates the
+      # `synthetic` demo BU + a starter _registry.json on empty-volume boot.
+      - bus-data:/app/bus
+    depends_on:
+      # Soft dependency: dashboard boots even if Paperclip is still starting;
+      # /_boot + wizard don't need Paperclip.
+      - paperclip
+
+  paperclip:
+    image: ghcr.io/paperclipai/paperclip:latest
+    container_name: genus-paperclip
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      # Bind to all interfaces inside the container so the dashboard service
+      # can reach us over the compose network.
+      HOST: 0.0.0.0
+      PORT: '3100'
+      PAPERCLIP_HOME: /paperclip
+      # Required by Paperclip's Better-Auth layer. Sourced from .env — the
+      # install README tells the operator to generate one with `openssl rand
+      # -hex 32`. Falls back to a fixed dev value so `docker compose up` on a
+      # fresh clone doesn't crashloop before the operator has touched .env.
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-paperclip-dev-secret-change-me}
+    volumes:
+      - paperclip-data:/paperclip
+    # NOTE: no `ports:` block on purpose — Paperclip is internal to the
+    # compose network. If an operator wants direct access for debugging
+    # they can add `- "3100:3100"` and rerun.
+
+volumes:
+  bus-data:
+  paperclip-data:
