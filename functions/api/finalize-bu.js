@@ -21,8 +21,6 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 export async function onRequestPost({ request, env }) {
   if (!env.GITHUB_PAT) return jsonResponse(500, { ok: false, message: 'GITHUB_PAT not set' });
-  const gate = await requireAdmin(request, env);
-  if (gate instanceof Response) return gate;
 
   let body;
   try { body = await request.json(); } catch { return jsonResponse(400, { ok: false, message: 'Invalid JSON' }); }
@@ -35,6 +33,10 @@ export async function onRequestPost({ request, env }) {
   if (!SLUG_RE.test(bu_id)) return jsonResponse(400, { ok: false, message: 'bu_id is not a valid slug' });
   if (!UUID_RE.test(paperclip_company_id)) return jsonResponse(400, { ok: false, message: 'paperclip_company_id must be a UUID' });
   if (!paperclip_company_name) return jsonResponse(400, { ok: false, message: 'paperclip_company_name is required' });
+
+  // i38: admin-only gate, scoped to bu_id (Paperclip mapping is infra config).
+  const gate = await requireAdmin(request, env, { bu: bu_id });
+  if (gate instanceof Response) return gate;
 
   // Read + parse the map file
   let mapFile;

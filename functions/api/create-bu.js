@@ -42,7 +42,8 @@ const MODULE_BINDING_TEMPLATES = {
 
 export async function onRequestPost({ request, env }) {
   if (!env.GITHUB_PAT) return jsonResponse(500, { ok: false, message: 'GITHUB_PAT not set' });
-  const gate = await requireAdmin(request, env);
+  // i38: admin-only gate (no BU payload — creating a new one).
+  const gate = await requireAdmin(request, env, {});
   if (gate instanceof Response) return gate;
 
   let body;

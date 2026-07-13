@@ -30,6 +30,7 @@ export async function onRequestPost({ request, env }) {
   if (!bu || !module_id) return jsonResponse(400, { ok: false, message: 'bu + module_id required' });
   if (!['install', 'uninstall'].includes(action)) return jsonResponse(400, { ok: false, message: 'action must be install|uninstall' });
 
+  // i38: admin-only gate, scoped to bu.
   const gate = await requireAdmin(request, env, { bu });
   if (gate instanceof Response) return gate;
   const viewer = gate;

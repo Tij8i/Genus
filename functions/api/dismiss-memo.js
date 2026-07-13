@@ -5,6 +5,7 @@
 
 import { getFile, putFile, jsonResponse, todayISO } from './_gh.js';
 import { requireAdmin } from './_identity.js';
+import { requireExternalRead } from './_external_auth.js';
 
 export async function onRequestPost({ request, env }) {
   if (!env.GITHUB_PAT) return jsonResponse(500, { ok: false, message: 'GITHUB_PAT not set' });
@@ -16,8 +17,18 @@ export async function onRequestPost({ request, env }) {
   const memoId = (body.memo_id || '').toString();
   if (!memoId) return jsonResponse(400, { ok: false, message: 'memo_id is required' });
 
-  const gate = await requireAdmin(request, env, { bu });
-  if (gate instanceof Response) return gate;
+  // i38: BU-isolation on mutation — allow external Bearer (scope=write) OR admin gated to bu.
+  if (!bu) return jsonResponse(400, { ok: false, message: 'bu required' });
+  let actorEmail = 'operator';
+  const external = await requireExternalRead(request, env, { bu, scope: 'write', jsonResponse });
+  if (external instanceof Response) return external;
+  if (external === null) {
+    const gate = await requireAdmin(request, env, { bu });
+    if (gate instanceof Response) return gate;
+    actorEmail = gate.email || 'operator';
+  } else {
+    actorEmail = external.entry?.owner_email || external.entry?.display_name || 'external_token';
+  }
 
   const path = `dashboard/public/data/bus/${bu}/memos.jsonl`;
   let current;
@@ -33,7 +44,7 @@ export async function onRequestPost({ request, env }) {
         found = true;
         memo.status = 'dismissed';
         memo.processed_at = todayISO();
-        memo.processed_by = gate.email || 'operator';
+        memo.processed_by = actorEmail;
         return JSON.stringify(memo);
       }
       return line;

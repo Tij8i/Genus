@@ -37,7 +37,7 @@ export async function onRequestPost({ request, env }) {
     return jsonResponse(400, { ok: false, message: 'agent_id or module_id is required for edit' });
   }
 
-  // Gate (BU-scoped if admin/member)
+  // i38: admin-only gate, scoped to bu.
   const gate = await requireAdmin(request, env, { bu });
   if (gate instanceof Response) return gate;
   const viewer = gate;

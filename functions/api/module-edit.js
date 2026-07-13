@@ -54,6 +54,7 @@ export async function onRequestPost({ request, env }) {
   if (!ALLOWED_FILES[module].includes(file)) return jsonResponse(400, { ok: false, message: `file must be one of: ${ALLOWED_FILES[module].join(', ')}` });
   if (!['create','update','remove'].includes(action)) return jsonResponse(400, { ok: false, message: 'action must be create|update|remove' });
 
+  // i38: admin-only gate, scoped to bu.
   const gate = await requireAdmin(request, env, { bu });
   if (gate instanceof Response) return gate;
   const viewer = gate;

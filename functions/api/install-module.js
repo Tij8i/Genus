@@ -15,8 +15,6 @@ const BINDINGS_PATH = 'dashboard/public/data/system/agent_bindings.json';
 
 export async function onRequestPost({ request, env }) {
   if (!env.GITHUB_PAT) return jsonResponse(500, { ok: false, message: 'GITHUB_PAT not set' });
-  const gate = await requireAdmin(request, env);
-  if (gate instanceof Response) return gate;
 
   let body;
   try { body = await request.json(); } catch { return jsonResponse(400, { ok: false, message: 'Invalid JSON' }); }
@@ -27,6 +25,10 @@ export async function onRequestPost({ request, env }) {
   if (!bu) return jsonResponse(400, { ok: false, message: 'bu is required' });
   if (!module_id) return jsonResponse(400, { ok: false, message: 'module_id is required' });
   if (!['install', 'uninstall'].includes(action)) return jsonResponse(400, { ok: false, message: 'action must be install|uninstall' });
+
+  // i38: admin-only gate, scoped to bu.
+  const gate = await requireAdmin(request, env, { bu });
+  if (gate instanceof Response) return gate;
 
   // 1) Read registry
   let registry;

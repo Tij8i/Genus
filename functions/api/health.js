@@ -12,6 +12,8 @@
 //     substrate_repo: "Tij8i/Orchestrator", substrate_reachable: bool,
 //     substrate_check_path: "...", substrate_check_status: int, now: iso }
 
+// i38: No BU-isolation check: this endpoint reports service health with no BU context.
+
 import { getFile, jsonResponse, todayISO, GITHUB_REPO } from './_gh.js';
 
 const SUBSTRATE_PROBE_PATH = 'dashboard/public/data/bus/tuto/identity.json';

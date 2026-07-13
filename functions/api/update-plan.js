@@ -27,6 +27,7 @@
 
 import { getFile, putFile, jsonResponse, todayISO } from './_gh.js';
 import { requireAdmin } from './_identity.js';
+import { requireExternalRead } from './_external_auth.js';
 
 const VALID_ACTIONS = new Set(['complete_cycle', 'edit_plan']);
 const EDITABLE_FIELDS = new Set(['title', 'rationale', 'period_target_end', 'initiative_ids', 'goal_ids']);
@@ -34,8 +35,6 @@ const ARCHIVE_FROM_STATUSES = new Set(['not_started', 'scoping', 'in_progress', 
 
 export async function onRequestPost({ request, env }) {
   if (!env.GITHUB_PAT) return jsonResponse(500, { ok: false, message: 'GITHUB_PAT not set' });
-  const gate = await requireAdmin(request, env);
-  if (gate instanceof Response) return gate;
 
   let body;
   try { body = await request.json(); } catch { return jsonResponse(400, { ok: false, message: 'Invalid JSON' }); }
@@ -44,6 +43,15 @@ export async function onRequestPost({ request, env }) {
   const planId = (body.plan_id || '').toString();
   const action = (body.action || '').toString();
   const actor = (body.actor || 'operator').toString();
+
+  // i38: BU-isolation on mutation — allow external Bearer (scope=write) OR admin gated to bu.
+  if (!bu) return jsonResponse(400, { ok: false, message: 'bu required' });
+  const external = await requireExternalRead(request, env, { bu, scope: 'write', jsonResponse });
+  if (external instanceof Response) return external;
+  if (external === null) {
+    const gate = await requireAdmin(request, env, { bu });
+    if (gate instanceof Response) return gate;
+  }
 
   if (!planId) return jsonResponse(400, { ok: false, message: 'plan_id required' });
   if (!VALID_ACTIONS.has(action)) return jsonResponse(400, { ok: false, message: `action must be: ${[...VALID_ACTIONS].join(', ')}` });
