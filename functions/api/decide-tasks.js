@@ -23,6 +23,7 @@
 
 import { getFile, putFile, jsonResponse, todayISO } from './_gh.js';
 import { requireAdmin } from './_identity.js';
+import { requireExternalRead } from './_external_auth.js';
 
 const VALID_DECISIONS = new Set(['approved', 'rejected']);
 
@@ -33,8 +34,6 @@ export async function onRequestPost({ request, env }) {
       message: 'GITHUB_PAT env var is not set on the Pages project. See dashboard/DEPLOY.md.',
     });
   }
-  const gate = await requireAdmin(request, env);
-  if (gate instanceof Response) return gate;
 
   // ---- parse + validate body ----
   let body;
@@ -45,6 +44,15 @@ export async function onRequestPost({ request, env }) {
   }
 
   const bu = (body.bu || 'tuto').toString();
+
+  // i38: BU-isolation on mutation — allow external Bearer (scope=write) OR admin gated to bu.
+  if (!bu) return jsonResponse(400, { ok: false, message: 'bu required' });
+  const external = await requireExternalRead(request, env, { bu, scope: 'write', jsonResponse });
+  if (external instanceof Response) return external;
+  if (external === null) {
+    const gate = await requireAdmin(request, env, { bu });
+    if (gate instanceof Response) return gate;
+  }
   const decisions = Array.isArray(body.decisions) ? body.decisions : [];
   const decidedBy = (body.decided_by || 'operator').toString();
 

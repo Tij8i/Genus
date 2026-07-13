@@ -21,6 +21,7 @@
 
 import { getFile, putFile, jsonResponse } from './_gh.js';
 import { requireAdmin } from './_identity.js';
+import { requireExternalRead } from './_external_auth.js';
 
 export async function onRequestPost({ request, env }) {
   if (!env.GITHUB_PAT) return jsonResponse(500, { ok: false, message: 'GITHUB_PAT not set' });
@@ -34,9 +35,17 @@ export async function onRequestPost({ request, env }) {
   const items = Array.isArray(body.items) ? body.items : null;
   if (!items || items.length === 0) return jsonResponse(400, { ok: false, message: 'items[] required and must be non-empty' });
 
-  const gate = await requireAdmin(request, env, { bu });
-  if (gate instanceof Response) return gate;
-  const viewer = gate;
+  // i38: BU-isolation on mutation — allow external Bearer (scope=write) OR admin gated to bu.
+  let viewer = { email: 'external_token' };
+  const external = await requireExternalRead(request, env, { bu, scope: 'write', jsonResponse });
+  if (external instanceof Response) return external;
+  if (external === null) {
+    const gate = await requireAdmin(request, env, { bu });
+    if (gate instanceof Response) return gate;
+    viewer = gate;
+  } else {
+    viewer = { email: external.entry?.owner_email || external.entry?.display_name || 'external_token' };
+  }
 
   const PATH = `dashboard/public/data/bus/${bu}/product/roadmap.json`;
   let file, data;

@@ -20,6 +20,7 @@ export async function onRequestGet({ request, env }) {
   const url = new URL(request.url);
   const bu = (url.searchParams.get('bu') || '').toString().trim().toLowerCase();
   if (!bu) return jsonResponse(400, { ok: false, message: 'bu required' });
+  // i38: admin-only gate, scoped to bu (A/B run substrate is infra-adjacent).
   const gate = await requireAdmin(request, env, { bu });
   if (gate instanceof Response) return gate;
 
@@ -41,6 +42,7 @@ export async function onRequestPost({ request, env }) {
   const action = (body.action || '').toString().trim();
   if (!bu) return jsonResponse(400, { ok: false, message: 'bu required' });
 
+  // i38: admin-only gate, scoped to bu (A/B run substrate is infra-adjacent).
   const gate = await requireAdmin(request, env, { bu });
   if (gate instanceof Response) return gate;
   const viewer = gate;

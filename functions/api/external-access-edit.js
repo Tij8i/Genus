@@ -31,6 +31,7 @@ export async function onRequestPost({ request, env }) {
   if (!bu) return jsonResponse(400, { ok: false, message: 'bu is required' });
   if (!['add', 'edit', 'remove'].includes(action)) return jsonResponse(400, { ok: false, message: `Unknown action: ${action}` });
 
+  // i38: admin-only gate, scoped to bu (token-issuance is infra config).
   const gate = await requireAdmin(request, env, { bu });
   if (gate instanceof Response) return gate;
   const viewer = gate;
