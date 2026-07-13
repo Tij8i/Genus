@@ -1,0 +1,15 @@
+<!--
+  Demo banner — shown at the top of the dashboard shell when the current BU is
+  'synthetic' (Acme Roastery) AND no user BU exists yet. Dismissible with the
+  ×; dismissal is session-scoped (per DESIGN.md — re-launching brings it back
+  while the condition is still true).
+
+  Not yet auto-injected by the dashboard shell (deferred, see README.md); the
+  markup + companion demo-banner.js are provided so that phase 4c or 5 can
+  wire it in with minimal design pass.
+-->
+<div class="top-banner" id="genus-demo-banner">
+  <span class="msg">You're exploring the demo.</span>
+  <button class="cta" data-action="demo-banner-create">Create your own BU →</button>
+  <button class="x" data-action="demo-banner-dismiss" aria-label="Dismiss">×</button>
+</div>

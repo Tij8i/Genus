@@ -189,6 +189,137 @@ async function runHandler(fn, req, res) {
   }
 }
 
+// ---- i56 phase 4b: first-run wizard + redirect ------------------------------
+//
+// In local mode we intercept `GET /` and redirect to `/wizard/` when no user
+// BU exists on disk. "User BU" = any subdirectory of GENUS_BUS_ROOT that isn't
+// the built-in `synthetic` demo and isn't a system entry (files, dotfiles,
+// or `_`-prefixed registry files). If any user BU exists, the redirect
+// short-circuits and the request falls through to express.static() which
+// serves the dashboard's index.html.
+
+const WIZARD_DIR = path.join(REPO_ROOT, 'dashboard', 'public', 'wizard');
+const DESIGN_OUTPUT_SPLASH_PATHS = [
+  // Preferred: rendered by design-output/01-splash.html shipped in the sister
+  // Orchestrator repo alongside this one. Kept optional so the container
+  // image can ship without the sister repo mounted.
+  path.resolve(REPO_ROOT, '..', 'Orchestrator', 'docs', 'products', 'i56-forkable-install', 'design-output', '01-splash.html'),
+];
+
+async function hasAnyUserBu() {
+  // GENUS_BUS_ROOT points AT the bus/ directory (per local-fs.js VIRTUAL_PREFIXES).
+  // A "user BU" is a directory whose name is neither 'synthetic' nor starts
+  // with '_' nor '.'.
+  const busRoot = process.env.GENUS_BUS_ROOT;
+  if (!busRoot) return false;
+  let entries;
+  try {
+    entries = await fs.readdir(busRoot, { withFileTypes: true });
+  } catch (e) {
+    // No bus dir yet → definitely no user BU.
+    return false;
+  }
+  for (const ent of entries) {
+    if (!ent.isDirectory()) continue;
+    const name = ent.name;
+    if (name === 'synthetic') continue;
+    if (name.startsWith('_')) continue;   // e.g. _registry_backup/
+    if (name.startsWith('.')) continue;
+    return true;
+  }
+  return false;
+}
+
+async function loadWizardTemplate() {
+  const html = await fs.readFile(path.join(WIZARD_DIR, 'index.html'), 'utf8');
+  return html;
+}
+
+function renderWizardHtml(templateHtml) {
+  // Inject the flag script into <head> at our marker. Fall through to a plain
+  // <head> insert if the template ever loses the marker.
+  const missing = !process.env.ANTHROPIC_API_KEY;
+  const script = `<script>window.__ANTHROPIC_KEY_MISSING__ = ${missing ? 'true' : 'false'};</script>`;
+  const marker = '<!--GENUS_INJECT_ANTHROPIC_KEY_FLAG-->';
+  if (templateHtml.includes(marker)) {
+    return templateHtml.replace(marker, script);
+  }
+  return templateHtml.replace('</head>', `${script}\n</head>`);
+}
+
+async function loadSplashHtml() {
+  // Look for the shipped design-output splash. Strip the .rail + its <script>.
+  for (const p of DESIGN_OUTPUT_SPLASH_PATHS) {
+    try {
+      const raw = await fs.readFile(p, 'utf8');
+      return stripRail(raw);
+    } catch { /* try next */ }
+  }
+  // Fallback: minimal inline splash matching the design intent so /_boot still
+  // returns something coherent in a stripped-down container.
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Genus is starting…</title>
+<style>body{font-family:system-ui,sans-serif;background:#f4f5f7;color:#16181d;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;margin:0;gap:18px}
+.dot{width:11px;height:11px;border-radius:99px;background:#2f6bff;animation:p 1.6s ease-in-out infinite;box-shadow:0 2px 8px rgba(47,107,255,.4)}
+@keyframes p{0%,100%{opacity:1}50%{opacity:.35}}
+.mono{font-family:'JetBrains Mono',monospace;color:#9aa1ae;text-align:center;line-height:1.6}
+</style></head><body><div class="dot"></div><div style="font-size:17px;font-weight:600">Genus is starting…</div>
+<div class="mono" style="font-size:11.5px">waiting for the dashboard at localhost:${PORT}<br>first run can take a minute</div>
+<div class="mono" style="font-size:10px;color:#aab0bb">this page refreshes automatically</div></body></html>`;
+}
+
+function stripRail(html) {
+  // Remove the mock-only .rail div + its adjacent <script> that toggles variants.
+  // Both are single-line minified in the design-output files.
+  return html
+    .replace(/<div class="rail">[\s\S]*?<\/div>/g, '')
+    .replace(/<script>document\.querySelectorAll\("\.rail button"\)[\s\S]*?<\/script>/g, '');
+}
+
+function mountWizardAndBoot(app) {
+  // Root: redirect to /wizard/ when no user BU exists yet.
+  app.get('/', async (req, res, next) => {
+    try {
+      const anyBu = await hasAnyUserBu();
+      if (!anyBu) return res.redirect(302, '/wizard/');
+    } catch (e) {
+      console.error('[wizard] hasAnyUserBu failed:', e && e.message);
+      // On error, fall through to static so we don't dead-loop the operator.
+    }
+    return next();
+  });
+
+  // /wizard and /wizard/ → serve the templated index.html
+  app.get(['/wizard', '/wizard/', '/wizard/index.html'], async (req, res) => {
+    try {
+      const tpl = await loadWizardTemplate();
+      const html = renderWizardHtml(tpl);
+      res.status(200).set('Content-Type', 'text/html; charset=utf-8').set('Cache-Control', 'no-cache, must-revalidate').send(html);
+    } catch (e) {
+      console.error('[wizard] failed to serve index.html:', e && e.message);
+      res.status(500).send('Wizard template not found.');
+    }
+  });
+
+  // /wizard/<static file> — serve the css / js / html partials directly.
+  app.use('/wizard', express.static(WIZARD_DIR, {
+    setHeaders(res) {
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+    },
+  }));
+
+  // /_boot — pre-boot splash. Cheap to hit; Docker Compose can point at this
+  // as a healthcheck URL that also renders a usable page for the human
+  // hitting localhost:8080 before Express has finished importing 35 handlers.
+  app.get('/_boot', async (_req, res) => {
+    try {
+      const html = await loadSplashHtml();
+      res.status(200).set('Content-Type', 'text/html; charset=utf-8').set('Cache-Control', 'no-cache').send(html);
+    } catch (e) {
+      res.status(500).send('boot page unavailable');
+    }
+  });
+}
+
 // ---- Bootstrap --------------------------------------------------------------
 
 async function readVersion() {
@@ -226,6 +357,16 @@ async function main() {
     }
     return next(err);
   });
+
+  // ---- i56 phase 4b: wizard + first-run redirect --------------------------
+  //
+  // These routes must land BEFORE express.static(REPO_ROOT) because static
+  // would otherwise serve the dashboard's index.html for GET /, bypassing the
+  // no-user-BU redirect. Only active in local mode (GENUS_LOCAL_MODE=1); the
+  // Cloudflare Pages deploy sees none of this.
+  if (process.env.GENUS_LOCAL_MODE === '1') {
+    mountWizardAndBoot(app);
+  }
 
   // Static assets — the current Cloudflare Pages install serves the repo root
   // as its document root. Mirror that here so index.html, assets/, docs/,

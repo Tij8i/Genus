@@ -1,0 +1,24 @@
+<!--
+  Empty Layers view — used by the dashboard's Layers view when a fresh user BU
+  has no memos/initiatives yet. Not yet wired into assets/*.js (deferred, see
+  README.md in this dir). Consumers fetch() this file and inject its body into
+  the Layers main area.
+
+  Placeholder tokens (replaced by consumer via string interpolation):
+    __BU_DISPLAY_NAME__  — e.g. "Medivara"
+-->
+<div class="empty-layers" style="display:flex;justify-content:center;margin-top:56px">
+  <div style="background:var(--surface);border:1px solid var(--accent-border);border-radius:16px;box-shadow:0 1px 2px rgba(16,18,28,.04),0 10px 30px rgba(47,107,255,.05);padding:48px 52px;max-width:520px;text-align:center;display:flex;flex-direction:column;align-items:center">
+    <div style="width:44px;height:44px;border-radius:12px;background:var(--accent-bg);color:var(--accent);display:flex;align-items:center;justify-content:center">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2 2 7l10 5 10-5-10-5z"/>
+        <path d="M2 17l10 5 10-5"/>
+        <path d="M2 12l10 5 10-5"/>
+      </svg>
+    </div>
+    <h2 style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-top:20px">__BU_DISPLAY_NAME__ is ready</h2>
+    <p class="sub" style="max-width:360px;margin-top:10px">Tell Genus Agent about your venture. It'll propose 4–6 business areas to start.</p>
+    <button class="btn" data-action="open-genus-agent-meeting" style="margin-top:24px;padding:12px 24px">Modify my business modelling</button>
+    <a href="/?bu=synthetic" class="btn-link" style="font-size:13px;margin-top:12px">Or explore the Acme Roastery demo →</a>
+  </div>
+</div>
