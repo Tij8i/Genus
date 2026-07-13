@@ -1,0 +1,285 @@
+// Genus Node/Express server (phase 4a of i56).
+//
+// Ports the Cloudflare Pages Functions handlers in functions/api/ to a
+// standalone Node service that runs inside the Docker Compose install
+// (phase 4c). The Cloudflare Pages deployment continues to serve
+// functions/ untouched for the operator's canonical install.
+//
+// What this file does:
+//   1. Serves the Genus dashboard's static assets (index.html, assets/, docs/,
+//      etc.) — same content Cloudflare Pages ships today.
+//   2. Auto-discovers every server/api/*.js handler and mounts it under
+//      /api/<filename-without-ext>. Handlers export onRequestGet and/or
+//      onRequestPost with the same signature as Cloudflare Pages Functions.
+//   3. Adapts Express req → the Pages Functions `request` shape (see the
+//      makePagesRequest helper below) so the ported handlers don't need any
+//      per-handler shim.
+//   4. Adapts the standard Response object each handler returns → Express
+//      res.status().set().send() so headers + body flow through.
+//
+// Ports: PORT env var (default 8080). Docker Compose maps this to host 8080.
+//
+// Runtime env vars:
+//   PORT                — HTTP port to listen on (default 8080)
+//   GENUS_LOCAL_MODE=1  — enables local admin identity fallback (see
+//                          server/api/_identity.js). Docker Compose sets this.
+//   GENUS_BUS_ROOT      — filesystem root for substrate reads/writes. Docker
+//                          Compose points this at the mounted `genus_bus` volume.
+//   GENUS_STORAGE_MODE  — 'local-fs' (default) or 'github' (v1.1, not shipped).
+
+import express from 'express';
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const REPO_ROOT = path.resolve(__dirname, '..');
+
+const PORT = Number(process.env.PORT || 8080);
+
+// Local-mode env seeding.
+//
+// Many ported handlers gate on `env.GITHUB_PAT` at their top (originally to
+// verify the CF Pages project had the substrate PAT bound). In the local
+// install there is no PAT — the storage abstraction reads/writes local disk,
+// not the GitHub API. Rather than modify every handler to skip the PAT check,
+// we seed a sentinel value here when GENUS_LOCAL_MODE=1 so the handlers pass
+// the check and go straight to the storage call, where local-fs.js ignores
+// the PAT argument entirely.
+if (process.env.GENUS_LOCAL_MODE === '1' && !process.env.GITHUB_PAT) {
+  process.env.GITHUB_PAT = 'local-mode-no-pat';
+}
+
+// ---- Pages-Functions request shim -------------------------------------------
+//
+// Cloudflare Pages Functions receive a `request` object that conforms to the
+// Fetch API `Request` interface. Ported handlers call three things on it:
+//
+//   • request.url        — absolute URL as string; used with `new URL(...)` to
+//                          read query params.
+//   • request.headers.get(name) — case-insensitive header lookup.
+//   • request.json()     — async, returns parsed body.
+//
+// Below, we build a minimal object matching that surface from an Express req.
+// Not using the global Request constructor because it wants a ReadableStream
+// body and Express gives us a raw body Buffer via express.json().
+function makePagesRequest(req) {
+  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+  const host = req.headers.host || `localhost:${PORT}`;
+  const url = `${proto}://${host}${req.originalUrl}`;
+
+  const headers = {
+    get(name) {
+      const v = req.headers[String(name).toLowerCase()];
+      if (v == null) return null;
+      return Array.isArray(v) ? v[0] : String(v);
+    },
+    has(name) {
+      return req.headers[String(name).toLowerCase()] != null;
+    },
+  };
+
+  return {
+    url,
+    method: req.method,
+    headers,
+    // Handlers expect a promise; the body was parsed by express.json() upstream.
+    // If parsing failed we still surface { } so handler try/catch → 400 path
+    // fires as-if the client sent invalid JSON.
+    async json() {
+      if (req._bodyParseError) throw new Error(req._bodyParseError);
+      return req.body ?? {};
+    },
+    async text() {
+      if (typeof req.body === 'string') return req.body;
+      if (req.body == null) return '';
+      return JSON.stringify(req.body);
+    },
+  };
+}
+
+// Piping a Response (whatwg fetch Response) into Express res.
+async function sendPagesResponse(pagesRes, res) {
+  const status = pagesRes.status || 200;
+  const headers = {};
+  // Pages Response has a Headers iterable; copy through so Content-Type +
+  // Cache-Control land on the Express response.
+  if (pagesRes.headers && typeof pagesRes.headers.forEach === 'function') {
+    pagesRes.headers.forEach((val, key) => { headers[key] = val; });
+  }
+  res.status(status).set(headers);
+  // Prefer arrayBuffer for binary safety (workshop responses can be images).
+  const buf = Buffer.from(await pagesRes.arrayBuffer());
+  res.send(buf);
+}
+
+// ---- Handler auto-discovery -------------------------------------------------
+//
+// Every server/api/*.js file that isn't a private helper (leading underscore)
+// is mounted as an /api/<name> route. Files that export onRequestGet get a
+// GET handler; files that export onRequestPost get a POST handler. A file
+// can export both.
+async function discoverAndMount(app) {
+  const apiDir = path.join(__dirname, 'api');
+  let entries;
+  try {
+    entries = await fs.readdir(apiDir, { withFileTypes: true });
+  } catch (e) {
+    console.error(`[server] no server/api directory at ${apiDir}; skipping handler mount.`);
+    return { mounted: [], skipped: [] };
+  }
+  const mounted = [];
+  const skipped = [];
+  for (const ent of entries) {
+    if (!ent.isFile()) continue;
+    if (!ent.name.endsWith('.js')) continue;
+    if (ent.name.startsWith('_')) continue;   // private helper — imported, not mounted
+    const route = '/api/' + ent.name.replace(/\.js$/, '');
+    const filePath = path.join(apiDir, ent.name);
+    let mod;
+    try {
+      mod = await import(pathToFileURL(filePath).href);
+    } catch (e) {
+      console.error(`[server] failed to import ${filePath}: ${e.message}`);
+      skipped.push({ route, reason: 'import-failed', error: e.message });
+      continue;
+    }
+    let hasVerb = false;
+    if (typeof mod.onRequestGet === 'function') {
+      app.get(route, (req, res) => runHandler(mod.onRequestGet, req, res));
+      hasVerb = true;
+    }
+    if (typeof mod.onRequestPost === 'function') {
+      app.post(route, (req, res) => runHandler(mod.onRequestPost, req, res));
+      hasVerb = true;
+    }
+    if (typeof mod.onRequest === 'function') {
+      // Cloudflare's catch-all export. Rare in our handlers, but supported.
+      app.all(route, (req, res) => runHandler(mod.onRequest, req, res));
+      hasVerb = true;
+    }
+    if (hasVerb) {
+      mounted.push(route);
+    } else {
+      skipped.push({ route, reason: 'no onRequest* export' });
+    }
+  }
+  return { mounted, skipped };
+}
+
+async function runHandler(fn, req, res) {
+  try {
+    const pagesReq = makePagesRequest(req);
+    const env = process.env;
+    const out = await fn({ request: pagesReq, env });
+    if (out && typeof out.arrayBuffer === 'function' && typeof out.status === 'number') {
+      // It's a Response
+      await sendPagesResponse(out, res);
+      return;
+    }
+    // Shouldn't happen — handler didn't return a Response. Surface as 500.
+    res.status(500).json({ ok: false, message: 'handler returned no Response object' });
+  } catch (e) {
+    // Some ported handlers throw { status, message } for GH errors. Surface.
+    const status = (e && e.status && Number.isInteger(e.status)) ? e.status : 500;
+    const message = (e && e.message) ? e.message : String(e);
+    console.error(`[server] handler error on ${req.method} ${req.originalUrl}: ${message}`);
+    res.status(status).json({ ok: false, message });
+  }
+}
+
+// ---- Bootstrap --------------------------------------------------------------
+
+async function readVersion() {
+  // Read the version from GENUS_MANIFEST.md's front-matter-ish line; fall back
+  // to the hardcoded default the phase-4a spec permits so /api/health works
+  // even before the manifest is present in the image.
+  try {
+    const text = await fs.readFile(path.join(REPO_ROOT, 'GENUS_MANIFEST.md'), 'utf8');
+    const m = /\*\*Version\*\*:\s*([^\s—\n]+)/.exec(text);
+    if (m) return `manifest-${m[1]}`;
+  } catch { /* fall through */ }
+  return 'v1.0.0-dev';
+}
+
+async function main() {
+  const app = express();
+
+  // Body parsing. Cloudflare Pages Functions get raw request.json() lazily;
+  // Express pre-parses JSON when Content-Type: application/json is set. If
+  // the client sends malformed JSON we stash the error on req so the shim's
+  // .json() re-throws it — same shape as a Pages Functions request.json()
+  // rejection.
+  app.use(express.json({
+    limit: '10mb',
+    verify: (req, _res, _buf, _encoding) => {
+      // no-op; parse error goes to the error handler below
+    },
+  }));
+  app.use((err, req, _res, next) => {
+    if (err && err.type === 'entity.parse.failed') {
+      req._bodyParseError = 'Invalid JSON';
+      req.body = undefined;
+      // fall through — handler calls request.json() and gets the error
+      return next();
+    }
+    return next(err);
+  });
+
+  // Static assets — the current Cloudflare Pages install serves the repo root
+  // as its document root. Mirror that here so index.html, assets/, docs/,
+  // modules/, etc. are all reachable at the same URLs the dashboard client
+  // code expects.
+  //
+  // We deliberately do NOT set express.static('public/') — this repo doesn't
+  // have a public/ subdirectory; the static files live at the repo root
+  // (index.html, assets/app.js, etc.). This matches DEPLOY.md.
+  app.use(express.static(REPO_ROOT, {
+    // /assets/* on Cloudflare Pages uses no-cache, must-revalidate (see
+    // _headers). Mirror to avoid stale assets after a fresh install pulls
+    // updates via git pull + docker compose up.
+    setHeaders(res, filePath) {
+      if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+        res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+      }
+    },
+    index: 'index.html',
+    extensions: ['html'],
+  }));
+
+  const { mounted, skipped } = await discoverAndMount(app);
+  console.log(`[server] mounted ${mounted.length} api routes`);
+  if (skipped.length > 0) {
+    console.log(`[server] skipped ${skipped.length} api files:`, skipped);
+  }
+
+  // Fallback: if no other route matched an /api/* request, 404 as JSON so
+  // clients don't get the static-file 404 HTML.
+  app.use('/api', (req, res) => {
+    res.status(404).json({ ok: false, message: `no api route for ${req.method} ${req.originalUrl}` });
+  });
+
+  const version = await readVersion();
+  app.locals.genusVersion = version;
+  // Surface to handlers via env (health.js reads env.GENUS_VERSION so its
+  // response includes the boot-time-resolved value even before roles.json
+  // / substrate is present).
+  if (!process.env.GENUS_VERSION) process.env.GENUS_VERSION = version;
+
+  app.listen(PORT, () => {
+    console.log(`Genus is running at http://localhost:${PORT}`);
+    console.log(`[server] storage mode: ${process.env.GENUS_STORAGE_MODE || 'local-fs'}`);
+    console.log(`[server] bus root: ${process.env.GENUS_BUS_ROOT || './bus'}`);
+    console.log(`[server] local mode: ${process.env.GENUS_LOCAL_MODE === '1' ? 'on' : 'off'}`);
+    console.log(`[server] version: ${version}`);
+  });
+}
+
+main().catch(e => {
+  console.error('[server] fatal boot error:', e);
+  process.exit(1);
+});
+
+// Export the version reader for /api/health to read via app.locals.
+export { readVersion };

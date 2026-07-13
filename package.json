@@ -1,0 +1,17 @@
+{
+  "name": "genus-server",
+  "version": "1.0.0-dev",
+  "private": true,
+  "description": "Genus dashboard — Node/Express port of the Cloudflare Pages Functions handlers. Runs inside the Docker Compose install (phase 4c). The Cloudflare Pages deployment continues to serve functions/ untouched.",
+  "type": "module",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "express": "^4.22.2"
+  }
+}
