@@ -13,12 +13,23 @@ Launch Docker Desktop and wait for the whale icon to stop animating.
 
 ## 2. Download Genus
 
-Open a Terminal (macOS) or PowerShell (Windows) and run:
+**If you have Git installed** — open a Terminal (macOS) or PowerShell (Windows) and run:
 
 ```bash
 git clone https://github.com/Tij8i/Genus.git my-genus
 cd my-genus
 ```
+
+**If you don't have Git** — download the repo as a ZIP:
+
+1. Go to https://github.com/Tij8i/Genus/archive/refs/heads/main.zip
+2. Extract the ZIP anywhere you like — you'll get a folder called `Genus-main`
+3. Open a Terminal (macOS) or PowerShell (Windows) and `cd` into that folder:
+   ```bash
+   cd path/to/Genus-main
+   ```
+
+(Git makes future updates easier — `git pull` — but the ZIP works fine for a first install.)
 
 ## 3. Configure your key
 

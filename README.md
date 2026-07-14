@@ -4,6 +4,16 @@
 >
 > **Public site:** [genus.work](https://genus.work)
 
+## Install Genus on your machine
+
+Runs privately via Docker Compose. About 30 minutes end-to-end.
+
+**→ [Install guide](./docs/install/README.md)**
+
+Requirements: Docker Desktop + an Anthropic API key. No Cloudflare, no GitHub account, no Node.js on the host.
+
+## About the protocol
+
 Genus is an **open-source agent operating protocol** — a standard that defines how non-technical operators describe, deploy, and govern AI agents. The protocol specifies the primitives (Goals, KPIs, Workflows, Tasks, Campaigns, Constraints, Approval Gates, Artifacts, Permissions, Memory), the shared operational substrate (Task store, KPI Registry, Workflow Registry, Agent Updates, Approval Log, Artifact index, Campaign store), and the conformance contract (`GENUS_MANIFEST.md`) every Genus-compatible agent declares.
 
 Genus sits **above** the technical runtime — n8n, LangGraph, CrewAI, OpenAI Agents SDK, Make, Zapier, custom code. It turns business intent into governed agentic execution. It does not compete with those frameworks; it sits on top of them.
