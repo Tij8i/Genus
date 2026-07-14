@@ -1,0 +1,22 @@
+{
+  "bu": "synthetic",
+  "name": "Acme Roastery",
+  "category": "DTC coffee subscription + small wholesale",
+  "tagline": "Fresh-roasted single-origin, delivered weekly.",
+  "mission": "Make specialty coffee a no-friction habit for home drinkers.",
+  "vision": "Top-3 specialty DTC roastery in Western Europe by 2028.",
+  "description": "Synthetic showcase business. A small specialty coffee roastery running a DTC subscription (the bulk of revenue), occasional retail bag sales, and a wholesale arm serving 8 independent cafés. Used to demonstrate what a fully-wired Genus instance looks like with realistic connector data (Stripe test mode for revenue, GA4 demo property for web, Shopify dev store for orders, HubSpot sandbox for wholesale pipeline, Linear demo workspace for ops backlog).",
+  "current_stage": "growth",
+  "current_stage_confidence": "operator_set",
+  "fictional": true,
+  "fixture_notes": "All data is synthetic. Connect real sandbox providers (see seeded `bus/synthetic/connectors.json` once it ships) for live-flowing dummy data; otherwise the fixtures in each module folder render.",
+  "health": {
+    "verdict": "yellow",
+    "summary": "Subscriber growth healthy; wholesale concentrated in 2 cafés = renewal risk. Cash runway 9 months.",
+    "rationale": "Synthetic — illustrative health note showing the kind of read the Finance + Strategy Stewarts would generate.",
+    "last_assessed_at": "2026-06-27T08:00:00Z",
+    "assessed_by": "operator"
+  },
+  "connected_agents": [],
+  "modules_installed": []
+}

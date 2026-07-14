@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Welcome to Genus</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+  <link rel="shortcut icon" href="/favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/wizard/wizard.css">
+  <!--
+    server/index.js injects a <script> here setting window.__ANTHROPIC_KEY_MISSING__
+    based on process.env.ANTHROPIC_API_KEY at boot time. The wizard's key-banner
+    reads that global to decide whether to render.
+  -->
+  <!--GENUS_INJECT_ANTHROPIC_KEY_FLAG-->
+</head>
+<body>
+  <!-- ============ SCREEN 1 — Welcome ============ -->
+  <section class="screen on" data-screen="welcome">
+    <div class="wrap">
+      <div class="stack">
+        <!-- Yellow banner shows only when ANTHROPIC_API_KEY is missing (D2 in DESIGN.md).
+             Rendered inert here; wizard.js flips display based on the injected flag. -->
+        <div class="key-banner" id="anthropic-key-banner" style="display:none">
+          <div class="dot"></div>
+          <div>Anthropic API key not set. Genus will boot but agent chats will fail. Set <code>ANTHROPIC_API_KEY</code> in <code>.env</code> and restart to fix.</div>
+        </div>
+
+        <div class="card">
+          <div style="width:40px;height:40px;border-radius:11px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:19px;box-shadow:0 2px 6px rgba(47,107,255,.32)">G</div>
+          <h1 style="font-size:28px;margin-top:22px">Welcome to Genus</h1>
+          <p class="sub" style="font-size:15px;margin-top:12px;max-width:440px">Genus is an operating layer for your venture. AI agents track your plan, watch your KPIs, and bring you the decisions only you can make — all running privately on this machine.</p>
+          <div style="display:flex;align-items:center;gap:16px;margin-top:28px;flex-wrap:wrap">
+            <button class="btn" data-action="wizard-start">Get started</button>
+            <button class="btn-link" data-action="wizard-skip-to-demo">Skip and explore Acme Roastery →</button>
+          </div>
+        </div>
+        <div class="foot">running locally · no account needed · your data stays on this machine</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SCREEN 2 — Name your BU ============ -->
+  <section class="screen" data-screen="name-bu">
+    <div class="wrap">
+      <div class="stack">
+        <div class="card">
+          <div class="step">Step 2 of 3</div>
+          <h1>Name your venture</h1>
+          <p class="sub">Give your venture a short name. It becomes a folder on your machine.</p>
+
+          <div style="margin-top:26px">
+            <label for="slug-input">Short name</label>
+            <div class="hint">Lowercase letters, numbers and dashes — e.g. <span class="mono" style="font-size:11px">medivara</span></div>
+            <input type="text" id="slug-input" name="slug" autocomplete="off" placeholder="medivara">
+            <div class="err-msg" id="slug-error" style="display:none"></div>
+          </div>
+
+          <div style="margin-top:20px">
+            <label for="display-name-input">Display name <span style="color:var(--text-faint);font-weight:500">· optional</span></label>
+            <input type="text" id="display-name-input" name="displayName" autocomplete="off" placeholder="Medivara" style="font-family:inherit">
+          </div>
+
+          <div class="row-between">
+            <button class="btn-ghost" data-action="name-bu-back">← Back</button>
+            <button class="btn" id="name-bu-continue" data-action="name-bu-continue">Continue</button>
+          </div>
+        </div>
+        <!-- Mono footer reflects the exact bus/<slug>/ path being created (authorship legibility, D2). -->
+        <div class="foot" id="name-bu-foot">this creates bus/&lt;short-name&gt;/ on your machine</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SCREEN 3 — Connect systems ============ -->
+  <section class="screen" data-screen="connectors">
+    <div class="wrap">
+      <div class="stack stack-wide">
+        <div class="card" style="padding:36px 40px">
+          <div class="step">Step 3 of 3</div>
+          <h1>Connect your systems</h1>
+          <p class="sub">All optional. You can add connectors later in Settings if you don't have them handy now.</p>
+
+          <div id="connector-list" style="display:flex;flex-direction:column;gap:9px;margin-top:24px">
+            <!-- Connector rows are rendered by wizard.js from CONNECTORS[]. Kept in JS
+                 not HTML so the shape is source-of-truth and easy to extend. -->
+          </div>
+
+          <div class="row-between" style="margin-top:26px">
+            <button class="btn-ghost" data-action="connectors-back">← Back</button>
+            <button class="btn" id="finish-setup" data-action="connectors-finish">Finish setup</button>
+          </div>
+        </div>
+        <div class="foot" id="connectors-foot">tokens are stored in bus/&lt;short-name&gt;/connections.json — they never leave your machine</div>
+      </div>
+    </div>
+  </section>
+
+  <script src="/wizard/wizard.js"></script>
+</body>
+</html>

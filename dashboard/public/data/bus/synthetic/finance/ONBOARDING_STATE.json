@@ -1,0 +1,24 @@
+{
+  "status": "failed",
+  "last_run_at": "2026-07-11T09:15:00Z",
+  "checks": {
+    "connector_probe": {
+      "pass": false,
+      "detail": "No Moneybird connector wired for synthetic. connectors.json has only ga4-demo. Finance module is not installed (identity.json modules_installed=[]). fin.ledger.list cannot be probed."
+    },
+    "category_coverage": {
+      "pass": false,
+      "missing": ["founder_draws", "recurring_cost_tags", "revenue_stream"]
+    },
+    "data_freshness": {
+      "pass": false,
+      "last_sync_at": null
+    },
+    "identity_binding": {
+      "pass": false,
+      "detail": "Finance Stewart not bound to a read-only bookkeeping connector for synthetic; finance module not installed."
+    }
+  },
+  "gaps_surfaced_to_operator_at": "2026-07-11T09:15:00Z",
+  "notes": "Blocking gate (CAP-FIN-ONBOARDING-COMPLETENESS, 🔴). Founder-view tabs will not render until L1 passes. Two remediation paths: (1) operator installs Finance module for synthetic + wires a read-only bookkeeping connector; (2) Genus Agent owns connector wiring/health. Design note for Sage: synthetic's finance area is wired to Stripe test mode, but Finance module v1 L1 probe expects Moneybird — module/connector mismatch for this fixture BU."
+}

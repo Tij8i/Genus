@@ -1,0 +1,262 @@
+[
+  {
+    "id": "task-2026-07-07-001",
+    "bu": "synthetic",
+    "title": "test",
+    "description": "please save a file in my drive that says \"hello world\".",
+    "origin": "operator_request",
+    "proposer": "operator",
+    "proposed_at": "2026-07-07T13:15:34.533Z",
+    "source_heartbeat": "dashboard_operator_button",
+    "category": "operator_task",
+    "risk_level": "low",
+    "reversibility": "high",
+    "tier": "normal",
+    "estimated_minutes": 30,
+    "target": {
+      "type": "stewart_action",
+      "scope": "",
+      "executor": "genus-agent"
+    },
+    "advances_initiative": null,
+    "affects_kpi": null,
+    "from_memo": null,
+    "status": "done",
+    "approval": {
+      "rule_evaluation": "operator_initiated \u2192 auto-approved",
+      "decided_by": "operator",
+      "decided_at": "2026-07-07T13:15:34.533Z",
+      "notes": null
+    },
+    "execution": {
+      "paperclip_issue_id": "ACM-7",
+      "paperclip_issue_url": null,
+      "started_at": "2026-07-09T08:12:00.000Z",
+      "completed_at": "2026-07-09T08:12:12.000Z",
+      "outcome": "done"
+    },
+    "result": {
+      "summary": "Created file 'hello world.txt' (contents: \"hello world\") in operator's Google Drive root.",
+      "artifact_url": "https://drive.google.com/file/d/1rzoUY7Fd4ODrWtDyPFJgNB9IUId0LlK_/view?usp=drivesdk",
+      "executed_by": "genus-agent",
+      "executed_at": "2026-07-09T08:12:12.000Z"
+    }
+  },
+  {
+    "id": "task-2026-07-07-002",
+    "bu": "synthetic",
+    "title": "test",
+    "description": "Put a markdown document in my drive that says hello world.",
+    "origin": "operator_request",
+    "proposer": "operator",
+    "proposed_at": "2026-07-07T13:24:46.349Z",
+    "source_heartbeat": "dashboard_operator_button",
+    "category": "operator_task",
+    "risk_level": "low",
+    "reversibility": "high",
+    "tier": "normal",
+    "estimated_minutes": 30,
+    "target": {
+      "type": "stewart_action",
+      "scope": "",
+      "executor": "genus-agent"
+    },
+    "advances_initiative": null,
+    "affects_kpi": null,
+    "from_memo": null,
+    "status": "done",
+    "approval": {
+      "rule_evaluation": "operator_initiated \u2192 auto-approved",
+      "decided_by": "operator",
+      "decided_at": "2026-07-07T13:24:46.349Z",
+      "notes": null
+    },
+    "execution": {
+      "paperclip_issue_id": "ACM-7",
+      "paperclip_issue_url": null,
+      "started_at": "2026-07-09T08:12:00.000Z",
+      "completed_at": "2026-07-09T08:12:19.000Z",
+      "outcome": "done"
+    },
+    "result": {
+      "summary": "Created markdown document 'hello world.md' (# Hello World / hello world) in operator's Google Drive root.",
+      "artifact_url": "https://drive.google.com/file/d/1O66SEtu7Rrie4RvHUfrDyqUuY9IeNaRc/view?usp=drivesdk",
+      "executed_by": "genus-agent",
+      "executed_at": "2026-07-09T08:12:19.000Z"
+    }
+  },
+  {
+    "id": "task-2026-07-08-001",
+    "bu": "synthetic",
+    "title": "Hello World",
+    "description": "Put a markdown on my desktop that says \"Hello World\"",
+    "origin": "operator_request",
+    "proposer": "operator",
+    "proposed_at": "2026-07-08T13:57:22.681Z",
+    "source_heartbeat": "dashboard_operator_button",
+    "category": "operator_task",
+    "risk_level": "low",
+    "reversibility": "high",
+    "tier": "normal",
+    "estimated_minutes": 30,
+    "target": {
+      "type": "stewart_action",
+      "scope": "",
+      "executor": "genus-agent"
+    },
+    "advances_initiative": null,
+    "affects_kpi": null,
+    "from_memo": null,
+    "status": "done",
+    "approval": {
+      "rule_evaluation": "operator_initiated \u2192 auto-approved",
+      "decided_by": "operator",
+      "decided_at": "2026-07-08T13:57:22.681Z",
+      "notes": null
+    },
+    "execution": {
+      "paperclip_issue_id": "ACM-7",
+      "paperclip_issue_url": null,
+      "started_at": "2026-07-09T08:12:00.000Z",
+      "completed_at": "2026-07-09T08:12:05.000Z",
+      "outcome": "done"
+    },
+    "result": {
+      "summary": "Wrote 'Hello World.md' to the operator's local Desktop (/Users/AlessioTixi/Desktop/Hello World.md).",
+      "artifact_url": "file:///Users/AlessioTixi/Desktop/Hello%20World.md",
+      "executed_by": "genus-agent",
+      "executed_at": "2026-07-09T08:12:05.000Z"
+    }
+  },
+  {
+    "id": "task-2026-07-09-001",
+    "bu": "synthetic",
+    "title": "Why",
+    "description": "Put a markdown file on my desktop that says: \"Why?\"",
+    "origin": "operator_request",
+    "proposer": "operator",
+    "proposed_at": "2026-07-09T08:26:31.708Z",
+    "source_heartbeat": "dashboard_operator_button",
+    "category": "operator_task",
+    "risk_level": "low",
+    "reversibility": "high",
+    "tier": "normal",
+    "estimated_minutes": 30,
+    "target": {
+      "type": "stewart_action",
+      "scope": "",
+      "executor": "genus-agent"
+    },
+    "advances_initiative": null,
+    "affects_kpi": null,
+    "from_memo": null,
+    "status": "done",
+    "approval": {
+      "rule_evaluation": "operator_initiated \u2192 auto-approved",
+      "decided_by": "operator",
+      "decided_at": "2026-07-09T08:26:31.708Z",
+      "notes": null
+    },
+    "execution": {
+      "paperclip_issue_id": "ACM-13",
+      "paperclip_issue_url": null,
+      "started_at": "2026-07-09T10:33:00.000Z",
+      "completed_at": "2026-07-09T10:33:10.000Z",
+      "outcome": "done"
+    },
+    "result": {
+      "summary": "Wrote 'Why.md' to the operator's local Desktop (/Users/AlessioTixi/Desktop/Why.md), contents: \"# Why?\" / \"Why?\".",
+      "artifact_url": "file:///Users/AlessioTixi/Desktop/Why.md",
+      "executed_by": "genus-agent",
+      "executed_at": "2026-07-09T10:33:10.000Z"
+    }
+  },
+  {
+    "id": "task-2026-07-09-002",
+    "bu": "synthetic",
+    "title": "try this",
+    "description": "Post an mdd file on my desktop that says: \"Try this\"",
+    "origin": "operator_request",
+    "proposer": "operator",
+    "proposed_at": "2026-07-09T13:39:22.342Z",
+    "source_heartbeat": "dashboard_operator_button",
+    "category": "operator_task",
+    "risk_level": "low",
+    "reversibility": "high",
+    "tier": "normal",
+    "estimated_minutes": 30,
+    "target": {
+      "type": "stewart_action",
+      "scope": "",
+      "executor": "genus-agent"
+    },
+    "advances_initiative": null,
+    "affects_kpi": null,
+    "from_memo": null,
+    "status": "done",
+    "approval": {
+      "rule_evaluation": "operator_initiated \u2192 auto-approved",
+      "decided_by": "operator",
+      "decided_at": "2026-07-09T13:39:22.342Z",
+      "notes": null
+    },
+    "execution": {
+      "paperclip_issue_id": "ACM-18",
+      "paperclip_issue_url": null,
+      "started_at": "2026-07-11T00:00:00.000Z",
+      "completed_at": "2026-07-11T00:00:00.000Z",
+      "outcome": "done"
+    },
+    "result": {
+      "summary": "Wrote markdown 'Try this.md' (# Try this / Try this) to operator's local Desktop.",
+      "artifact_url": null,
+      "artifact_path": "/Users/AlessioTixi/Desktop/Try this.md",
+      "executed_by": "genus-agent",
+      "executed_at": "2026-07-11T00:00:00.000Z"
+    }
+  },
+  {
+    "id": "task-2026-07-09-003",
+    "bu": "synthetic",
+    "title": "Once again",
+    "description": "Put a markdown file on my desktop that says \"once again\".",
+    "origin": "operator_request",
+    "proposer": "operator",
+    "proposed_at": "2026-07-09T13:57:16.691Z",
+    "source_heartbeat": "dashboard_operator_button",
+    "category": "operator_task",
+    "risk_level": "low",
+    "reversibility": "high",
+    "tier": "normal",
+    "estimated_minutes": 30,
+    "target": {
+      "type": "stewart_action",
+      "scope": "",
+      "executor": "genus-agent"
+    },
+    "advances_initiative": null,
+    "affects_kpi": null,
+    "from_memo": null,
+    "status": "done",
+    "approval": {
+      "rule_evaluation": "operator_initiated \u2192 auto-approved",
+      "decided_by": "operator",
+      "decided_at": "2026-07-09T13:57:16.691Z",
+      "notes": null
+    },
+    "execution": {
+      "paperclip_issue_id": "ACM-18",
+      "paperclip_issue_url": null,
+      "started_at": "2026-07-11T00:00:00.000Z",
+      "completed_at": "2026-07-11T00:00:00.000Z",
+      "outcome": "done"
+    },
+    "result": {
+      "summary": "Wrote markdown 'Once again.md' (# Once again / once again) to operator's local Desktop.",
+      "artifact_url": null,
+      "artifact_path": "/Users/AlessioTixi/Desktop/Once again.md",
+      "executed_by": "genus-agent",
+      "executed_at": "2026-07-11T00:00:00.000Z"
+    }
+  }
+]

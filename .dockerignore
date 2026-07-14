@@ -1,0 +1,52 @@
+# i56 phase 4c — assets excluded from the Genus dashboard image.
+#
+# Everything not listed here is copied into /app by the Dockerfile.
+# Keep this list tight: excluding runtime-needed files silently breaks the
+# container (missing handlers, empty static routes, etc.).
+#
+# Rules of thumb:
+#   • Never exclude anything the dashboard client fetches at runtime
+#     (index.html, assets/, docs/, modules/, dashboard/public/).
+#   • Never exclude server/ (the whole Express port lives there).
+#   • Never exclude package*.json (npm ci needs the lockfile).
+
+# VCS + local editor state
+.git
+.gitignore
+.github
+
+# Node
+node_modules
+npm-debug.log*
+yarn-debug.log*
+*.log
+
+# Cloudflare Pages assets (not needed inside Docker — Docker install uses
+# the Node/Express server in server/, not functions/).
+functions
+.wrangler
+.dev.vars
+
+# Tests + development-only fixtures
+tests
+
+# Claude Code local state
+.claude
+.claude*
+
+# Orchestrator-side product pipeline notes (BRIEFs, design output, plans)
+# aren't runtime assets. The one file that WAS runtime-needed (splash.html)
+# was copied into dashboard/public/wizard/ in phase 4c and is safe to ship.
+docs/products
+
+# Docker artefacts themselves
+Dockerfile
+docker-compose.yml
+.dockerignore
+.env
+.env.local
+.env.*.local
+
+# OS junk
+.DS_Store
+Thumbs.db

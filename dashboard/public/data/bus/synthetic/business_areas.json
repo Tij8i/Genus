@@ -1,0 +1,83 @@
+{
+  "$schema": "https://genus.work/schemas/business-areas-v0.json",
+  "version": 1,
+  "bu": "synthetic",
+  "default_seeded_by": "operator",
+  "seeded_at": "2026-06-27T08:00:00Z",
+  "genus_agent_state": {
+    "status": "suggestion",
+    "message": "6 areas seeded for a DTC + small wholesale roastery. Install Strategy + Finance modules to wire Stewards; connect Stripe test / GA4 demo / Shopify dev / HubSpot sandbox for live-flowing data.",
+    "updated_at": "2026-07-09T08:12:00Z"
+  },
+  "areas": [
+    {
+      "id": "finance",
+      "display_name": "Finance",
+      "description": "Cash, revenue (subscription MRR + bag sales + wholesale invoices), COGS, runway.",
+      "critical": true,
+      "operator_confirmed": true,
+      "genus_agent_notes": "DTC subscription + small wholesale → revenue is mixed (predictable MRR + lumpy wholesale). Watch CAC payback on new subscribers + wholesale concentration risk.",
+      "tools": [
+        { "tool": "stripe", "resources": [{ "kind": "workspace", "name": "Stripe test mode", "meta": "free sandbox" }] },
+        { "tool": "notion", "resources": [{ "kind": "page", "name": "Finance dashboards", "meta": "synthetic" }] }
+      ]
+    },
+    {
+      "id": "subscriptions",
+      "display_name": "Subscriptions",
+      "description": "DTC subscriber lifecycle — sign-up, retention, churn, upgrade/downgrade flows.",
+      "critical": true,
+      "operator_confirmed": true,
+      "genus_agent_notes": "The load-bearing revenue line. Watch month-2 churn (the cliff) + LTV by acquisition channel.",
+      "tools": [
+        { "tool": "stripe", "resources": [{ "kind": "workspace", "name": "Subscription products", "meta": "test mode" }] },
+        { "tool": "intercom", "resources": [{ "kind": "workspace", "name": "Subscriber support inbox", "meta": "synthetic" }] }
+      ]
+    },
+    {
+      "id": "wholesale",
+      "display_name": "Wholesale",
+      "description": "Café accounts — pipeline, orders, account renewals.",
+      "critical": false,
+      "operator_confirmed": true,
+      "genus_agent_notes": "8 active accounts, ~25% of revenue. 2 cafés = 60% of wholesale → concentration risk. CRM in HubSpot sandbox.",
+      "tools": [
+        { "tool": "hubspot", "resources": [{ "kind": "workspace", "name": "Wholesale CRM", "meta": "developer sandbox" }] }
+      ]
+    },
+    {
+      "id": "marketing",
+      "display_name": "Marketing",
+      "description": "Web acquisition, social, email, paid. Funnels into subscriptions.",
+      "critical": true,
+      "operator_confirmed": true,
+      "genus_agent_notes": "GA4 demo property = ecommerce funnel signal; Klaviyo / Mailchimp for email lifecycle; Meta + Google ads for paid.",
+      "tools": [
+        { "tool": "google-drive", "resources": [{ "kind": "folder", "name": "Brand + creative", "meta": "synthetic" }] }
+      ]
+    },
+    {
+      "id": "operations",
+      "display_name": "Operations",
+      "description": "Roasting schedule, inventory, fulfillment, shipping.",
+      "critical": true,
+      "operator_confirmed": true,
+      "genus_agent_notes": "Subscription scale = weekly roast plan + fulfillment SLA = on-time delivery rate. Watch green coffee inventory weeks-of-cover.",
+      "tools": [
+        { "tool": "linear", "resources": [{ "kind": "workspace", "name": "Ops backlog", "meta": "demo workspace" }] }
+      ]
+    },
+    {
+      "id": "product",
+      "display_name": "Product (coffees + experience)",
+      "description": "Single-origin lineup, blends, packaging, subscription experience.",
+      "critical": false,
+      "operator_confirmed": true,
+      "genus_agent_notes": "Roaster's creative output. NPS + repeat-subscribe rate per coffee.",
+      "tools": [
+        { "tool": "figma", "resources": [{ "kind": "file", "name": "Packaging library", "meta": "synthetic" }] },
+        { "tool": "notion", "resources": [{ "kind": "page", "name": "Coffee catalogue", "meta": "synthetic" }] }
+      ]
+    }
+  ]
+}
