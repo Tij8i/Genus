@@ -266,10 +266,19 @@ async function loadSplashHtml() {
 <div class="mono" style="font-size:10px;color:#aab0bb">this page refreshes automatically</div></body></html>`;
 }
 
+function hasExploredCookie(req) {
+  // Set by GET /_wizard/skip-to-demo. Presence means the operator opted into
+  // the synthetic-only view without creating a real BU yet, so the root
+  // handler must NOT redirect them back to /wizard/.
+  const raw = req.headers.cookie || '';
+  return /(?:^|;\s*)genus_explored=1(?:;|$)/.test(raw);
+}
+
 function mountWizardAndBoot(app) {
   // Root: redirect to /wizard/ when no user BU exists yet.
   app.get('/', async (req, res, next) => {
     try {
+      if (hasExploredCookie(req)) return next();
       const anyBu = await hasAnyUserBu();
       if (!anyBu) return res.redirect(302, '/wizard/');
     } catch (e) {
@@ -277,6 +286,20 @@ function mountWizardAndBoot(app) {
       // On error, fall through to static so we don't dead-loop the operator.
     }
     return next();
+  });
+
+  // Wizard "Skip and explore Acme Roastery" button. Sets an opt-in cookie so
+  // the root wizard-gate stops redirecting the browser back to /wizard/, then
+  // sends the operator into the dashboard with the synthetic BU pre-selected.
+  app.get('/_wizard/skip-to-demo', (_req, res) => {
+    const oneYear = 365 * 24 * 60 * 60 * 1000;
+    res.cookie('genus_explored', '1', {
+      httpOnly: false,
+      sameSite: 'lax',
+      maxAge: oneYear,
+      path: '/',
+    });
+    res.redirect(302, '/#bu=synthetic');
   });
 
   // /wizard and /wizard/ → serve the templated index.html

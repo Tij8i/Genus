@@ -29,6 +29,11 @@ services:
       context: .
       dockerfile: Dockerfile
     image: genus-dashboard:local
+    # Never try to pull `genus-dashboard:local` from a registry — it only
+    # exists locally after `build`. Without this, `docker compose up` on a
+    # fresh clone fails with `pull access denied for genus-dashboard,
+    # repository does not exist`.
+    pull_policy: build
     container_name: genus-dashboard
     restart: unless-stopped
     ports:

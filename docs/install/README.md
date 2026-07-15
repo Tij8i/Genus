@@ -2,6 +2,21 @@
 
 Genus runs privately on your machine using Docker Compose. Total install time: about 30 minutes.
 
+## 0. Before you start — check what you have
+
+Open a Terminal (macOS: Cmd+Space → "Terminal") or PowerShell (Windows: Start → "PowerShell") and check these three things.
+
+**Docker Desktop.** Type `docker --version`. If you see a version number, you're set — skip step 1. If you see "command not found", follow step 1.
+
+**Git (optional but recommended).** Type `git --version`. If you see a version number, use the `git clone` path in step 2. If you don't have Git, install it from https://git-scm.com/downloads or use the ZIP path in step 2.
+
+**A text editor.** For step 3 you open a file called `.env`. Any plain-text editor works:
+
+- **macOS**: TextEdit (built-in) opens via `open -a TextEdit .env` from Terminal, or right-click `.env` in Finder → Open With → TextEdit. VS Code, Cursor, Sublime also work.
+- **Windows**: Notepad (built-in) — right-click `.env` in File Explorer → Open with → Notepad. VS Code, Cursor also work.
+
+Save with plain-text encoding (default in all of these).
+
 ## 1. Install Docker Desktop
 
 If you don't have Docker Desktop:
@@ -60,10 +75,12 @@ Don't have an Anthropic key? Get one at https://console.anthropic.com.
 ## 4. Start Genus
 
 ```bash
-docker compose up
+docker compose up --build
 ```
 
 The first run takes a few minutes to download images and build the dashboard. When you see `Genus is running at http://localhost:8080`, open that URL in your browser.
+
+(`--build` is needed on the first run because the dashboard image is built locally, not pulled from a registry. On subsequent runs `docker compose up` alone is fine unless you've pulled updates.)
 
 ## 5. Set up your BU
 
