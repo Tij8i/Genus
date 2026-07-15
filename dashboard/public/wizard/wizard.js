@@ -107,10 +107,11 @@
     });
     document.querySelectorAll('[data-action="wizard-skip-to-demo"]').forEach((b) => {
       b.addEventListener('click', () => {
-        // Task spec: '/#bu=synthetic' — main dashboard reads its own BU
-        // selector; hash is a hint compatible with the operator convention
-        // documented in the brief.
-        window.location.href = '/#bu=synthetic';
+        // Go through the server so it can set a `genus_explored` cookie —
+        // otherwise the root `/` handler sees no user BU and redirects the
+        // browser straight back to /wizard/. The endpoint responds with a
+        // 302 to `/#bu=synthetic`.
+        window.location.href = '/_wizard/skip-to-demo';
       });
     });
   }

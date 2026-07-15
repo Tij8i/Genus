@@ -143,81 +143,80 @@ export async function onRequestPost({ request, env }) {
     });
   }
 
-  // 5) Compose bindings for default modules (skipped if empty)
+  // 5) Compose bindings. genus-agent is bound to EVERY new BU regardless of
+  // whether the operator picked any modules — it's the always-there base
+  // agent that supervises the venture, executes operator-filed tasks,
+  // generates suggestions, and fills in for un-installed module Stewards.
+  // Module Stewards (strategy / finance / product / development) are added
+  // only when the corresponding module_id is in validModules.
   const bindingsWritten = [];
   const bindingsSkipped = [];
-  if (validModules.length > 0) {
-    let bindingsFile;
-    try { bindingsFile = await getFile(env.GITHUB_PAT, BINDINGS_PATH); }
-    catch (e) {
+  let bindingsFile;
+  try { bindingsFile = await getFile(env.GITHUB_PAT, BINDINGS_PATH); }
+  catch (e) {
+    return jsonResponse(200, {
+      ok: true, partial: true, bu: newEntry,
+      message: `Registry + identity written; bindings read failed: ${e.message || String(e)}`,
+      default_modules: validModules,
+    });
+  }
+  let bindingsParsed;
+  try { bindingsParsed = JSON.parse(bindingsFile.content); }
+  catch { return jsonResponse(200, { ok: true, partial: true, bu: newEntry, message: 'Registry + identity written; bindings not valid JSON', default_modules: validModules }); }
+  bindingsParsed.bindings = bindingsParsed.bindings || [];
+  const now = new Date().toISOString();
+  const installerEmail = gate?.email || 'unknown@genus.dashboard';
+
+  if (!bindingsParsed.bindings.some(b => b.bu === id && b.agent_id === 'genus-agent')) {
+    bindingsParsed.bindings.push({
+      bu: id,
+      module_id: 'core',
+      agent_id: 'genus-agent',
+      archetype: 'Genus Agent',  // Must match reconcile.mjs filter
+      docs_root: 'docs/agents/genus_agent',
+      paperclip_url_key: 'genus-agent',
+      runtime_id: 'local-paperclip-alessio',
+      hitl_owner_email: installerEmail,
+      lead: true,
+      installer_email: installerEmail,
+      installed_at: now,
+    });
+    bindingsWritten.push({ module_id: 'core', agent_id: 'genus-agent' });
+  }
+
+  for (const modId of validModules) {
+    const tpl = MODULE_BINDING_TEMPLATES[modId];
+    if (!tpl) { bindingsSkipped.push({ module_id: modId, reason: 'no binding template' }); continue; }
+    const agentId = tpl.agent_id(id);
+    if (bindingsParsed.bindings.some(b => b.agent_id === agentId)) {
+      bindingsSkipped.push({ module_id: modId, reason: 'binding already exists' });
+      continue;
+    }
+    bindingsParsed.bindings.push({
+      bu: id,
+      module_id: modId,
+      agent_id: agentId,
+      archetype: tpl.archetype,
+      docs_root: tpl.docs_root,
+      runtime_id: 'local-paperclip-alessio',
+      hitl_owner_email: installerEmail,
+      installer_email: installerEmail,
+      installed_at: now,
+    });
+    bindingsWritten.push({ module_id: modId, agent_id: agentId });
+  }
+  if (bindingsWritten.length > 0) {
+    const bindingsContent = JSON.stringify(bindingsParsed, null, 2) + '\n';
+    try {
+      await putFile(env.GITHUB_PAT, BINDINGS_PATH, bindingsContent, bindingsFile.sha, `multi-bu: seed bindings for '${id}' (${bindingsWritten.map(b => b.module_id).join(', ')})`);
+    } catch (e) {
       return jsonResponse(200, {
         ok: true, partial: true, bu: newEntry,
-        message: `Registry + identity written; bindings read failed: ${e.message || String(e)}`,
+        message: `Registry + identity written; bindings write failed: ${e.message || String(e)}`,
         default_modules: validModules,
+        bindings_written: [],
+        bindings_skipped: bindingsSkipped,
       });
-    }
-    let bindingsParsed;
-    try { bindingsParsed = JSON.parse(bindingsFile.content); }
-    catch { return jsonResponse(200, { ok: true, partial: true, bu: newEntry, message: 'Registry + identity written; bindings not valid JSON', default_modules: validModules }); }
-    bindingsParsed.bindings = bindingsParsed.bindings || [];
-    const now = new Date().toISOString();
-    const installerEmail = gate?.email || 'unknown@genus.dashboard';
-
-    // Always bind genus-agent to every new BU. It's the always-there base
-    // agent that supervises the venture, executes operator-filed tasks,
-    // generates suggestions, and fills in for un-installed module Stewards.
-    // See docs/agents/genus_agent/IDENTITY.md.
-    if (!bindingsParsed.bindings.some(b => b.bu === id && b.agent_id === 'genus-agent')) {
-      bindingsParsed.bindings.push({
-        bu: id,
-        module_id: 'core',
-        agent_id: 'genus-agent',
-        archetype: 'Genus Agent',  // Must match reconcile.mjs filter
-        docs_root: 'docs/agents/genus_agent',
-        paperclip_url_key: 'genus-agent',
-        runtime_id: 'local-paperclip-alessio',
-        hitl_owner_email: installerEmail,
-        lead: true,
-        installer_email: installerEmail,
-        installed_at: now,
-      });
-      bindingsWritten.push({ module_id: 'core', agent_id: 'genus-agent' });
-    }
-
-    for (const modId of validModules) {
-      const tpl = MODULE_BINDING_TEMPLATES[modId];
-      if (!tpl) { bindingsSkipped.push({ module_id: modId, reason: 'no binding template' }); continue; }
-      const agentId = tpl.agent_id(id);
-      if (bindingsParsed.bindings.some(b => b.agent_id === agentId)) {
-        bindingsSkipped.push({ module_id: modId, reason: 'binding already exists' });
-        continue;
-      }
-      bindingsParsed.bindings.push({
-        bu: id,
-        module_id: modId,
-        agent_id: agentId,
-        archetype: tpl.archetype,
-        docs_root: tpl.docs_root,
-        runtime_id: 'local-paperclip-alessio',
-        hitl_owner_email: installerEmail,
-        installer_email: installerEmail,
-        installed_at: now,
-      });
-      bindingsWritten.push({ module_id: modId, agent_id: agentId });
-    }
-    if (bindingsWritten.length > 0) {
-      const bindingsContent = JSON.stringify(bindingsParsed, null, 2) + '\n';
-      try {
-        await putFile(env.GITHUB_PAT, BINDINGS_PATH, bindingsContent, bindingsFile.sha, `multi-bu: seed bindings for '${id}' (${bindingsWritten.map(b => b.module_id).join(', ')})`);
-      } catch (e) {
-        return jsonResponse(200, {
-          ok: true, partial: true, bu: newEntry,
-          message: `Registry + identity written; bindings write failed: ${e.message || String(e)}`,
-          default_modules: validModules,
-          bindings_written: [],
-          bindings_skipped: bindingsSkipped,
-        });
-      }
     }
   }
 
