@@ -18,11 +18,16 @@
   // the wizard POSTs to /api/module-init which currently ignores unknown
   // module_ids gracefully (no-op binding) so a wrong id won't crash setup.
   const CONNECTORS = [
-    { id: 'github',      name: 'GitHub',       icon: 'GH', desc: 'Repos, issues and PRs for your dev agents' },
-    { id: 'notion',      name: 'Notion',       icon: 'NO', desc: 'Docs and databases Genus can read and write' },
-    { id: 'slack',       name: 'Slack',        icon: 'SL', desc: 'Notifications and agent chat in your workspace' },
-    { id: 'gdrive',      name: 'Google Drive', icon: 'GD', desc: 'Spreadsheets and files your agents work from' },
-    { id: 'linear',      name: 'Linear',       icon: 'LN', desc: 'Issues and cycles for planning sync' },
+    { id: 'github',      name: 'GitHub',       icon: 'GH', desc: 'Repos, issues and PRs for your dev agents',
+      hint: 'Fine-grained Personal Access Token · Contents R/W + Pull Requests R/W · create one at github.com/settings/tokens' },
+    { id: 'notion',      name: 'Notion',       icon: 'NO', desc: 'Docs and databases Genus can read and write',
+      hint: 'Internal Integration secret (starts with `secret_` or `ntn_`) — create at notion.so/my-integrations, then share the databases you want Genus to see with the integration' },
+    { id: 'slack',       name: 'Slack',        icon: 'SL', desc: 'Notifications and agent chat in your workspace',
+      hint: 'Bot User OAuth Token (`xoxb-...`) from a Slack app you create at api.slack.com/apps — needs chat:write + channels:read scopes' },
+    { id: 'gdrive',      name: 'Google Drive', icon: 'GD', desc: 'Spreadsheets and files your agents work from',
+      hint: 'Service Account key JSON — generate one in Google Cloud Console, share the Drive folder with the service-account email, then paste the whole JSON blob here' },
+    { id: 'linear',      name: 'Linear',       icon: 'LN', desc: 'Issues and cycles for planning sync',
+      hint: 'Personal API key (`lin_api_...`) from Linear → Settings → API — no scopes to pick, key inherits your permissions' },
   ];
 
   // ---------- Wizard state ---------------------------------------------------
@@ -314,12 +319,16 @@
         </div></div>`;
     }
     if (sel === 'entering-token') {
+      const hintBlock = c.hint
+        ? `<div class="conn-hint">${escapeHtml(c.hint)}</div>`
+        : '';
       return head + `</div>
         <div class="conn-token">
           <input type="password" data-conn-token-input="${c.id}" placeholder="paste ${escapeHtml(c.name)} token" autocomplete="off">
           <button class="btn-sm" data-conn-save="${c.id}">Save</button>
           <button class="btn-sm-ghost" data-conn-action="cancel-token" data-conn-id="${c.id}">Cancel</button>
-        </div>`;
+        </div>
+        ${hintBlock}`;
     }
     // default: not-connected
     return head + `<div class="conn-actions">

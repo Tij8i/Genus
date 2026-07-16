@@ -326,6 +326,16 @@ input.err-input { border-color: var(--red); }
   padding: 8px 11px;
   border-radius: 8px;
 }
+.conn-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-faint);
+  padding: 8px 10px;
+  background: var(--surface);
+  border-left: 2px solid var(--border-strong);
+  border-radius: 4px;
+}
 .btn-sm {
   border: none;
   background: var(--accent);

@@ -54,23 +54,20 @@ Copy the example config:
 cp .env.example .env
 ```
 
-Open `.env` in a text editor. Paste your Anthropic API key after `ANTHROPIC_API_KEY=`.
+Open `.env` in a text editor:
 
-Then generate a random secret for Paperclip and paste it after `BETTER_AUTH_SECRET=`. On macOS or Linux:
+- **macOS** — `open -a TextEdit .env` in Terminal (or right-click the file in Finder → Open With → TextEdit).
+- **Windows** — `notepad .env` in PowerShell (or right-click the file in File Explorer → Open with → Notepad).
+- Any editor works — VS Code, Cursor, Sublime, nano, vim.
 
-```bash
-openssl rand -hex 32
-```
+Once open:
 
-On Windows PowerShell:
+1. Paste your Anthropic API key after `ANTHROPIC_API_KEY=`. Don't have one? Get it at https://console.anthropic.com.
+2. Generate a random secret and paste it after `BETTER_AUTH_SECRET=`:
+   - macOS / Linux: `openssl rand -hex 32`
+   - Windows PowerShell: `-join ((48..57 + 97..102) | Get-Random -Count 64 | ForEach-Object {[char]$_})`
 
-```powershell
--join ((48..57 + 97..102) | Get-Random -Count 64 | ForEach-Object {[char]$_})
-```
-
-Save the file.
-
-Don't have an Anthropic key? Get one at https://console.anthropic.com.
+Save the file and close the editor.
 
 ## 4. Start Genus
 
@@ -78,13 +75,32 @@ Don't have an Anthropic key? Get one at https://console.anthropic.com.
 docker compose up --build
 ```
 
-The first run takes a few minutes to download images and build the dashboard. When you see `Genus is running at http://localhost:8080`, open that URL in your browser.
+The first run takes a few minutes to download images and build the dashboard. When you see `Genus is running at http://localhost:8080` in the console output, open that URL in your browser.
+
+If the container is running in the background (Docker Desktop hides the console), just open http://localhost:8080 directly.
 
 (`--build` is needed on the first run because the dashboard image is built locally, not pulled from a registry. On subsequent runs `docker compose up` alone is fine unless you've pulled updates.)
+
+**What's running:**
+
+| Service | URL | What it's for |
+|---|---|---|
+| Genus dashboard | http://localhost:8080 | Where you work — open this |
+| Paperclip runtime | Internal to the compose network (`http://paperclip:3100`) | Runs your agents. The dashboard talks to it automatically. |
+
+To reach the Paperclip UI directly (rarely needed), add `- "3100:3100"` under `paperclip:` → `ports:` in `docker-compose.yml` and restart. Then it's at http://localhost:3100.
 
 ## 5. Set up your BU
 
 The wizard walks you through naming your business unit and (optionally) connecting external systems. Takes about 2 minutes. If your Anthropic key was missing, the wizard shows a banner so you can fix it before continuing.
+
+**One-time Paperclip step:** after finishing the wizard, run this once in a new terminal window (leave `docker compose up` running in the first):
+
+```bash
+docker compose exec paperclip npx paperclipai onboard
+```
+
+Follow the prompts to create a Paperclip account (this is what lets Genus push tasks to your agents). Without this, task-push shows "Agent JWT: missing" and Genus can't drive Paperclip.
 
 Done.
 
@@ -118,7 +134,11 @@ The `-v` removes the volumes too and deletes your BU data. Skip `-v` to keep the
 
 **"Anthropic API key not set" banner.** You skipped step 3. Set the key in `.env`, then `docker compose down && docker compose up`.
 
-**Paperclip needs onboarding.** Run `docker compose exec paperclip npx paperclipai onboard` and follow prompts.
+**Paperclip needs onboarding.** Run `docker compose exec paperclip npx paperclipai onboard` and follow prompts. Step 5 in the install flow above covers this; this troubleshooting entry catches the case where you skipped it.
+
+**"Agent JWT: missing" in the Paperclip container logs.** Same fix as above — you need to run `docker compose exec paperclip npx paperclipai onboard` once. The banner is just Paperclip telling you it hasn't been onboarded yet; nothing is broken.
+
+**Task-push fails with `file not found: dashboard/public/data/bus/{bu}/tasks.json`.** Update to the latest Genus (`git pull && docker compose build && docker compose up`) — this was a bug in `create-bu.js` that stopped seeding per-BU substrate files. If updating doesn't fix it, delete the affected BU from `_registry.json` and recreate it via the wizard.
 
 **Dashboard came up but the demo BU is missing.** The synthetic BU seeds on the first empty-volume boot. If the volume already existed (e.g. an aborted previous run), `docker compose down -v` clears it — then `docker compose up` re-seeds.
 

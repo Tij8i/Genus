@@ -14,6 +14,41 @@ const SLUG_RE = /^[a-z][a-z0-9-]{1,30}$/;
 const DEFAULT_COLORS = ['#2f6bff', '#0e9f6e', '#e0a008', '#df4b3f', '#8a5cf6', '#06b6d4', '#ec4899', '#f97316'];
 const BINDINGS_PATH = 'dashboard/public/data/system/agent_bindings.json';
 
+// Per-BU substrate files the dashboard reads from. Kept in sync with the
+// server/api/ copy — see comment there for the reasoning.
+function perBuSeeds(bu) {
+  return [
+    { path: `dashboard/public/data/bus/${bu}/tasks.json`, content: '[]\n' },
+    { path: `dashboard/public/data/bus/${bu}/goals.json`, content: '[]\n' },
+    { path: `dashboard/public/data/bus/${bu}/kpis.json`, content: '[]\n' },
+    { path: `dashboard/public/data/bus/${bu}/initiatives.json`, content: '[]\n' },
+    { path: `dashboard/public/data/bus/${bu}/plans.json`, content: '[]\n' },
+    { path: `dashboard/public/data/bus/${bu}/approval_rules.json`, content: '[]\n' },
+    { path: `dashboard/public/data/bus/${bu}/documentation.json`, content: '[]\n' },
+    { path: `dashboard/public/data/bus/${bu}/meetings.json`, content: '[]\n' },
+    { path: `dashboard/public/data/bus/${bu}/connectors.json`, content: '[]\n' },
+    { path: `dashboard/public/data/bus/${bu}/cycle_state.json`, content: '{}\n' },
+    { path: `dashboard/public/data/bus/${bu}/connectors_backrefs.json`,
+      content: JSON.stringify({ version: 1, connectors_backrefs: {} }, null, 2) + '\n' },
+    { path: `dashboard/public/data/bus/${bu}/governance.json`,
+      content: JSON.stringify({
+        stewart_id: null,
+        schema_version: '0.1',
+        gauges: {},
+        thresholds: {},
+      }, null, 2) + '\n' },
+    { path: `dashboard/public/data/bus/${bu}/external_access.json`,
+      content: JSON.stringify({
+        $schema: 'https://genus.work/schemas/external-access-v0.json',
+        version: 1,
+        bu,
+        entries: [],
+      }, null, 2) + '\n' },
+    { path: `dashboard/public/data/bus/${bu}/memos.jsonl`, content: '' },
+    { path: `dashboard/public/data/bus/${bu}/urgent_notes.jsonl`, content: '' },
+  ];
+}
+
 // Map module_id → { archetype, docs_root, agent_id_pattern } for auto-binding
 // on Add-BU with default modules picked. Kept in sync with modules the operator
 // can actually install via the Modules view.
@@ -143,6 +178,17 @@ export async function onRequestPost({ request, env }) {
     });
   }
 
+  // 4b) Seed per-BU substrate files (see server/api/ copy for details).
+  const substrateSeeds = perBuSeeds(id);
+  const substrateSkipped = [];
+  await Promise.all(substrateSeeds.map(async ({ path, content }) => {
+    try {
+      await putFile(env.GITHUB_PAT, path, content, undefined, `multi-bu: seed ${path.split('/').pop()} for '${id}'`);
+    } catch (e) {
+      substrateSkipped.push({ path, reason: e?.message || String(e) });
+    }
+  }));
+
   // 5) Compose bindings. genus-agent is bound to EVERY new BU regardless of
   // whether the operator picked any modules — it's the always-there base
   // agent that supervises the venture, executes operator-filed tasks,
@@ -226,5 +272,7 @@ export async function onRequestPost({ request, env }) {
     default_modules: validModules,
     bindings_written: bindingsWritten,
     bindings_skipped: bindingsSkipped,
+    substrate_seeded: substrateSeeds.length - substrateSkipped.length,
+    substrate_skipped: substrateSkipped,
   });
 }
