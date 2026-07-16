@@ -384,6 +384,13 @@ async function boot() {
   // Apply saved appearance prefs (accent + density) before any render
   applyAppearance();
 
+  // Fire-and-forget: probe Paperclip onboard state and surface a nudge
+  // banner if the operator hasn't run `paperclipai onboard` yet. Silent
+  // failure — this must never block the dashboard boot.
+  import('./paperclip-banner.js')
+    .then(m => m.checkPaperclipOnboarding())
+    .catch(() => { /* module load failed — skip */ });
+
   // Multi-BU bootstrap: load registry, resolve current BU from URL/localStorage/default,
   // persist + filter sidebar nav before any view renders. (Session #18 Initiative #2)
   try {
