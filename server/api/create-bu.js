@@ -214,18 +214,29 @@ export async function onRequestPost({ request, env }) {
   // only when the corresponding module_id is in validModules.
   const bindingsWritten = [];
   const bindingsSkipped = [];
-  let bindingsFile;
+  let bindingsFile = null;
   try { bindingsFile = await getFile(env.GITHUB_PAT, BINDINGS_PATH); }
   catch (e) {
-    return jsonResponse(200, {
-      ok: true, partial: true, bu: newEntry,
-      message: `Registry + identity written; bindings read failed: ${e.message || String(e)}`,
-      default_modules: validModules,
-    });
+    // On a fresh install the system/agent_bindings.json file doesn't exist yet
+    // (Docker only mounts bus/, not system/; nothing seeds it before the first
+    // create-bu call). Treat 404 as an empty bindings list and let the write
+    // path below create the file. Any other error still surfaces.
+    const notFound = e && (e.status === 404 || /not.?found/i.test(e.message || ''));
+    if (!notFound) {
+      return jsonResponse(200, {
+        ok: true, partial: true, bu: newEntry,
+        message: `Registry + identity written; bindings read failed: ${e.message || String(e)}`,
+        default_modules: validModules,
+      });
+    }
   }
   let bindingsParsed;
-  try { bindingsParsed = JSON.parse(bindingsFile.content); }
-  catch { return jsonResponse(200, { ok: true, partial: true, bu: newEntry, message: 'Registry + identity written; bindings not valid JSON', default_modules: validModules }); }
+  if (bindingsFile) {
+    try { bindingsParsed = JSON.parse(bindingsFile.content); }
+    catch { return jsonResponse(200, { ok: true, partial: true, bu: newEntry, message: 'Registry + identity written; bindings not valid JSON', default_modules: validModules }); }
+  } else {
+    bindingsParsed = { bindings: [] };
+  }
   bindingsParsed.bindings = bindingsParsed.bindings || [];
   const now = new Date().toISOString();
   const installerEmail = gate?.email || 'unknown@genus.dashboard';
@@ -271,7 +282,9 @@ export async function onRequestPost({ request, env }) {
   if (bindingsWritten.length > 0) {
     const bindingsContent = JSON.stringify(bindingsParsed, null, 2) + '\n';
     try {
-      await putFile(env.GITHUB_PAT, BINDINGS_PATH, bindingsContent, bindingsFile.sha, `multi-bu: seed bindings for '${id}' (${bindingsWritten.map(b => b.module_id).join(', ')})`);
+      // sha is undefined when the file didn't exist (first-run case) — putFile
+      // treats undefined as "create new" under local-fs / GitHub Contents API.
+      await putFile(env.GITHUB_PAT, BINDINGS_PATH, bindingsContent, bindingsFile?.sha, `multi-bu: seed bindings for '${id}' (${bindingsWritten.map(b => b.module_id).join(', ')})`);
     } catch (e) {
       return jsonResponse(200, {
         ok: true, partial: true, bu: newEntry,
