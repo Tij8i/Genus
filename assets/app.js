@@ -134,11 +134,16 @@ function wireNavGroups() {
 
 // v1: hardcoded BU. Multi-BU switcher slot exists in the sidebar but only
 // Multi-BU resolution (Session #18 Initiative #2, 2026-06-25):
-// Reads ?bu=<id> from URL, falls back to localStorage, then to registry default.
+// Reads ?bu=<id> from URL (search), then #bu=<id> (hash — used by the wizard
+// finish redirect since it's a client-only nav), falls back to localStorage,
+// then to registry default.
 // Registry is loaded async at boot — see boot() for the fetch + apply step.
 function resolveCurrentBu(registry) {
-  const fromUrl = new URLSearchParams(location.search).get('bu');
-  if (fromUrl) return fromUrl;
+  const fromSearch = new URLSearchParams(location.search).get('bu');
+  if (fromSearch) return fromSearch;
+  const hashRaw = (location.hash || '').replace(/^#/, '');
+  const fromHash = new URLSearchParams(hashRaw).get('bu');
+  if (fromHash) return fromHash;
   const fromStorage = localStorage.getItem('genus.currentBu');
   if (fromStorage) return fromStorage;
   return registry?.default_bu || 'genus';
