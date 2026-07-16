@@ -31,6 +31,7 @@ import express from 'express';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { installMeetingRoutes } from './lib/meeting-routes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -508,6 +509,12 @@ async function main() {
     index: 'index.html',
     extensions: ['html'],
   }));
+
+  // i56 postfix2: meeting server routes (chat + "Modify my business
+  // modelling" overlay). Docker port of the launchd Python server that
+  // previously ran at localhost:8765 on the operator's Mac. See
+  // server/lib/meeting-routes.js for the endpoint contract.
+  installMeetingRoutes(app);
 
   const { mounted, skipped } = await discoverAndMount(app);
   console.log(`[server] mounted ${mounted.length} api routes`);

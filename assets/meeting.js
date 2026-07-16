@@ -20,21 +20,14 @@
 import { escapeHtml, ago } from './utils.js';
 import { openOverlay, closeOverlay } from './overlay.js';
 import { showAlert, showConfirm } from './dialog.js';
-
-const MEETING_SERVER = 'http://localhost:8765';
+import { meetingServerHealth, meetingServerUrl, meetingServerLabel } from './meeting-endpoint.js';
 
 let meetingServerUp = null;
 
 async function checkMeetingServer() {
-  try {
-    const r = await fetch(`${MEETING_SERVER}/health`, { cache: 'no-store' });
-    const j = await r.json();
-    meetingServerUp = !!j.ok;
-    return meetingServerUp;
-  } catch (_) {
-    meetingServerUp = false;
-    return false;
-  }
+  const r = await meetingServerHealth();
+  meetingServerUp = !!r.ok;
+  return meetingServerUp;
 }
 
 // In-memory registry so that a mini-panel and a full-page overlay showing the
@@ -71,7 +64,7 @@ function notifyMeetingChanged(bu, meeting_id) {
 export async function createMeeting({ bu, agent_id, title, purpose, opening_prompt, related_item }) {
   const ok = await checkMeetingServer();
   if (!ok) {
-    await showAlert(`Local meeting server unreachable at ${MEETING_SERVER}. Start it (launchctl kickstart -k gui/$(id -u)/com.tij8i.genus-meetings) and try again.`, { subtitle: 'Meeting server', tone: 'danger' });
+    await showAlert('No meeting server found. On Docker, the container should expose /api/meetings/*; on macOS with the launchd install, run `launchctl kickstart -k gui/$(id -u)/com.tij8i.genus-meetings` and try again.', { subtitle: 'Meeting server', tone: 'danger' });
     return null;
   }
   try {
@@ -83,7 +76,7 @@ export async function createMeeting({ bu, agent_id, title, purpose, opening_prom
       opening_prompt: opening_prompt || null,
     };
     if (related_item) body.related_item = related_item;
-    const r = await fetch(`${MEETING_SERVER}/meeting/new`, {
+    const r = await fetch(meetingServerUrl('new'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -113,7 +106,7 @@ export async function resumeMeeting({ bu, meeting_id }) {
   const ok = await checkMeetingServer();
   if (!ok) return null;
   try {
-    const r = await fetch(`${MEETING_SERVER}/meetings?bu=${encodeURIComponent(bu)}`, { cache: 'no-store' });
+    const r = await fetch(meetingServerUrl('list', `bu=${encodeURIComponent(bu)}`), { cache: 'no-store' });
     if (!r.ok) return null;
     const j = await r.json();
     if (!j || !j.ok || !Array.isArray(j.meetings)) return null;
@@ -134,7 +127,7 @@ export async function findRecentActiveMeeting({ bu, agent_id }) {
   const ok = await checkMeetingServer();
   if (!ok) return null;
   try {
-    const r = await fetch(`${MEETING_SERVER}/meetings?bu=${encodeURIComponent(bu)}`, { cache: 'no-store' });
+    const r = await fetch(meetingServerUrl('list', `bu=${encodeURIComponent(bu)}`), { cache: 'no-store' });
     if (!r.ok) return null;
     const j = await r.json();
     if (!j || !j.ok || !Array.isArray(j.meetings)) return null;
@@ -246,7 +239,7 @@ async function hydrateSharedMeeting(bu, meeting_id) {
   const entry = activeMeetings.get(meetingKey(bu, meeting_id));
   if (!entry) return;
   try {
-    const r = await fetch(`${MEETING_SERVER}/meetings?bu=${encodeURIComponent(bu)}`, { cache: 'no-store' });
+    const r = await fetch(meetingServerUrl('list', `bu=${encodeURIComponent(bu)}`), { cache: 'no-store' });
     if (!r.ok) return;
     const j = await r.json();
     if (!j || !j.ok || !Array.isArray(j.meetings)) return;
@@ -335,7 +328,7 @@ function wireChatSurface(hostEl, meeting, { bu, isPanel }) {
       closeBtn.disabled = true;
       closeBtn.textContent = 'closing…';
       try {
-        const r = await fetch(`${MEETING_SERVER}/meeting/close`, {
+        const r = await fetch(meetingServerUrl('close'), {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ bu, meeting_id: meeting.id }),
         });
@@ -374,7 +367,7 @@ function wireChatSurface(hostEl, meeting, { bu, isPanel }) {
     notifyMeetingChanged(bu, meeting.id);
     input.value = '';
     try {
-      const r = await fetch(`${MEETING_SERVER}/meeting/turn`, {
+      const r = await fetch(meetingServerUrl('turn'), {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ bu, meeting_id: meeting.id, message: text }),
       });
