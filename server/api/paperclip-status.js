@@ -54,8 +54,16 @@ export async function onRequestGet({ env }) {
       signal: controller.signal,
       headers: { 'accept': 'application/json' },
     });
-    reachable = resp.ok;
-    if (resp.ok) {
+    // A response of any status means Paperclip is reachable on the network.
+    // 401 / 403 specifically signal "reachable but auth-gated" — i.e., Paperclip
+    // is running but no Agent JWT / admin session has been onboarded yet, which
+    // is exactly the onboarding state we want to surface.
+    reachable = true;
+    if (resp.status === 401 || resp.status === 403) {
+      // Auth-gated: reachable + definitively not onboarded.
+      onboarded = false;
+      jwt_present = false;
+    } else if (resp.ok) {
       try {
         raw = await resp.json();
       } catch {
@@ -64,16 +72,18 @@ export async function onRequestGet({ env }) {
       }
     }
   } catch (_e) {
-    // Timeout, DNS failure, connection refused. Container may still be starting.
+    // Timeout, DNS failure, connection refused. Container may still be starting
+    // OR Paperclip isn't installed at all.
     reachable = false;
   } finally {
     clearTimeout(timeout);
   }
 
-  if (reachable && raw) {
+  // If we haven't already set onboarded from a 401/403 above and we got a
+  // JSON payload, derive from its content.
+  if (onboarded === null && reachable && raw) {
     const notOnboarded = looksNotOnboarded(raw);
     onboarded = !notOnboarded;
-    // Best-effort jwt presence signal — same heuristic set as looksNotOnboarded.
     if (raw.jwtPresent != null) jwt_present = !!raw.jwtPresent;
     else if (raw.hasJwt != null) jwt_present = !!raw.hasJwt;
     else if (raw.agent_jwt != null) jwt_present = raw.agent_jwt !== 'missing';
@@ -93,8 +103,8 @@ export async function onRequestGet({ env }) {
   if (onboarded !== true) {
     body.hint = ONBOARD_HINT;
     body.hint_reason = reachable
-      ? 'Paperclip is up but not onboarded yet.'
-      : 'Paperclip container is not reachable yet — if it just started, wait a few seconds. Otherwise Paperclip may need onboarding.';
+      ? 'Paperclip is up but hasn\'t been onboarded yet — the CLI step below creates the Agent JWT Genus needs to push tasks.'
+      : 'Paperclip container isn\'t reachable yet. If it just started, wait a few seconds. If it\'s been a minute, check `docker compose ps` and `docker compose logs paperclip`.';
   }
 
   return jsonResponse(200, body);
