@@ -55,6 +55,11 @@ services:
       # Genus substrate — bus/<bu>/*.json files. seedFirstRun() populates the
       # `synthetic` demo BU + a starter _registry.json on empty-volume boot.
       - bus-data:/app/bus
+      # System-level substrate — agent_bindings.json, roles.json, other
+      # installation-wide config. create-bu.js writes to /app/system on first
+      # BU creation; must persist across `docker compose down` or the operator's
+      # newly-created BU loses its genus-agent binding on the next up.
+      - system-data:/app/system
     depends_on:
       # Soft dependency: dashboard boots even if Paperclip is still starting;
       # /_boot + wizard don't need Paperclip.
@@ -84,4 +89,5 @@ services:
 
 volumes:
   bus-data:
+  system-data:
   paperclip-data:
