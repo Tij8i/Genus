@@ -16,6 +16,9 @@
 
 import { escapeHtml, ago, dateLabel, icon, isoDay, daysBetween, cycleTimeProgress } from '../utils.js';
 
+// Legacy — /adapter/run is Alessio-specific launchd-server automation, not
+// ported to Docker. The "Run adapter" button here calls it directly and stays
+// disabled when the launchd server isn't running (Docker install case).
 const MEETING_SERVER = 'http://localhost:8765';
 
 export function renderDashboard(ctx) {

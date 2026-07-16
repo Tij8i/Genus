@@ -7,7 +7,14 @@
 import { escapeHtml, ago, icon } from '../utils.js';
 import { openOverlay, closeOverlay } from '../overlay.js';
 import { showAlert, showConfirm, showPrompt } from '../dialog.js';
+import { meetingServerHealth, meetingServerUrl, meetingServerLabel } from '../meeting-endpoint.js';
 
+// Legacy constant preserved for backwards compat within this file.
+// New callers should use meetingServerUrl() from the resolver so they work
+// against both the Docker meeting server (same-origin) and the launchd
+// server on Alessio's Mac (localhost:8765). Adapter/run + tuto/emit endpoints
+// still target the launchd server directly since they're not ported to
+// Docker (Alessio-specific automation).
 const MEETING_SERVER = 'http://localhost:8765';
 // Legacy hardcode — memos + meetings were pinned to 'tuto' from the pre-
 // multi-BU era. Now resolves from the current BU dynamically. Using a getter
@@ -1317,15 +1324,13 @@ function wireChatHandlers(meeting, ctx, onChange) {
 
 function probeMeetingServerBanner() {
   const host = document.getElementById('meeting-server-banner-host');
-  fetch(`${MEETING_SERVER}/health`, { cache: 'no-store' })
-    .then(r => r.ok ? r.json() : Promise.reject())
-    .then(j => {
-      meetingServerUp = !!j.ok;
-      if (host) host.innerHTML = j.ok ? '' : `<div class="meeting-server-banner banner-down">✗ Meeting server reachable but reports not-OK.</div>`;
-    })
-    .catch(() => {
-      meetingServerUp = false;
-      if (host) host.innerHTML = `<div class="meeting-server-banner banner-down">✗ Local meeting server unreachable (<code>${MEETING_SERVER}</code>). Start meeting + Schedule won't work until it's running.</div>`;
+  meetingServerHealth()
+    .then(r => {
+      meetingServerUp = !!r.ok;
+      if (!host) return;
+      host.innerHTML = r.ok
+        ? ''
+        : `<div class="meeting-server-banner banner-down">✗ No meeting server reachable. On Docker, /api/meetings/* should be up; on macOS with the launchd install, run <code>launchctl kickstart -k gui/$(id -u)/com.tij8i.genus-meetings</code>. Start meeting + Schedule won't work until it's reachable.</div>`;
     });
 }
 
