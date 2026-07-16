@@ -32,6 +32,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { installMeetingRoutes } from './lib/meeting-routes.js';
+import { startAutonomousScheduler } from './lib/scheduler.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -541,6 +542,9 @@ async function main() {
     console.log(`[server] bus root: ${process.env.GENUS_BUS_ROOT || './bus'}`);
     console.log(`[server] local mode: ${process.env.GENUS_LOCAL_MODE === '1' ? 'on' : 'off'}`);
     console.log(`[server] version: ${version}`);
+    // Start the in-process autonomous scheduler — closes the memo→suggestion
+    // loop without an external cron. No-op unless ANTHROPIC_API_KEY is set.
+    startAutonomousScheduler();
   });
 }
 
