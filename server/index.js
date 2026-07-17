@@ -370,6 +370,24 @@ async function copyDirRecursive(src, dest) {
   await fs.cp(src, dest, { recursive: true, errorOnExist: false, force: false });
 }
 
+// Read the bundled available_modules starter catalog. Ships at
+// dashboard/public/data/available_modules.starter.json inside the image.
+// Fresh install starts with all shipped modules discoverable on the Modules
+// page; without this the operator cannot install anything on day 1.
+async function readStarterModules() {
+  const catalogPath = path.join(process.cwd(), 'dashboard/public/data/available_modules.starter.json');
+  try {
+    const raw = await fs.readFile(catalogPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    const modules = Array.isArray(parsed?.available_modules) ? parsed.available_modules : [];
+    console.log(`[seed] Loaded ${modules.length} available modules from starter catalog.`);
+    return modules;
+  } catch (e) {
+    console.error(`[seed] Could not read starter catalog at ${catalogPath}:`, e && e.message);
+    return [];
+  }
+}
+
 async function seedFirstRun() {
   const busRoot = process.env.GENUS_BUS_ROOT;
   if (!busRoot) {
@@ -424,7 +442,7 @@ async function seedFirstRun() {
         'agents', 'dashboard', 'inputs', 'layers', 'modules',
         'onboarding', 'outputs', 'people', 'roster', 'settings'
       ],
-      available_modules: []
+      available_modules: await readStarterModules()
     };
     try {
       await fs.writeFile(registryPath, JSON.stringify(starter, null, 2) + '\n', 'utf8');

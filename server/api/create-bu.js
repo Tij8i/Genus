@@ -147,6 +147,15 @@ export async function onRequestPost({ request, env }) {
   };
   parsed.business_units = [...(parsed.business_units || []), newEntry];
 
+  // Promote this BU to default_bu when the current default is the seeded demo
+  // ('synthetic' / Acme Roastery). Without this, a hashless visit to '/' from
+  // a new tab after wizard-Finish falls back to Acme instead of the operator's
+  // BU — the wizard-Finish redirect writes '#bu=<slug>' to the URL but does
+  // NOT persist to localStorage, so any URL without the hash loses the BU.
+  if ((parsed.default_bu || '') === 'synthetic') {
+    parsed.default_bu = id;
+  }
+
   // 3) Write registry back
   const newRegistryContent = JSON.stringify(parsed, null, 2) + '\n';
   try {
