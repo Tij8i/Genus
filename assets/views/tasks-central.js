@@ -120,7 +120,19 @@ function openTaskDetail(bu, taskId, allTasks) {
     ${history.length > 0 ? `<div style="font:600 10px 'JetBrains Mono',ui-monospace,Menlo,monospace;letter-spacing:.14em;color:#aab0bb;text-transform:uppercase;margin-bottom:6px;">History</div><ul style="margin:0;padding-left:16px;font-size:12px;color:#5b6270;line-height:1.6;">${history.map(h => `<li><span style="font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;color:#9aa1ae;">${escapeHtml((h.at||'').slice(0,10))}</span> — ${escapeHtml(h.action)}${h.from && h.to ? ` (${escapeHtml(h.from)} → ${escapeHtml(h.to)})` : ''}</li>`).join('')}</ul>` : ''}
   `;
 
-  const footer = `<div style="display:flex;gap:8px;justify-content:flex-end;">
+  // "Run now" — synchronous in-Node execution via /api/execute-task. Shows
+  // when the task isn't already done. Fresh-install operators use this to
+  // close the task→execute→done loop without Paperclip.
+  const canRun = t.status !== 'done' && t.status !== 'cancelled';
+  const outcomeBlock = (t.execution?.outcome_artifact) ? `
+    <div style="font:600 10px 'JetBrains Mono',ui-monospace,Menlo,monospace;letter-spacing:.14em;color:#aab0bb;text-transform:uppercase;margin:14px 0 6px 0;">Execution outcome</div>
+    <div style="font-size:12px;color:#5b6270;line-height:1.55;">${escapeHtml((t.execution.outcome_summary || '').slice(0, 500))}${(t.execution.outcome_summary || '').length > 500 ? '…' : ''}</div>
+    <div style="font:500 11px 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#9aa1ae;margin-top:6px;">artifact: ${escapeHtml(t.execution.outcome_artifact.memo_id || '(none)')}</div>
+  ` : '';
+
+  const footer = `<div style="display:flex;gap:8px;justify-content:flex-end;align-items:center;flex-wrap:wrap;">
+    <span id="task-run-status" style="font-size:12px;color:#5b6270;margin-right:auto;"></span>
+    ${canRun ? `<button type="button" id="task-run-now-btn" class="onboard-begin" style="padding:6px 14px;font-size:12px;background:#0e9f6e;">▶ Run now</button>` : ''}
     <button type="button" id="task-spawn-btn" class="onboard-cancel" style="padding:6px 12px;font-size:12px;">+ Spawn child</button>
     <button type="button" id="task-handoff-btn" class="onboard-begin" style="padding:6px 14px;font-size:12px;">Handoff →</button>
   </div>`;
@@ -128,8 +140,35 @@ function openTaskDetail(bu, taskId, allTasks) {
   openDrawer({
     eyebrow: 'TASK',
     title: t.title,
-    bodyHtml: body,
+    bodyHtml: body + outcomeBlock,
     footerHtml: footer,
+  });
+
+  document.getElementById('task-run-now-btn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('task-run-now-btn');
+    const status = document.getElementById('task-run-status');
+    if (!btn || !status) return;
+    btn.disabled = true;
+    btn.textContent = 'Running…';
+    status.textContent = 'Calling agent — this can take up to a minute.';
+    status.style.color = '#5b6270';
+    try {
+      const r = await fetch('/api/execute-task', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bu, task_id: t.id }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j.ok) throw new Error(j.message || `HTTP ${r.status}`);
+      status.textContent = `✓ Done — executed by ${j.executor}. Artifact: ${j.artifact?.id || 'saved'}. Refreshing…`;
+      status.style.color = '#0e9f6e';
+      setTimeout(() => renderTasksCentral(), 900);
+    } catch (e) {
+      btn.disabled = false;
+      btn.textContent = '▶ Run now';
+      status.textContent = `✗ ${e.message || 'Failed. Task status unchanged.'}`;
+      status.style.color = '#df4b3f';
+    }
   });
 
   document.getElementById('task-spawn-btn')?.addEventListener('click', async () => {

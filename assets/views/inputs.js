@@ -105,6 +105,7 @@ export function renderInputs(ctx, { onChange }) {
   wireSuggestionButtons(tasks, onChange, ctx);
   wireMemoRowClick(memos, ctx);
   wireTaskButtons(tasks, ctx, onChange);
+  if (activeSubTab === 'memos') wireProcessMemosButton();
 }
 
 // ============ Tasks sub-tab ============
@@ -1345,9 +1346,14 @@ function renderMemosSubTab(memos) {
     <div class="card">
       <div class="card-header-row">
         <div class="card-header-left"><span class="card-title">Memos</span></div>
-        <button type="button" class="add-btn" id="new-memo-btn" title="Compose a new memo">+</button>
+        <div style="display:flex;gap:6px;align-items:center;">
+          ${unprocessed.length ? `<button type="button" id="process-unprocessed-btn" style="padding:5px 11px;font-size:12px;font-weight:600;border-radius:6px;border:1px solid #b8c1cc;background:#fff;cursor:pointer;">▶ Process ${unprocessed.length}</button>` : ''}
+          <button type="button" class="add-btn" id="new-memo-btn" title="Compose a new memo">+</button>
+        </div>
       </div>
-      <p class="card-sub">What you tell the agents. Stewart reads memos at next heartbeat.</p>
+      <p class="card-sub">What you tell the agents. Click "Process" to have the agent read every unprocessed memo now and file suggestions where warranted. Autonomous processing also fires on a schedule in the background.</p>
+
+      <div id="process-memos-status" style="font-size:12px;color:#5b6270;margin-top:6px;"></div>
 
       <div id="new-memo-form-host" hidden></div>
 
@@ -1358,6 +1364,40 @@ function renderMemosSubTab(memos) {
       </div>
     </div>
   `;
+}
+
+// Wire the Process button. Called from wireMemosSubTab (below the memos
+// listener block).
+function wireProcessMemosButton() {
+  const btn = document.getElementById('process-unprocessed-btn');
+  const status = document.getElementById('process-memos-status');
+  if (!btn || !status) return;
+  const bu = BU();
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    btn.textContent = 'Processing…';
+    status.textContent = 'Agent is reading unprocessed memos — this can take up to a minute per memo.';
+    status.style.color = '#5b6270';
+    try {
+      const r = await fetch('/api/process-memos', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bu }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j.ok) throw new Error(j.message || `HTTP ${r.status}`);
+      const filed = j.tasks_filed?.length || 0;
+      const skipped = j.skipped?.length || 0;
+      status.textContent = `✓ Processed ${j.processed_count} memos · ${filed} suggestion${filed === 1 ? '' : 's'} filed${skipped ? ` · ${skipped} skipped (see logs)` : ''}. Refreshing…`;
+      status.style.color = '#0e9f6e';
+      setTimeout(() => window.location.reload(), 1100);
+    } catch (e) {
+      btn.disabled = false;
+      btn.textContent = `▶ Process`;
+      status.textContent = `✗ ${e.message || 'Failed'}`;
+      status.style.color = '#df4b3f';
+    }
+  });
 }
 
 function renderMemoSection(label, items, sectionClass) {
