@@ -23,6 +23,12 @@ import { jsonResponse } from '../storage/index.js';
 // `onboard`. Keeps the check resilient to schema tweaks.
 function looksNotOnboarded(payload) {
   if (!payload || typeof payload !== 'object') return true;
+  // Primary signal (current Paperclip builds): /api/health returns
+  // `bootstrapStatus`. It is 'ready' once an instance_admin exists (i.e. the
+  // operator has completed onboarding) and 'bootstrap_pending' before that.
+  if (typeof payload.bootstrapStatus === 'string') {
+    return payload.bootstrapStatus !== 'ready';
+  }
   const s = JSON.stringify(payload).toLowerCase();
   // Explicit signal — Paperclip surfaces this in banner text and often in
   // health JSON when the auth store is empty.
@@ -35,6 +41,13 @@ function looksNotOnboarded(payload) {
 }
 
 const ONBOARD_HINT = 'docker compose exec paperclip npx paperclipai onboard';
+
+// Paperclip's machine-readable health lives at /api/health (JSON). Current
+// builds serve the SPA (HTML) at bare /health, so hitting /health alone leaves
+// the probe unable to read onboarding state — the banner then never clears
+// after a successful onboard. Try /api/health first, fall back to /health for
+// older builds that served JSON there.
+const HEALTH_PATHS = ['/api/health', '/health'];
 
 export async function onRequestGet({ env }) {
   const url = env.PAPERCLIP_URL || 'http://paperclip:3100';
@@ -50,25 +63,33 @@ export async function onRequestGet({ env }) {
   let raw = null;
 
   try {
-    const resp = await fetch(`${url}/health`, {
-      signal: controller.signal,
-      headers: { 'accept': 'application/json' },
-    });
-    // A response of any status means Paperclip is reachable on the network.
-    // 401 / 403 specifically signal "reachable but auth-gated" — i.e., Paperclip
-    // is running but no Agent JWT / admin session has been onboarded yet, which
-    // is exactly the onboarding state we want to surface.
-    reachable = true;
-    if (resp.status === 401 || resp.status === 403) {
-      // Auth-gated: reachable + definitively not onboarded.
-      onboarded = false;
-      jwt_present = false;
-    } else if (resp.ok) {
-      try {
-        raw = await resp.json();
-      } catch {
-        // Non-JSON body (e.g. HTML landing page) — treat as reachable but unknown.
-        raw = null;
+    for (const path of HEALTH_PATHS) {
+      const resp = await fetch(`${url}${path}`, {
+        signal: controller.signal,
+        headers: { 'accept': 'application/json' },
+      });
+      // A response of any status means Paperclip is reachable on the network.
+      reachable = true;
+      // 401 / 403 signal "reachable but auth/hostname-gated" — Paperclip is
+      // running but the request was rejected before onboarding could be read.
+      // (A 403 whose body mentions the hostname means PAPERCLIP_ALLOWED_HOSTNAMES
+      // is missing the compose service name — see docker-compose.yml.)
+      if (resp.status === 401 || resp.status === 403) {
+        onboarded = false;
+        jwt_present = false;
+        break;
+      }
+      if (resp.ok) {
+        const ct = resp.headers.get('content-type') || '';
+        if (ct.includes('json')) {
+          try {
+            raw = await resp.json();
+          } catch {
+            raw = null;
+          }
+          if (raw) break; // got a JSON health payload — stop probing paths
+        }
+        // Non-JSON body (e.g. the SPA served at bare /health) — try next path.
       }
     }
   } catch (_e) {

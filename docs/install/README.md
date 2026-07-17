@@ -97,10 +97,27 @@ The wizard walks you through naming your business unit and (optionally) connecti
 **One-time Paperclip step:** after finishing the wizard, run this once in a new terminal window (leave `docker compose up` running in the first):
 
 ```bash
-docker compose exec paperclip npx paperclipai onboard
+docker compose exec -u node paperclip npx paperclipai onboard
 ```
 
-Follow the prompts to create a Paperclip account (this is what lets Genus push tasks to your agents). Without this, task-push shows "Agent JWT: missing" and Genus can't drive Paperclip.
+> **Use `-u node`, not the default.** `docker compose exec` runs as `root`, but the Paperclip server runs as the `node` user (UID 1000). If you onboard as root, the config files it writes (`.env`, `config.json`) end up owned by root and unreadable by the server — Paperclip then crash-loops with `EACCES` on its next restart. `-u node` writes them as the right user. (If you already hit this, see Troubleshooting.)
+
+`onboard` prints a **bootstrap CEO invite URL** on port 3101 — e.g. `http://paperclip:3101/invite/pcp_bootstrap_…`. The `paperclip` hostname only resolves inside Docker, so open it from your browser with the host swapped to `localhost`:
+
+```
+http://localhost:3101/invite/pcp_bootstrap_…
+```
+
+If your browser can't reach `localhost:3101` (the onboarding server is internal to the compose network), temporarily expose it — add this under `paperclip:` in `docker-compose.yml`:
+
+```yaml
+    ports:
+      - "127.0.0.1:3101:3101"
+```
+
+then `docker compose up -d paperclip` and open the `localhost:3101` invite URL. Remove the `ports:` block once your account is created.
+
+Creating the account is what lets Genus push tasks to your agents. Without it, task-push shows "Agent JWT: missing" and Genus can't drive Paperclip.
 
 Done.
 
@@ -141,5 +158,31 @@ The `-v` removes the volumes too and deletes your BU data. Skip `-v` to keep the
 **Task-push fails with `file not found: dashboard/public/data/bus/{bu}/tasks.json`.** Update to the latest Genus (`git pull && docker compose build && docker compose up`) — this was a bug in `create-bu.js` that stopped seeding per-BU substrate files. If updating doesn't fix it, delete the affected BU from `_registry.json` and recreate it via the wizard.
 
 **Dashboard came up but the demo BU is missing.** The synthetic BU seeds on the first empty-volume boot. If the volume already existed (e.g. an aborted previous run), `docker compose down -v` clears it — then `docker compose up` re-seeds.
+
+**Paperclip crash-loops with `EACCES: permission denied, open '/paperclip/instances/default/.env'`.** Its config files are owned by root, but the server runs as the `node` user (UID 1000). This happens when you onboard as root — the default for `docker compose exec`. Fix the ownership once:
+
+```bash
+docker compose stop paperclip
+docker run --rm -u 0 -v "$(basename "$PWD")_paperclip-data":/pc alpine chown -R 1000:1000 /pc
+docker compose start paperclip
+```
+
+(`docker volume ls | grep paperclip-data` shows the exact volume name if the `basename` shortcut doesn't match.) Going forward, onboard with `-u node` (step 5) so it doesn't recur.
+
+**Dashboard says "Paperclip not active" even after onboarding; `/api/paperclip-status` shows `reachable:false`.** Paperclip is binding to loopback (127.0.0.1) only, so the dashboard container can't reach it across the compose network. Current Genus sets `PAPERCLIP_BIND: all` in `docker-compose.yml` — `git pull` to get it. An instance already provisioned with `bind: loopback` in its config keeps that setting; patch it once:
+
+```bash
+docker compose stop paperclip
+docker run --rm -i -u 0 -v "$(basename "$PWD")_paperclip-data":/pc python:3-alpine python3 - <<'PY'
+import json, os
+p = "/pc/instances/default/config.json"
+c = json.load(open(p))
+c["server"]["bind"] = "all"; c["server"]["host"] = "0.0.0.0"
+json.dump(c, open(p, "w"), indent=2); os.chown(p, 1000, 1000)
+PY
+docker compose start paperclip
+```
+
+Confirm the paperclip startup banner shows `Bind ... (0.0.0.0)` and the dashboard banner clears.
 
 Anything else, open an issue at https://github.com/Tij8i/Genus/issues.

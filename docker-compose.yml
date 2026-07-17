@@ -72,10 +72,24 @@ services:
     environment:
       NODE_ENV: production
       # Bind to all interfaces inside the container so the dashboard service
-      # can reach us over the compose network.
+      # can reach us over the compose network. Paperclip does NOT honor the
+      # generic HOST/PORT vars — its bind is controlled by PAPERCLIP_BIND
+      # (loopback|all|public) and persisted into the instance config.json.
+      # Default is `loopback` (127.0.0.1), which makes Paperclip unreachable
+      # from the dashboard container — the "onboarded but not active" failure.
+      # `all` = 0.0.0.0. Port 3100 is internal-only (no `ports:` block below),
+      # so this is not a public exposure. HOST/PORT kept as harmless hints.
       HOST: 0.0.0.0
       PORT: '3100'
+      PAPERCLIP_BIND: all
       PAPERCLIP_HOME: /paperclip
+      # Paperclip's private-hostname guard rejects any request whose Host is
+      # not in its allow-set (default: localhost/127.0.0.1/::1 + bind host).
+      # The dashboard reaches us over the compose network as `paperclip`, so
+      # without this the guard returns 403 to every dashboard→paperclip call
+      # (health probe, task push, chat routing) — the "onboarding looks done
+      # but Paperclip stays not active" failure. Trust the compose hostname.
+      PAPERCLIP_ALLOWED_HOSTNAMES: paperclip
       # Required by Paperclip's Better-Auth layer. Sourced from .env — the
       # install README tells the operator to generate one with `openssl rand
       # -hex 32`. Falls back to a fixed dev value so `docker compose up` on a
