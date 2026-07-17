@@ -94,7 +94,18 @@ To reach the Paperclip UI directly (rarely needed), add `- "3100:3100"` under `p
 
 The wizard walks you through naming your business unit and (optionally) connecting external systems. Takes about 2 minutes. If your Anthropic key was missing, the wizard shows a banner so you can fix it before continuing.
 
-**One-time Paperclip step:** after finishing the wizard, run this once in a new terminal window (leave `docker compose up` running in the first):
+**One-time Paperclip step:** after finishing the wizard, onboard Paperclip. This creates your admin (CEO) account — it's what lets Genus push tasks to your agents. Without it, task-push shows "Agent JWT: missing".
+
+**macOS / Linux — one command (recommended).** In a new terminal window (leave `docker compose up` running in the first):
+
+```bash
+./scripts/onboard.sh
+```
+
+It runs onboarding correctly, prints a `http://localhost:3101/…` link to open in your browser, and cleans up after itself. Open the link, create your account, come back and press Enter. Done — skip the rest of this step.
+
+<details>
+<summary><b>Manual steps</b> (Windows, or if you'd rather not use the script)</summary>
 
 ```bash
 docker compose exec -u node paperclip npx paperclipai onboard
@@ -117,7 +128,7 @@ If your browser can't reach `localhost:3101` (the onboarding server is internal 
 
 then `docker compose up -d paperclip` and open the `localhost:3101` invite URL. Remove the `ports:` block once your account is created.
 
-Creating the account is what lets Genus push tasks to your agents. Without it, task-push shows "Agent JWT: missing" and Genus can't drive Paperclip.
+</details>
 
 Done.
 
