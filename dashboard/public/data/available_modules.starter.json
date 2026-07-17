@@ -1,0 +1,410 @@
+{
+  "_comment": "Bundled starter catalog for fresh Docker installs. Read by server/index.js seedFirstRun() when populating a new bus/_registry.json. Keep in sync with the live installation catalog when new modules ship.",
+  "available_modules": [
+    {
+      "id": "strategy",
+      "display_name": "Strategic Planning",
+      "icon": "\ud83c\udfaf",
+      "color": "#2f6bff",
+      "version": "1.0.0",
+      "summary": "Goals \u2192 Initiatives \u2192 Packages \u2192 Tasks. Pattern #12 campaigns, BUDGET-ALLOCATION, Trust Cycle. The default operating discipline for any BU.",
+      "detail": "Ships with a strategy Stewart instance per BU. Runs the universal planning loop: set goals, break them into time-bound campaigns, ship them, learn. Includes Planning \u00b7 KPIs \u00b7 Learning \u00b7 Inputs \u00b7 Outputs surfaces. Sister archetype for Finance / Marketing / Ops modules to coordinate against.",
+      "category": "surface",
+      "when_useful": [
+        "You keep asking your agent for status updates on Goals / Initiatives / Campaigns",
+        "You want a canonical planning loop rather than reinventing structure per venture",
+        "The BU has more than one active workstream and coordination is starting to hurt",
+        "You want the Trust Cycle to run \u2014 the Stewart earns envelope over time"
+      ],
+      "when_not_useful": [
+        "The BU is single-person exploratory work with no cross-cutting plan yet",
+        "You already run planning entirely in Notion / Linear and are not looking to move it",
+        "You just want a task list \u2014 the Stewart pattern is heavier than that"
+      ],
+      "install_signals": [
+        "Recurring questions about what to work on next",
+        "Requests to break big goals into smaller steps",
+        "Repeated planning-shaped conversations without a home",
+        "User asking \"am I making progress?\" more than 2x in a week"
+      ],
+      "example_intents": [
+        "What campaign should I be running this week?",
+        "What did we ship this cycle? What slipped?",
+        "Where is my time going relative to the plan?"
+      ],
+      "depends_on_modules": [],
+      "content_items": [
+        "planning",
+        "kpis",
+        "learning"
+      ],
+      "covers_areas": [
+        "strategy",
+        "product",
+        "growth"
+      ],
+      "stewart_archetype": "strategy-stewart",
+      "requires_connectors": [
+        "notion"
+      ],
+      "default_workflows": [
+        "weekly-plan-review",
+        "kpi-heartbeat"
+      ],
+      "purpose_line": "Set the direction, watch the KPIs, run the cycle",
+      "manifest_version": 2
+    },
+    {
+      "id": "finance",
+      "display_name": "Finance",
+      "icon": "\ud83e\ude99",
+      "color": "#0e9f6e",
+      "version": "1.0.0",
+      "summary": "Cash / Runway / Costs / Revenue dashboards on top of Moneybird. Narrow recommendation surface + investor view.",
+      "detail": "Ships with a Finance Stewart (Monitor variant) per BU. Read-only on bookkeeping; writes recommendations only. Two allowed categories: expense-recategorization + founder-draw-adjustment. silent-low-only ConfidenceFrame. Investor view via signed shareable URL. SPEC: docs/genus/modules/finance/SPEC_v1.md.",
+      "category": "connector+surface",
+      "when_useful": [
+        "You have a bookkeeping source (Moneybird) with actual transactions",
+        "Cash / runway questions recur \u2014 how many months, what if we cut X",
+        "You want a signed investor view that stays live without you rebuilding it",
+        "You want recommendations gated by silent-low-only confidence"
+      ],
+      "when_not_useful": [
+        "Pre-revenue with no accounts wired \u2014 recommendations have nothing to work from",
+        "You already run Finance elsewhere (Xero, QuickBooks native) and do not want a mirror",
+        "You want write-back to bookkeeping \u2014 this module is monitoring-only at v1"
+      ],
+      "install_signals": [
+        "Repeated what-is-our-runway questions",
+        "Recurring cash-position / burn-rate memos",
+        "Investor-update drafting patterns",
+        "Overdue-invoice / cash-in-flow topics in conversation"
+      ],
+      "example_intents": [
+        "How many months of runway do we have?",
+        "Which of my recurring costs is trending up?",
+        "Show me the investor view \u2014 I want to share the link."
+      ],
+      "depends_on_modules": [],
+      "content_items": [
+        "budget",
+        "costs",
+        "invoices"
+      ],
+      "covers_areas": [
+        "finance"
+      ],
+      "stewart_archetype": "finance-stewart",
+      "requires_connectors": [
+        "moneybird"
+      ],
+      "default_workflows": [
+        "cash-projection-refresh",
+        "monthly-digest",
+        "investor-view-refresh"
+      ],
+      "purpose_line": "Track cash + runway, recommend narrow actions, expose investor view",
+      "manifest_version": 2
+    },
+    {
+      "id": "product",
+      "display_name": "Product",
+      "icon": "\ud83d\udcd0",
+      "color": "#2f6bff",
+      "version": "0.8.0",
+      "summary": "Release-shaped sibling of Strategy. Vision \u2192 Roadmap by version \u2192 Releases + Design system + Decisions.",
+      "detail": "Operators install Product on any BU where they're building a product. On the genus BU specifically, Product is Genus's own roadmap (dogfooding). Surfaces: Products switcher \u00b7 Vision (layered horizons + inputs + history) \u00b7 Roadmap (kanban-by-version A + timeline B) \u00b7 Backlog \u00b7 Releases (list + detail) \u00b7 Design system (Colors / Typography / Spacing / Components / Patterns / Icons) \u00b7 Decisions (ADR viewer). v2 deferred: Module catalog. Per ADR-005.",
+      "category": "surface",
+      "when_useful": [
+        "You are building a product with a real roadmap \u2014 versions, releases, campaigns",
+        "You want Vision / Roadmap / Backlog / Releases in one place instead of scattered docs",
+        "You want design system + decision log surfaces to stop drifting from real docs",
+        "Multiple people work on the product and need shared canonical release framing"
+      ],
+      "when_not_useful": [
+        "Single-person consulting work \u2014 no product to roadmap",
+        "Product decisions live in code + git and you do not want a parallel surface",
+        "You are pre-idea and roadmap structure would be premature"
+      ],
+      "install_signals": [
+        "Recurring what-version-are-we-on or when-does-X-ship questions",
+        "Roadmap-drafting patterns in the chat",
+        "Ad-hoc release-note writing without a canonical home",
+        "Version-planning conversations that repeat monthly"
+      ],
+      "example_intents": [
+        "What is on the roadmap for v0.9?",
+        "What did v0.8 actually ship, and what slipped?",
+        "Draft the release notes for v0.9."
+      ],
+      "depends_on_modules": [],
+      "content_items": [
+        "products",
+        "vision",
+        "roadmap",
+        "backlog",
+        "releases",
+        "design-system",
+        "decisions"
+      ],
+      "covers_areas": [
+        "product",
+        "strategy"
+      ],
+      "stewart_archetype": "product-stewart",
+      "requires_connectors": [
+        "github",
+        "notion"
+      ],
+      "default_workflows": [
+        "roadmap-freshness-scan",
+        "release-readiness"
+      ],
+      "purpose_line": "Keep catalogue, roadmap and releases current",
+      "manifest_version": 2
+    },
+    {
+      "id": "development",
+      "display_name": "Development",
+      "icon": "\ud83d\udd28",
+      "color": "#0d8a8e",
+      "version": "0.8.0",
+      "summary": "Management view of how a venture builds. Test sweeps \u00b7 bug practice \u00b7 deploy cadence \u00b7 synthetic data freshness. Not a replica of the dev team's tools \u2014 a health dashboard with links out.",
+      "detail": "Ships with Dev Stewart + 3 Masons (Test, Synthetic Data, Code Fix). Five workflows: pre-promotion test sweep, bug triage, synthetic data refresh, release readiness, deploy health watch. Overview adds a per-product \u00d7 build-health matrix (when the Product module is installed). Audience is management \u2014 every leaf surface links to the actual dev tool of record (CI, Linear, GitHub Issues) rather than replicating it.",
+      "category": "surface",
+      "when_useful": [
+        "The BU builds software and needs a management view of build-health",
+        "You want CI / bug / deploy state visible without opening 4 tools",
+        "You are running release-readiness sweeps and want the report to have a home",
+        "Multiple sub-products need one health matrix"
+      ],
+      "when_not_useful": [
+        "Non-software BU (services, physical goods) \u2014 build-health does not apply",
+        "You already have great dev tooling and do not want a Genus mirror",
+        "Solo dev with everything in your head \u2014 the surface adds overhead"
+      ],
+      "install_signals": [
+        "Recurring are-the-tests-passing or is-CI-green questions",
+        "Release-readiness patterns before ship",
+        "Bug-triage conversations without a canonical queue",
+        "Deploy-health questions bouncing between tools"
+      ],
+      "example_intents": [
+        "How healthy is CI across all my products?",
+        "What are the open bugs blocking v0.9?",
+        "Run the release-readiness sweep for v0.9."
+      ],
+      "depends_on_modules": [],
+      "content_items": [
+        "dev-tests",
+        "dev-bugs",
+        "dev-deploys",
+        "dev-synthetic",
+        "dev-workflow-detail"
+      ],
+      "covers_areas": [
+        "operations",
+        "product"
+      ],
+      "stewart_archetype": "dev-stewart",
+      "requires_connectors": [
+        "github"
+      ],
+      "default_workflows": [
+        "pre-promotion-audit",
+        "deploy-health",
+        "synthetic-refresh"
+      ],
+      "purpose_line": "Watch build-health, gate releases, surface bugs and deploy risk",
+      "manifest_version": 2
+    },
+    {
+      "id": "learning",
+      "display_name": "Testing & Learning",
+      "icon": "\ud83e\uddea",
+      "color": "#7a4dff",
+      "version": "0.1.0",
+      "manifest_version": 2,
+      "summary": "First-class Learning module. Structured experiments (commercial / infra / agent-interaction) with hypothesis + results + linked initiatives.",
+      "detail": "Promotes what today lives as learning_log[] entries on initiatives into a first-class module. Experiment types, results, learnings. Wires to Strategy (initiatives can link an experiment) and A/B orchestration (i47).",
+      "category": "surface",
+      "purpose_line": "Run experiments, capture what worked, decide by evidence",
+      "content_items": [
+        "experiments",
+        "experiment-detail",
+        "ab-runs"
+      ],
+      "covers_areas": [
+        "product",
+        "growth",
+        "operations"
+      ],
+      "stewart_archetype": "strategy-stewart",
+      "requires_connectors": [],
+      "default_workflows": [
+        "weekly-experiment-review",
+        "close-stale-experiments"
+      ],
+      "when_useful": [
+        "You have hypotheses waiting to be tested",
+        "You want a home for what you tried and learned",
+        "Multiple experiments run in parallel and need coordination"
+      ],
+      "when_not_useful": [
+        "You test entirely in production and dont journal",
+        "You run zero experiments this quarter"
+      ],
+      "install_signals": [
+        "recurring i-tried-x-what-happened patterns",
+        "a/b test discussions with no home",
+        "retrospective questions like what did we learn last cycle"
+      ],
+      "example_intents": [
+        "what experiments are open?",
+        "did the pricing test move conversion?",
+        "close the stale experiments from last cycle"
+      ],
+      "depends_on_modules": []
+    },
+    {
+      "id": "hr",
+      "display_name": "HR / Resource",
+      "icon": "\ud83d\udc65",
+      "color": "#d6a02a",
+      "version": "0.1.0",
+      "manifest_version": 2,
+      "summary": "Agent scouting + hiring: browse archetype catalog, open reqs, propose candidates, A/B test top 2 before committing. Includes Claude plan optimiser sub-view.",
+      "detail": "HR Stewart owns the flow. Substrate: bus/{BU}/hr/openings.json + system/agent_catalog.json. Wires into i47 A/B for evaluate-before-hire. Plan optimiser (i50) sub-view tracks Max plan usage + fires jobs opportunistically.",
+      "category": "surface",
+      "purpose_line": "Find the right agent for the job, watch what the plan costs",
+      "content_items": [
+        "openings",
+        "catalog",
+        "plan-optimizer"
+      ],
+      "covers_areas": [
+        "operations"
+      ],
+      "stewart_archetype": "hr-stewart",
+      "requires_connectors": [],
+      "default_workflows": [
+        "weekly-catalog-refresh",
+        "plan-utilisation-scan"
+      ],
+      "when_useful": [
+        "You want new Stewart archetypes without hand-crafting each",
+        "You need visibility into Claude plan usage",
+        "You want to A/B test candidates before committing"
+      ],
+      "when_not_useful": [
+        "You only use one agent and dont scout",
+        "No plan-usage pressure yet"
+      ],
+      "install_signals": [
+        "who-should-own-this-work questions",
+        "plan-limit-hit warnings",
+        "recurring add-a-stewart requests"
+      ],
+      "example_intents": [
+        "find me a marketing stewart",
+        "are we near the plan limit?",
+        "a/b two candidates on this task"
+      ],
+      "depends_on_modules": []
+    },
+    {
+      "id": "sales",
+      "display_name": "Sales",
+      "icon": "\ud83d\udcbc",
+      "color": "#3468d6",
+      "version": "0.1.0",
+      "manifest_version": 2,
+      "summary": "Super-lightweight CRM. Pipeline + deals + contacts + touches. Paste-import for existing data. Inbound email auto-sync via forwarding.",
+      "detail": "One step beyond Excel/Miro. Configurable stages (default Lead / Qualified / Proposal / Won / Lost). Import flow decomposes pasted text into draft entries (same shape as i39 note-capture + i14 proposals). Cloudflare Email Worker at sales@genus.work receives operator-forwarded emails, matches from-address to contacts, logs touches. Wires linked_customer_area_id into business_areas.json.",
+      "category": "surface",
+      "purpose_line": "Track deals and touches; auto-log inbound emails",
+      "content_items": [
+        "pipeline",
+        "deals",
+        "contacts"
+      ],
+      "covers_areas": [
+        "sales",
+        "customer"
+      ],
+      "stewart_archetype": "sales-stewart",
+      "requires_connectors": [
+        "email-worker"
+      ],
+      "default_workflows": [
+        "overdue-touch-scan",
+        "stale-deal-flag"
+      ],
+      "when_useful": [
+        "You track deals in spreadsheets or Miro",
+        "You want inbound email auto-logged",
+        "No real CRM yet or looking to replace one"
+      ],
+      "when_not_useful": [
+        "You already run HubSpot / Pipedrive / Salesforce with disciplined use"
+      ],
+      "install_signals": [
+        "recurring what-happened-with-deal-X questions",
+        "forgotten follow-ups",
+        "spreadsheet-based pipeline drift"
+      ],
+      "example_intents": [
+        "whats the state of the acme deal?",
+        "who havent we touched this month?",
+        "import these 20 leads i just talked to"
+      ],
+      "depends_on_modules": []
+    },
+    {
+      "id": "marketing",
+      "display_name": "Marketing",
+      "icon": "\ud83d\udce2",
+      "color": "#cf4b3f",
+      "version": "0.1.0",
+      "manifest_version": 2,
+      "summary": "Super-lightweight campaign tracker. Campaigns + content + metrics. Paste-import, wired to Learning experiments and Finance spend.",
+      "detail": "One step beyond Excel/Miro. Campaign register with goal/target/budget/status. Content-in-flight per campaign. metrics.jsonl for performance samples. linked_experiment_id makes every campaign an experiment by default (wired to i48). linked_area_id shows on Layers.",
+      "category": "surface",
+      "purpose_line": "Track what youre running, what its costing, what its learning",
+      "content_items": [
+        "campaigns",
+        "content-calendar"
+      ],
+      "covers_areas": [
+        "marketing",
+        "growth"
+      ],
+      "stewart_archetype": "marketing-stewart",
+      "requires_connectors": [],
+      "default_workflows": [
+        "budget-vs-spend-scan",
+        "content-past-due-flag",
+        "link-experiment-nudge"
+      ],
+      "when_useful": [
+        "You track campaigns in a Google Sheet or Notion",
+        "You want a home for content in flight",
+        "You want campaigns as experiments"
+      ],
+      "when_not_useful": [
+        "You already run everything in a real marketing suite (HubSpot Marketing, Marketo)"
+      ],
+      "install_signals": [
+        "recurring what-are-we-running questions",
+        "campaign performance without a home",
+        "content ideas piling up"
+      ],
+      "example_intents": [
+        "whats in flight this month?",
+        "what did the Q4 push actually spend?",
+        "add this thread as a campaign"
+      ],
+      "depends_on_modules": []
+    }
+  ]
+}
