@@ -108,10 +108,12 @@ It runs onboarding correctly, prints a `http://localhost:3101/…` link to open 
 <summary><b>Manual steps</b> (Windows, or if you'd rather not use the script)</summary>
 
 ```bash
-docker compose exec -u node paperclip npx paperclipai onboard
+docker compose exec -u node paperclip npx paperclipai onboard -y --bind lan
 ```
 
 > **Use `-u node`, not the default.** `docker compose exec` runs as `root`, but the Paperclip server runs as the `node` user (UID 1000). If you onboard as root, the config files it writes (`.env`, `config.json`) end up owned by root and unreadable by the server — Paperclip then crash-loops with `EACCES` on its next restart. `-u node` writes them as the right user. (If you already hit this, see Troubleshooting.)
+>
+> `-y --bind lan` skips the interactive setup wizard and binds all interfaces (0.0.0.0). The command then **keeps running** to serve the invite — leave it up until you've created your account, then stop it with `Ctrl+C`.
 
 `onboard` prints a **bootstrap CEO invite URL** on port 3101 — e.g. `http://paperclip:3101/invite/pcp_bootstrap_…`. The `paperclip` hostname only resolves inside Docker, so open it from your browser with the host swapped to `localhost`:
 

@@ -10,16 +10,19 @@
 #      by root — which the server (running as node) then can't read, so it
 #      crash-loops with EACCES on its next restart.
 #
-#   2. Bridges the onboarding invite server (container port 3101, which is
-#      internal to the compose network) to 127.0.0.1 on your host, so you can
-#      open the bootstrap-CEO invite URL in a browser. The bridge is removed
-#      when you're done.
+#   2. Runs it non-interactively (`-y --bind lan`) so there's no wizard menu
+#      to click through, then bridges the onboarding invite server (container
+#      port 3101, internal to the compose network) to 127.0.0.1 on your host,
+#      prints a ready-to-click invite URL, and tears the bridge down after.
+#
+# onboard -y does NOT exit — it generates the invite then keeps serving 3101
+# until you accept the invite. So we run it in the background, wait for the
+# URL, and stop it once you're done.
 #
 # Usage:  ./scripts/onboard.sh      (run from anywhere in the repo)
 #
 # macOS/Linux only. Windows users: follow the manual steps in
-# docs/install/README.md step 5 (PowerShell has no `docker compose exec -u`
-# ergonomics and no socat sidecar).
+# docs/install/README.md step 5.
 #
 set -uo pipefail
 
@@ -30,7 +33,12 @@ PORT=3101
 
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # repo root
 
-cleanup() { docker rm -f "$FWD" >/dev/null 2>&1 || true; }
+logf="$(mktemp)"
+cleanup() {
+  docker compose exec -T -u node "$SERVICE" pkill -f paperclipai >/dev/null 2>&1 || true
+  docker rm -f "$FWD" >/dev/null 2>&1 || true
+  rm -f "$logf" 2>/dev/null || true
+}
 trap cleanup EXIT
 
 command -v docker >/dev/null 2>&1 || { echo "✗ docker not found — install/start Docker Desktop first."; exit 1; }
@@ -41,45 +49,54 @@ if ! docker compose ps --status running --services 2>/dev/null | grep -qx "$SERV
 fi
 
 echo "==> Onboarding Paperclip as 'node' (avoids root-owned config / EACCES crash)…"
-echo "    Follow any prompts. It will print a bootstrap CEO invite URL."
-echo
-tmp="$(mktemp)"
-docker compose exec -u node "$SERVICE" npx paperclipai onboard 2>&1 | tee "$tmp"
-token="$(grep -oE 'invite/[A-Za-z0-9_]+' "$tmp" | head -1)"
-rm -f "$tmp"
+# Non-interactive: -y skips the setup-path wizard, --bind lan binds 0.0.0.0.
+# It generates the invite, then keeps serving 3101 — so run it in the background.
+docker compose exec -T -u node "$SERVICE" npx paperclipai onboard -y --bind lan >"$logf" 2>&1 &
+ob_pid=$!
+
+echo "    Waiting for the bootstrap CEO invite…"
+token=""
+for _ in $(seq 1 45); do
+  token="$(grep -oE 'invite/[A-Za-z0-9_]+' "$logf" | head -1)"
+  [ -n "$token" ] && break
+  kill -0 "$ob_pid" 2>/dev/null || break   # onboard exited/errored early
+  sleep 2
+done
 
 if [ -z "${token:-}" ]; then
   echo
-  echo "No invite URL detected. If the output says Paperclip is already onboarded,"
-  echo "you're done. Otherwise re-run this script."
-  exit 0
+  echo "✗ No invite URL was generated. Onboard output:"
+  sed -E 's/\x1b\[[0-9;?]*[A-Za-z]//g' "$logf" | tail -20
+  echo
+  echo "If it says Paperclip is already onboarded, you're done. Otherwise re-run."
+  exit 1
 fi
 
 # Bridge the internal onboarding server (3101) to the host so a browser can reach it.
 net="$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}' "$CONTAINER" 2>/dev/null)"
-cleanup
+docker rm -f "$FWD" >/dev/null 2>&1 || true
 if [ -n "$net" ] && docker run -d --name "$FWD" --network "$net" -p "127.0.0.1:${PORT}:${PORT}" \
      alpine/socat "TCP-LISTEN:${PORT},fork,reuseaddr" "TCP:${SERVICE}:${PORT}" >/dev/null 2>&1; then
-  echo
-  echo "======================================================================"
-  echo "  Open this to create your Paperclip admin (CEO) account:"
-  echo
-  echo "      http://localhost:${PORT}/${token}"
-  echo
-  echo "======================================================================"
+  url="http://localhost:${PORT}/${token}"
 else
-  echo
   echo "⚠ Couldn't publish 127.0.0.1:${PORT} (already in use, or network lookup failed)."
-  echo "  Open the invite URL printed above, but change the host 'paperclip' → 'localhost'."
+  echo "  Open the invite below with the host 'paperclip' changed to 'localhost'."
+  url="http://paperclip:${PORT}/${token}"
 fi
 
 echo
+echo "======================================================================"
+echo "  Open this to create your Paperclip admin (CEO) account:"
+echo
+echo "      $url"
+echo
+echo "======================================================================"
+echo
 read -r -p "Press Enter once your account is created… " _ || true
 
-# Safety net: make sure nothing the CLI wrote under the instance is root-owned,
-# then drop the bridge.
-docker compose exec -u 0 "$SERVICE" chown -R node:node /paperclip/instances >/dev/null 2>&1 || true
+# Stop the onboarding server + bridge, safety-chown, and verify.
 cleanup
+trap - EXIT
 
 echo "==> Verifying…"
 status="$(docker compose exec -T -u node "$SERVICE" sh -c 'wget -q -O - http://127.0.0.1:3100/api/health' 2>/dev/null | grep -oE '"bootstrapStatus":"[a-z_]+"')"
