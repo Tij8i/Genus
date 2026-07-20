@@ -439,8 +439,9 @@ async function seedFirstRun() {
       ],
       module_route_map: {},
       core_routes: [
-        'agents', 'dashboard', 'inputs', 'layers', 'modules',
-        'onboarding', 'outputs', 'people', 'roster', 'settings'
+        'agents', 'dashboard', 'inputs', 'kpis', 'layers', 'learning',
+        'modules', 'onboarding', 'outputs', 'people', 'planning',
+        'roster', 'settings'
       ],
       available_modules: await readStarterModules()
     };
