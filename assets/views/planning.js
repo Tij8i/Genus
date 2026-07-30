@@ -1065,9 +1065,9 @@ function renderEditPlanOverlay(ctx, onChange) {
 
 // ============ + New goal overlay (recovery A2 step 2) ============
 // Opens a modal for direct goal capture. Writes to bus/<bu>/goals.json via
-// POST /api/create-goal. New goals land as backlog_state=unpromoted — they
-// show in the Backlog kanban and can be promoted into an active plan from
-// there (or picked up by Stewart at next heartbeat).
+// POST /api/create-goal. New goals land as backlog_state=untriaged — they
+// show in the Backlog kanban's Untriaged column and can be promoted into an
+// active plan from there (or picked up by Stewart at next heartbeat).
 
 function openNewGoalOverlay(onChange) {
   openOverlay({
