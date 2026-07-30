@@ -10,6 +10,7 @@
 
 import { escapeHtml, ago, dateLabel, isoDay, cycleTimeProgress } from '../utils.js';
 import { showAlert, showConfirm, showPrompt } from '../dialog.js';
+import { openOverlay, closeOverlay } from '../overlay.js';
 
 // Legacy hardcode — planning was pinned to 'tuto' from the pre-multi-BU
 // era. Now resolves the current BU dynamically. Function shape so nothing
@@ -36,13 +37,16 @@ export function renderPlanning(ctx, { onChange }) {
 
   const root = (document.getElementById('subtab-host') || document.getElementById('route-planning'));
   root.innerHTML = `
-    <nav class="subtab-nav">
-      ${['active', 'backlog', 'retrospective'].map(t => `
-        <button type="button" class="subtab-link ${activeSubTab === t ? 'current' : ''}" data-subtab="${t}">
-          ${t.charAt(0).toUpperCase() + t.slice(1)}
-        </button>
-      `).join('')}
-    </nav>
+    <div class="planning-page-header" style="display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px;">
+      <nav class="subtab-nav" style="margin:0;">
+        ${['active', 'backlog', 'retrospective'].map(t => `
+          <button type="button" class="subtab-link ${activeSubTab === t ? 'current' : ''}" data-subtab="${t}">
+            ${t.charAt(0).toUpperCase() + t.slice(1)}
+          </button>
+        `).join('')}
+      </nav>
+      <button type="button" id="new-goal-btn" class="plan-cycle-btn plan-cycle-btn-primary">+ New goal</button>
+    </div>
     <div id="planning-subtab-body"></div>
     <div id="initiative-detail-host"></div>
   `;
@@ -55,6 +59,9 @@ export function renderPlanning(ctx, { onChange }) {
       renderPlanning(ctx, { onChange });
     });
   });
+
+  const newGoalBtn = document.getElementById('new-goal-btn');
+  if (newGoalBtn) newGoalBtn.addEventListener('click', () => openNewGoalOverlay(onChange));
 
   const body = document.getElementById('planning-subtab-body');
   if (activeSubTab === 'active') body.innerHTML = renderActiveSubTab(ctx);
@@ -1053,5 +1060,82 @@ function renderEditPlanOverlay(ctx, onChange) {
       saveBtn.disabled = false;
       saveBtn.textContent = `✗ ${(e.message || 'failed').slice(0, 80)}`;
     }
+  });
+}
+
+// ============ + New goal overlay (recovery A2 step 2) ============
+// Opens a modal for direct goal capture. Writes to bus/<bu>/goals.json via
+// POST /api/create-goal. New goals land as backlog_state=unpromoted — they
+// show in the Backlog kanban and can be promoted into an active plan from
+// there (or picked up by Stewart at next heartbeat).
+
+function openNewGoalOverlay(onChange) {
+  openOverlay({
+    title: 'New goal',
+    subtitle: 'Capture what this venture is trying to achieve. Lands in the backlog until promoted into an active plan.',
+    bodyHtml: `
+      <div class="new-goal-form" style="display:flex;flex-direction:column;gap:14px;">
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <label for="ng-title" style="font-size:12px;font-weight:600;color:var(--text-faint);text-transform:uppercase;letter-spacing:.08em;">Title</label>
+          <input id="ng-title" type="text" placeholder="e.g. Launch the revised MVP" style="padding:10px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px;background:var(--surface);color:var(--text);" />
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <label for="ng-description" style="font-size:12px;font-weight:600;color:var(--text-faint);text-transform:uppercase;letter-spacing:.08em;">Description <span style="text-transform:none;font-weight:400;color:var(--text-faint);">(optional)</span></label>
+          <textarea id="ng-description" placeholder="What outcome are you after? Why does it matter? Any measurable target?" style="padding:10px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px;background:var(--surface);color:var(--text);min-height:100px;resize:vertical;font-family:inherit;"></textarea>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <label for="ng-priority" style="font-size:12px;font-weight:600;color:var(--text-faint);text-transform:uppercase;letter-spacing:.08em;">Priority</label>
+          <select id="ng-priority" style="padding:10px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px;background:var(--surface);color:var(--text);">
+            <option value="primary">Primary</option>
+            <option value="secondary">Secondary</option>
+          </select>
+        </div>
+        <div class="new-goal-status mono" style="font-size:12px;min-height:16px;"></div>
+      </div>
+    `,
+    footerHtml: `
+      <button type="button" class="plan-cycle-btn" id="ng-cancel">Cancel</button>
+      <button type="button" class="plan-cycle-btn plan-cycle-btn-primary" id="ng-save">Save goal</button>
+    `,
+  });
+
+  const titleInput = document.getElementById('ng-title');
+  if (titleInput) setTimeout(() => titleInput.focus(), 50);
+
+  document.getElementById('ng-cancel').addEventListener('click', () => closeOverlay());
+
+  const save = async () => {
+    const title = document.getElementById('ng-title').value.trim();
+    const description = document.getElementById('ng-description').value.trim();
+    const priority = document.getElementById('ng-priority').value;
+    const status = document.querySelector('.new-goal-status');
+    if (!title) { status.textContent = 'title required'; status.style.color = 'var(--red)'; return; }
+    status.textContent = 'saving…'; status.style.color = 'var(--text-faint)';
+    const saveBtn = document.getElementById('ng-save');
+    saveBtn.disabled = true;
+    try {
+      const resp = await fetch('/api/create-goal', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bu: BU(), title, description, priority }),
+      });
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok || !json.ok) throw new Error(json.message || `HTTP ${resp.status}`);
+      status.textContent = `✓ saved ${json.goal.id}`;
+      status.style.color = 'var(--green-fg, #12b76a)';
+      setTimeout(() => { closeOverlay(); if (onChange) onChange(); }, 700);
+    } catch (e) {
+      status.textContent = `✗ ${e.message || 'failed'}`;
+      status.style.color = 'var(--red)';
+      saveBtn.disabled = false;
+    }
+  };
+  document.getElementById('ng-save').addEventListener('click', save);
+
+  // Ctrl/Cmd+Enter submits from textarea; plain Enter submits from title input.
+  document.getElementById('ng-title').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); save(); }
+  });
+  document.getElementById('ng-description').addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); save(); }
   });
 }
