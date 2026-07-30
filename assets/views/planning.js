@@ -27,25 +27,34 @@ let editPlanOpen = false;
 let cycleBusy = false;  // disables buttons while a plan-cycle mutation is in flight
 let showArchive = false;  // Backlog kanban: toggle Promoted + Discarded columns (GEN-50)
 
+// Sub-tab visibility. Backlog + Retrospective render functions stay (see
+// below) but are hidden from nav per operator ask 2026-07-30. Restore either
+// by adding its name back to VISIBLE_SUBTABS.
+const VISIBLE_SUBTABS = ['active'];
+
 export function renderPlanning(ctx, { onChange }) {
-  // Read sub-tab from URL query (#planning?tab=backlog). Router now strips
-  // the query before validating, so this is safe.
+  // Read sub-tab from URL query (#planning?tab=backlog). Router strips the
+  // query before validating, so this is safe. Only honor tabs still visible.
   const queryStr = (window.location.hash || '').split('?')[1] || '';
   const params = new URLSearchParams(queryStr);
   const tab = params.get('tab');
-  if (['active', 'backlog', 'retrospective'].includes(tab)) activeSubTab = tab;
+  if (VISIBLE_SUBTABS.includes(tab)) activeSubTab = tab;
+  else if (!VISIBLE_SUBTABS.includes(activeSubTab)) activeSubTab = VISIBLE_SUBTABS[0];
 
   const root = (document.getElementById('subtab-host') || document.getElementById('route-planning'));
+  const showSubtabNav = VISIBLE_SUBTABS.length > 1;
   root.innerHTML = `
     <div class="planning-page-header" style="display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px;">
-      <nav class="subtab-nav" style="margin:0;">
-        ${['active', 'backlog', 'retrospective'].map(t => `
-          <button type="button" class="subtab-link ${activeSubTab === t ? 'current' : ''}" data-subtab="${t}">
-            ${t.charAt(0).toUpperCase() + t.slice(1)}
-          </button>
-        `).join('')}
-      </nav>
-      <button type="button" id="new-goal-btn" class="plan-cycle-btn plan-cycle-btn-primary">+ New goal</button>
+      ${showSubtabNav ? `
+        <nav class="subtab-nav" style="margin:0;">
+          ${VISIBLE_SUBTABS.map(t => `
+            <button type="button" class="subtab-link ${activeSubTab === t ? 'current' : ''}" data-subtab="${t}">
+              ${t.charAt(0).toUpperCase() + t.slice(1)}
+            </button>
+          `).join('')}
+        </nav>
+      ` : `<div></div>`}
+      <button type="button" id="new-plan-btn" class="plan-cycle-btn plan-cycle-btn-primary">+ New plan</button>
     </div>
     <div id="planning-subtab-body"></div>
     <div id="initiative-detail-host"></div>
@@ -60,8 +69,8 @@ export function renderPlanning(ctx, { onChange }) {
     });
   });
 
-  const newGoalBtn = document.getElementById('new-goal-btn');
-  if (newGoalBtn) newGoalBtn.addEventListener('click', () => openNewGoalOverlay(onChange));
+  const newPlanBtn = document.getElementById('new-plan-btn');
+  if (newPlanBtn) newPlanBtn.addEventListener('click', () => openNewPlanOverlay(ctx, onChange));
 
   const body = document.getElementById('planning-subtab-body');
   if (activeSubTab === 'active') body.innerHTML = renderActiveSubTab(ctx);
@@ -1063,64 +1072,78 @@ function renderEditPlanOverlay(ctx, onChange) {
   });
 }
 
-// ============ + New goal overlay (recovery A2 step 2) ============
-// Opens a modal for direct goal capture. Writes to bus/<bu>/goals.json via
-// POST /api/create-goal. New goals land as backlog_state=untriaged — they
-// show in the Backlog kanban's Untriaged column and can be promoted into an
-// active plan from there (or picked up by Stewart at next heartbeat).
+// ============ + New plan overlay (recovery A2 restore, 2026-07-30) ============
+// Opens a modal for creating a new active Plan. Writes to bus/<bu>/plans.json
+// via POST /api/create-plan. Per operator ask: one active plan at a time —
+// endpoint refuses if an active plan already exists (returns 409). User
+// completes/discards current via Plan card cycle controls first.
+//
+// Under the plan, user adds Initiatives via the plan-edit overlay. Under each
+// Initiative, tasks + milestones are agent-drafted (via the Ask Stewart
+// button on the Initiative detail overlay).
 
-function openNewGoalOverlay(onChange) {
+function openNewPlanOverlay(ctx, onChange) {
+  const activePlan = (ctx.plans || []).find(p => p.status === 'active');
+  const defaultEnd = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 56); // +8 weeks
+    return d.toISOString().slice(0, 10);
+  })();
+
   openOverlay({
-    title: 'New goal',
-    subtitle: 'Capture what this venture is trying to achieve. Lands in the backlog until promoted into an active plan.',
+    title: 'New plan',
+    subtitle: activePlan
+      ? 'There is already an active plan. Complete or discard it first (via the plan card controls) before starting a new one.'
+      : 'Define what this venture is working toward in the next cycle. Break it into initiatives underneath.',
     bodyHtml: `
-      <div class="new-goal-form" style="display:flex;flex-direction:column;gap:14px;">
+      <div class="new-plan-form" style="display:flex;flex-direction:column;gap:14px;">
         <div style="display:flex;flex-direction:column;gap:6px;">
-          <label for="ng-title" style="font-size:12px;font-weight:600;color:var(--text-faint);text-transform:uppercase;letter-spacing:.08em;">Title</label>
-          <input id="ng-title" type="text" placeholder="e.g. Launch the revised MVP" style="padding:10px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px;background:var(--surface);color:var(--text);" />
+          <label for="np-title" style="font-size:12px;font-weight:600;color:var(--text-faint);text-transform:uppercase;letter-spacing:.08em;">Title</label>
+          <input id="np-title" type="text" placeholder="e.g. Launch the revised MVP by end of August" style="padding:10px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px;background:var(--surface);color:var(--text);" ${activePlan ? 'disabled' : ''} />
         </div>
         <div style="display:flex;flex-direction:column;gap:6px;">
-          <label for="ng-description" style="font-size:12px;font-weight:600;color:var(--text-faint);text-transform:uppercase;letter-spacing:.08em;">Description <span style="text-transform:none;font-weight:400;color:var(--text-faint);">(optional)</span></label>
-          <textarea id="ng-description" placeholder="What outcome are you after? Why does it matter? Any measurable target?" style="padding:10px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px;background:var(--surface);color:var(--text);min-height:100px;resize:vertical;font-family:inherit;"></textarea>
+          <label for="np-rationale" style="font-size:12px;font-weight:600;color:var(--text-faint);text-transform:uppercase;letter-spacing:.08em;">Rationale <span style="text-transform:none;font-weight:400;color:var(--text-faint);">(optional)</span></label>
+          <textarea id="np-rationale" placeholder="Why now? What outcome makes this cycle successful?" style="padding:10px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px;background:var(--surface);color:var(--text);min-height:80px;resize:vertical;font-family:inherit;" ${activePlan ? 'disabled' : ''}></textarea>
         </div>
         <div style="display:flex;flex-direction:column;gap:6px;">
-          <label for="ng-priority" style="font-size:12px;font-weight:600;color:var(--text-faint);text-transform:uppercase;letter-spacing:.08em;">Priority</label>
-          <select id="ng-priority" style="padding:10px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px;background:var(--surface);color:var(--text);">
-            <option value="primary">Primary</option>
-            <option value="secondary">Secondary</option>
-          </select>
+          <label for="np-end" style="font-size:12px;font-weight:600;color:var(--text-faint);text-transform:uppercase;letter-spacing:.08em;">Target end date</label>
+          <input id="np-end" type="date" value="${defaultEnd}" style="padding:10px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px;background:var(--surface);color:var(--text);" ${activePlan ? 'disabled' : ''} />
         </div>
-        <div class="new-goal-status mono" style="font-size:12px;min-height:16px;"></div>
+        <div class="new-plan-status mono" style="font-size:12px;min-height:16px;"></div>
       </div>
     `,
     footerHtml: `
-      <button type="button" class="plan-cycle-btn" id="ng-cancel">Cancel</button>
-      <button type="button" class="plan-cycle-btn plan-cycle-btn-primary" id="ng-save">Save goal</button>
+      <button type="button" class="plan-cycle-btn" id="np-cancel">${activePlan ? 'Close' : 'Cancel'}</button>
+      ${activePlan ? '' : `<button type="button" class="plan-cycle-btn plan-cycle-btn-primary" id="np-save">Save plan</button>`}
     `,
   });
 
-  const titleInput = document.getElementById('ng-title');
-  if (titleInput) setTimeout(() => titleInput.focus(), 50);
+  if (!activePlan) {
+    const titleInput = document.getElementById('np-title');
+    if (titleInput) setTimeout(() => titleInput.focus(), 50);
+  }
 
-  document.getElementById('ng-cancel').addEventListener('click', () => closeOverlay());
+  document.getElementById('np-cancel').addEventListener('click', () => closeOverlay());
+
+  if (activePlan) return; // Read-only informational modal; no save.
 
   const save = async () => {
-    const title = document.getElementById('ng-title').value.trim();
-    const description = document.getElementById('ng-description').value.trim();
-    const priority = document.getElementById('ng-priority').value;
-    const status = document.querySelector('.new-goal-status');
+    const title = document.getElementById('np-title').value.trim();
+    const rationale = document.getElementById('np-rationale').value.trim();
+    const period_target_end = document.getElementById('np-end').value;
+    const status = document.querySelector('.new-plan-status');
     if (!title) { status.textContent = 'title required'; status.style.color = 'var(--red)'; return; }
     status.textContent = 'saving…'; status.style.color = 'var(--text-faint)';
-    const saveBtn = document.getElementById('ng-save');
+    const saveBtn = document.getElementById('np-save');
     saveBtn.disabled = true;
     try {
-      const resp = await fetch('/api/create-goal', {
+      const resp = await fetch('/api/create-plan', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bu: BU(), title, description, priority }),
+        body: JSON.stringify({ bu: BU(), title, rationale, period_target_end }),
       });
       const json = await resp.json().catch(() => ({}));
       if (!resp.ok || !json.ok) throw new Error(json.message || `HTTP ${resp.status}`);
-      status.textContent = `✓ saved ${json.goal.id}`;
+      status.textContent = `✓ saved ${json.plan.id}`;
       status.style.color = 'var(--green-fg, #12b76a)';
       setTimeout(() => { closeOverlay(); if (onChange) onChange(); }, 700);
     } catch (e) {
@@ -1129,13 +1152,13 @@ function openNewGoalOverlay(onChange) {
       saveBtn.disabled = false;
     }
   };
-  document.getElementById('ng-save').addEventListener('click', save);
+  document.getElementById('np-save').addEventListener('click', save);
 
-  // Ctrl/Cmd+Enter submits from textarea; plain Enter submits from title input.
-  document.getElementById('ng-title').addEventListener('keydown', (e) => {
+  // Enter in title submits; Cmd/Ctrl+Enter in rationale submits.
+  document.getElementById('np-title').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); save(); }
   });
-  document.getElementById('ng-description').addEventListener('keydown', (e) => {
+  document.getElementById('np-rationale').addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); save(); }
   });
 }
