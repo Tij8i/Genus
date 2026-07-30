@@ -66,7 +66,7 @@ export async function onRequestPost({ request, env }) {
     created_at: todayISO(),
     paperclip_goal_id: null,
     last_synced_at: null,
-    backlog_state: 'unpromoted',
+    backlog_state: 'untriaged',
     promoted_to_plan_id: null,
     promoted_at: null,
     from_memo: null,
