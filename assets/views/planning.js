@@ -1256,7 +1256,7 @@ function openProposalsPickerOverlay(proposals, onChange) {
         });
         const json = await resp.json().catch(() => ({}));
         if (!resp.ok || !json.ok) throw new Error(json.message || `HTTP ${resp.status}`);
-        status.textContent = `✓ drafted ${json.plan?.id || 'plan'} (${(json.goal_ids || []).length} goals · ${(json.initiative_ids || []).length} initiatives)`;
+        status.textContent = `✓ activated ${json.plan?.id || 'plan'} (${(json.goal_ids || []).length} goals · ${(json.initiative_ids || []).length} initiatives)`;
         status.style.color = 'var(--green-fg, #12b76a)';
         setTimeout(() => { closeOverlay(); if (onChange) onChange(); }, 900);
       } catch (e) {
