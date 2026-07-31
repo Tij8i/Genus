@@ -143,9 +143,19 @@ export async function onRequestPost({ request, env }) {
     newInitIds.push(iId);
   });
 
-  // Create the new plan (draft — operator activates via existing update-plan endpoint)
+  // Create the new plan and auto-activate. Operator's mental model is
+  // "pick = it becomes THE plan." Close the current active plan (if any)
+  // as completed, superseded by the new one.
   const planId = `plan-${today}-${String(plans.length + 1).padStart(2, '0')}`;
   const stewartCredit = stewartId || 'stewart';
+
+  const previousActive = plans.find(p => p.status === 'active');
+  if (previousActive) {
+    previousActive.status = 'completed';
+    previousActive.completed_at = now;
+    previousActive.closing_notes = `Superseded by ${planId} (operator picked proposal ${picked.id})`;
+  }
+
   const newPlan = {
     id: planId,
     bu,
@@ -153,15 +163,16 @@ export async function onRequestPost({ request, env }) {
     rationale: `[Stewart proposal ${picked.id}]\n${picked.reasoning || picked.rationale || ''}`,
     period_start: picked.period_start,
     period_target_end: picked.period_target_end,
-    status: 'draft',
+    status: 'active',
     goal_ids: newGoalIds,
     initiative_ids: newInitIds,
     created_at: now,
     created_by: ['operator', stewartCredit],
-    activated_at: null,
+    activated_at: now,
     completed_at: null,
     closing_notes: null,
     from_proposal: picked.id,
+    superseded_plan_id: previousActive?.id || null,
     closure_status: null,
     evaluation_due_at: null,
   };
@@ -214,7 +225,7 @@ export async function onRequestPost({ request, env }) {
         initiatives: r3.commit.sha,
         plans: r4.commit.sha,
       },
-      message: `Plan ${planId} drafted from proposal ${proposalId}. Operator activates via Plan card controls.`,
+      message: `Plan ${planId} activated from proposal ${proposalId}${previousActive ? ` (superseded ${previousActive.id})` : ''}.`,
     });
   } catch (e) {
     return jsonResponse(e.status || 500, { ok: false, message: `Write failed: ${e.message || e}` });
