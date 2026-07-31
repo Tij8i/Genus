@@ -1078,84 +1078,191 @@ function renderEditPlanOverlay(ctx, onChange) {
 // Initiative, tasks + milestones are agent-drafted (via the Ask Stewart
 // button on the Initiative detail overlay).
 
+// Rich draft-plan overlay (2026-07-31 Step 1 revamp). Operator fills in
+// title + period + rationale + inline goals + inline initiatives. Saves as
+// status=draft. Drafts show in the Drafts list on the Planning view; agent
+// finalizes them (adds tasks/milestones/gateways) then operator activates.
+
+const NP_FIELD_STYLE = 'padding:10px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px;background:var(--surface);color:var(--text);';
+const NP_LABEL_STYLE = 'font-size:12px;font-weight:600;color:var(--text-faint);text-transform:uppercase;letter-spacing:.08em;';
+const NP_SUBLABEL_STYLE = 'font-size:11px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.06em;font-weight:600;';
+
 function openNewPlanOverlay(ctx, onChange) {
-  const activePlan = (ctx.plans || []).find(p => p.status === 'active');
+  const today = new Date().toISOString().slice(0, 10);
   const defaultEnd = (() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 56); // +8 weeks
-    return d.toISOString().slice(0, 10);
+    const d = new Date(); d.setDate(d.getDate() + 56); return d.toISOString().slice(0, 10);
   })();
 
+  // In-memory arrays for the dynamic goal + initiative rows. Ids are local
+  // (goal_1, goal_2 …) — the endpoint reifies with real substrate ids.
+  const draft = { goals: [], initiatives: [] };
+  let nextGoalIdx = 1, nextInitIdx = 1;
+
   openOverlay({
-    title: 'New plan',
-    subtitle: activePlan
-      ? 'There is already an active plan. Complete or discard it first (via the plan card controls) before starting a new one.'
-      : 'Define what this venture is working toward in the next cycle. Break it into initiatives underneath.',
+    title: 'New plan (draft)',
+    subtitle: 'Draft your plan here. It saves as a draft — agent finalizes it into a runnable plan (adds tasks + milestones), then you activate.',
     bodyHtml: `
-      <div class="new-plan-form" style="display:flex;flex-direction:column;gap:14px;">
+      <div style="display:flex;flex-direction:column;gap:16px;">
         <div style="display:flex;flex-direction:column;gap:6px;">
-          <label for="np-title" style="font-size:12px;font-weight:600;color:var(--text-faint);text-transform:uppercase;letter-spacing:.08em;">Title</label>
-          <input id="np-title" type="text" placeholder="e.g. Launch the revised MVP by end of August" style="padding:10px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px;background:var(--surface);color:var(--text);" ${activePlan ? 'disabled' : ''} />
+          <label for="np-title" style="${NP_LABEL_STYLE}">Title</label>
+          <input id="np-title" type="text" placeholder="e.g. Launch the revised MVP by end of August" style="${NP_FIELD_STYLE}" />
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            <label for="np-start" style="${NP_LABEL_STYLE}">Period start</label>
+            <input id="np-start" type="date" value="${today}" style="${NP_FIELD_STYLE}" />
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            <label for="np-end" style="${NP_LABEL_STYLE}">Target end date</label>
+            <input id="np-end" type="date" value="${defaultEnd}" style="${NP_FIELD_STYLE}" />
+          </div>
         </div>
         <div style="display:flex;flex-direction:column;gap:6px;">
-          <label for="np-rationale" style="font-size:12px;font-weight:600;color:var(--text-faint);text-transform:uppercase;letter-spacing:.08em;">Rationale <span style="text-transform:none;font-weight:400;color:var(--text-faint);">(optional)</span></label>
-          <textarea id="np-rationale" placeholder="Why now? What outcome makes this cycle successful?" style="padding:10px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px;background:var(--surface);color:var(--text);min-height:80px;resize:vertical;font-family:inherit;" ${activePlan ? 'disabled' : ''}></textarea>
+          <label for="np-rationale" style="${NP_LABEL_STYLE}">Rationale <span style="text-transform:none;font-weight:400;">(optional)</span></label>
+          <textarea id="np-rationale" placeholder="Why now? What outcome makes this cycle successful?" style="${NP_FIELD_STYLE}min-height:70px;resize:vertical;font-family:inherit;"></textarea>
         </div>
-        <div style="display:flex;flex-direction:column;gap:6px;">
-          <label for="np-end" style="font-size:12px;font-weight:600;color:var(--text-faint);text-transform:uppercase;letter-spacing:.08em;">Target end date</label>
-          <input id="np-end" type="date" value="${defaultEnd}" style="padding:10px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px;background:var(--surface);color:var(--text);" ${activePlan ? 'disabled' : ''} />
+
+        <div style="display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--border);padding-top:14px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span style="${NP_SUBLABEL_STYLE}">Goals</span>
+            <button type="button" id="np-add-goal" class="plan-cycle-btn" style="padding:4px 10px;font-size:12px;">+ Add goal</button>
+          </div>
+          <div id="np-goals-list" style="display:flex;flex-direction:column;gap:8px;"></div>
         </div>
+
+        <div style="display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--border);padding-top:14px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span style="${NP_SUBLABEL_STYLE}">Initiatives</span>
+            <button type="button" id="np-add-init" class="plan-cycle-btn" style="padding:4px 10px;font-size:12px;">+ Add initiative</button>
+          </div>
+          <div id="np-inits-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+        </div>
+
         <div class="new-plan-status mono" style="font-size:12px;min-height:16px;"></div>
       </div>
     `,
     footerHtml: `
-      <button type="button" class="plan-cycle-btn" id="np-cancel">${activePlan ? 'Close' : 'Cancel'}</button>
-      ${activePlan ? '' : `<button type="button" class="plan-cycle-btn plan-cycle-btn-primary" id="np-save">Save plan</button>`}
+      <button type="button" class="plan-cycle-btn" id="np-cancel">Cancel</button>
+      <button type="button" class="plan-cycle-btn plan-cycle-btn-primary" id="np-save">Save draft</button>
     `,
   });
 
-  if (!activePlan) {
-    const titleInput = document.getElementById('np-title');
-    if (titleInput) setTimeout(() => titleInput.focus(), 50);
+  const goalsList = document.getElementById('np-goals-list');
+  const initsList = document.getElementById('np-inits-list');
+
+  function renderGoalRow(goal) {
+    const row = document.createElement('div');
+    row.dataset.goalId = goal._id;
+    row.style.cssText = 'display:flex;flex-direction:column;gap:6px;padding:10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);';
+    row.innerHTML = `
+      <div style="display:flex;gap:6px;align-items:center;">
+        <input type="text" placeholder="Goal title (e.g. Get 100 signups)" value="${escapeHtml(goal.title || '')}" data-field="title" style="${NP_FIELD_STYLE}flex:1;" />
+        <button type="button" class="plan-cycle-btn" data-remove-goal="${goal._id}" style="padding:6px 10px;font-size:12px;">✕</button>
+      </div>
+      <textarea placeholder="Description (optional)" data-field="description" style="${NP_FIELD_STYLE}min-height:44px;resize:vertical;font-family:inherit;font-size:13px;">${escapeHtml(goal.description || '')}</textarea>
+    `;
+    row.querySelectorAll('[data-field]').forEach(el => {
+      el.addEventListener('input', () => { goal[el.dataset.field] = el.value; refreshInitiativeGoalPickers(); });
+    });
+    row.querySelector('[data-remove-goal]').addEventListener('click', () => {
+      draft.goals = draft.goals.filter(g => g._id !== goal._id);
+      row.remove(); refreshInitiativeGoalPickers();
+    });
+    goalsList.appendChild(row);
   }
 
-  document.getElementById('np-cancel').addEventListener('click', () => closeOverlay());
+  function goalOptionsHtml(selectedGoalId) {
+    const opts = ['<option value="">— unassigned —</option>']
+      .concat(draft.goals.map((g, i) => `<option value="${g._id}"${g._id === selectedGoalId ? ' selected' : ''}>${escapeHtml(g.title || `Goal ${i + 1}`)}</option>`));
+    return opts.join('');
+  }
 
-  if (activePlan) return; // Read-only informational modal; no save.
+  function renderInitRow(init) {
+    const row = document.createElement('div');
+    row.dataset.initId = init._id;
+    row.style.cssText = 'display:flex;flex-direction:column;gap:6px;padding:10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);';
+    row.innerHTML = `
+      <div style="display:flex;gap:6px;align-items:center;">
+        <input type="text" placeholder="Initiative title" value="${escapeHtml(init.title || '')}" data-field="title" style="${NP_FIELD_STYLE}flex:1;" />
+        <select data-field="goal_id" data-select-goal="${init._id}" style="${NP_FIELD_STYLE}max-width:160px;">${goalOptionsHtml(init.goal_id)}</select>
+        <button type="button" class="plan-cycle-btn" data-remove-init="${init._id}" style="padding:6px 10px;font-size:12px;">✕</button>
+      </div>
+      <input type="text" placeholder="Hypothesis (what we're testing)" value="${escapeHtml(init.active_hypothesis || '')}" data-field="active_hypothesis" style="${NP_FIELD_STYLE}font-size:13px;" />
+      <input type="text" placeholder="Success criterion (measurable)" value="${escapeHtml(init.success_criterion || '')}" data-field="success_criterion" style="${NP_FIELD_STYLE}font-size:13px;" />
+    `;
+    row.querySelectorAll('[data-field]').forEach(el => {
+      el.addEventListener('input', () => { init[el.dataset.field] = el.value; });
+      if (el.tagName === 'SELECT') el.addEventListener('change', () => { init[el.dataset.field] = el.value; });
+    });
+    row.querySelector('[data-remove-init]').addEventListener('click', () => {
+      draft.initiatives = draft.initiatives.filter(x => x._id !== init._id);
+      row.remove();
+    });
+    initsList.appendChild(row);
+  }
+
+  function refreshInitiativeGoalPickers() {
+    initsList.querySelectorAll('[data-select-goal]').forEach(sel => {
+      const initId = sel.dataset.selectGoal;
+      const init = draft.initiatives.find(i => i._id === initId);
+      sel.innerHTML = goalOptionsHtml(init?.goal_id);
+    });
+  }
+
+  document.getElementById('np-add-goal').addEventListener('click', () => {
+    const g = { _id: `g${nextGoalIdx++}`, title: '', description: '' };
+    draft.goals.push(g); renderGoalRow(g);
+  });
+  document.getElementById('np-add-init').addEventListener('click', () => {
+    const i = { _id: `i${nextInitIdx++}`, title: '', active_hypothesis: '', success_criterion: '', goal_id: '' };
+    draft.initiatives.push(i); renderInitRow(i);
+  });
+
+  document.getElementById('np-cancel').addEventListener('click', () => closeOverlay());
 
   const save = async () => {
     const title = document.getElementById('np-title').value.trim();
     const rationale = document.getElementById('np-rationale').value.trim();
+    const period_start = document.getElementById('np-start').value;
     const period_target_end = document.getElementById('np-end').value;
-    const status = document.querySelector('.new-plan-status');
-    if (!title) { status.textContent = 'title required'; status.style.color = 'var(--red)'; return; }
-    status.textContent = 'saving…'; status.style.color = 'var(--text-faint)';
+    const statusEl = document.querySelector('.new-plan-status');
+    if (!title) { statusEl.textContent = 'title required'; statusEl.style.color = 'var(--red)'; return; }
+    // Build payload — strip local _id, resolve goal_id via index reference
+    const goalsOut = draft.goals.map(g => ({ title: g.title.trim(), description: (g.description || '').trim() })).filter(g => g.title);
+    const goalIndexById = {};
+    draft.goals.forEach((g, i) => { goalIndexById[g._id] = i; });
+    const initsOut = draft.initiatives.map(x => ({
+      title: (x.title || '').trim(),
+      active_hypothesis: (x.active_hypothesis || '').trim(),
+      success_criterion: (x.success_criterion || '').trim(),
+      goal_index: x.goal_id && goalIndexById[x.goal_id] != null ? goalIndexById[x.goal_id] : null,
+    })).filter(x => x.title);
+
+    statusEl.textContent = 'saving…'; statusEl.style.color = 'var(--text-faint)';
     const saveBtn = document.getElementById('np-save');
     saveBtn.disabled = true;
     try {
       const resp = await fetch('/api/create-plan', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bu: BU(), title, rationale, period_target_end }),
+        body: JSON.stringify({ bu: BU(), title, rationale, period_start, period_target_end, goals: goalsOut, initiatives: initsOut }),
       });
       const json = await resp.json().catch(() => ({}));
       if (!resp.ok || !json.ok) throw new Error(json.message || `HTTP ${resp.status}`);
-      status.textContent = `✓ saved ${json.plan.id}`;
-      status.style.color = 'var(--green-fg, #12b76a)';
-      setTimeout(() => { closeOverlay(); if (onChange) onChange(); }, 700);
+      statusEl.textContent = `✓ saved draft ${json.plan.id} (${(json.goal_ids || []).length} goals · ${(json.initiative_ids || []).length} initiatives)`;
+      statusEl.style.color = 'var(--green-fg, #12b76a)';
+      setTimeout(() => { closeOverlay(); if (onChange) onChange(); }, 900);
     } catch (e) {
-      status.textContent = `✗ ${e.message || 'failed'}`;
-      status.style.color = 'var(--red)';
+      statusEl.textContent = `✗ ${e.message || 'failed'}`;
+      statusEl.style.color = 'var(--red)';
       saveBtn.disabled = false;
     }
   };
   document.getElementById('np-save').addEventListener('click', save);
 
-  // Enter in title submits; Cmd/Ctrl+Enter in rationale submits.
-  document.getElementById('np-title').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); save(); }
-  });
-  document.getElementById('np-rationale').addEventListener('keydown', (e) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); save(); }
+  const titleInput = document.getElementById('np-title');
+  if (titleInput) setTimeout(() => titleInput.focus(), 50);
+  titleInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); document.getElementById('np-rationale').focus(); }
   });
 }
 
