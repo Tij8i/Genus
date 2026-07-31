@@ -11,6 +11,7 @@
 import { escapeHtml, ago, dateLabel, isoDay, cycleTimeProgress } from '../utils.js';
 import { showAlert, showConfirm, showPrompt } from '../dialog.js';
 import { openOverlay, closeOverlay } from '../overlay.js';
+import { fetchSubstrateJson, substrateBase } from '../substrate-client.js';
 
 // Legacy hardcode — planning was pinned to 'tuto' from the pre-multi-BU
 // era. Now resolves the current BU dynamically. Function shape so nothing
@@ -1168,14 +1169,15 @@ function openNewPlanOverlay(ctx, onChange) {
 async function checkAndRenderProposalsBanner(onChange) {
   const host = document.getElementById('plan-proposals-banner');
   if (!host) return;
-  let proposals = [];
+  // Fetch via the /api/substrate proxy (substrate lives cross-repo in
+  // Tij8i/Orchestrator; a plain fetch to /data/... would 404). fetchSubstrateJson
+  // returns the fallback [] on 404 so we don't surface as a boot error.
+  let data = [];
   try {
-    const resp = await fetch(`/data/bus/${BU()}/plan_proposals.json`, { cache: 'no-store' });
-    if (!resp.ok) { host.innerHTML = ''; return; }
-    const data = await resp.json();
-    if (!Array.isArray(data)) { host.innerHTML = ''; return; }
-    proposals = data.filter(p => p && p.status === 'proposed');
+    data = await fetchSubstrateJson(`${substrateBase(BU())}/plan_proposals.json`, []);
   } catch { host.innerHTML = ''; return; }
+  if (!Array.isArray(data)) { host.innerHTML = ''; return; }
+  const proposals = data.filter(p => p && p.status === 'proposed');
   if (proposals.length === 0) { host.innerHTML = ''; return; }
 
   // Group by proposal_set_id — show a single banner per set.
