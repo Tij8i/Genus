@@ -44,6 +44,7 @@ export function renderPlanning(ctx, { onChange }) {
   const root = (document.getElementById('subtab-host') || document.getElementById('route-planning'));
   const showSubtabNav = VISIBLE_SUBTABS.length > 1;
   root.innerHTML = `
+    <div id="plan-proposals-banner"></div>
     <div class="planning-page-header" style="display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px;">
       ${showSubtabNav ? `
         <nav class="subtab-nav" style="margin:0;">
@@ -59,6 +60,9 @@ export function renderPlanning(ctx, { onChange }) {
     <div id="planning-subtab-body"></div>
     <div id="initiative-detail-host"></div>
   `;
+
+  // Recovery Step 1: async-fetch plan_proposals.json + render banner if any proposals await picking.
+  checkAndRenderProposalsBanner(onChange);
 
   root.querySelectorAll('.subtab-link').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -900,25 +904,16 @@ async function onCompleteCycle(planId, btn, ctx, onChange) {
 }
 
 async function onRequestProposals(planId, btn, ctx, onChange) {
-  const plan = (ctx.plans || []).find(p => p.id === planId);
-  if (!plan) return;
-  if (!await showConfirm(`File a task asking the ${BU()}-stewart to draft 3 alternative next-cycle plans?\n\nThe Stewart will produce 3 different shapes/priorities at next heartbeat. You pick ONE to activate.`)) return;
+  // Recovery Step 1 (2026-07-31): rewired to /api/request-plan-proposals.
+  // Previously used /api/file-stewart-task with executor=`${BU()}-stewart` — a name
+  // that doesn't resolve to any real agent, so it silently fell back to genus-agent.
+  // The new endpoint resolves the Strategy Stewart from agent_bindings.json.
+  if (!await showConfirm(`Ask the Strategy Stewart of ${BU()} to draft 3 alternative plan proposals?\n\nThe Stewart will read the current plan + backlog + memos, then produce 3 genuinely different plan shapes. You pick ONE to promote into a draft plan.`)) return;
   await runCycleAction(btn, async () => {
-    const body = {
-      bu: BU(),
-      title: `Draft 3 alternative next-cycle plans (after ${plan.id})`,
-      description: `Operator requested 3 alternative next-cycle plan proposals from the dashboard. Produce them in dashboard/public/data/bus/${BU()}/plan_proposals.json. Each proposal should be a DIFFERENT SHAPE: different goal mix, different priorities, different cadence — not three near-duplicates. Reference the just-closed cycle "${plan.title}" (${plan.id}) when grounding the proposals. After they appear, the operator picks one in the dashboard and it gets activated.`,
-      category: 'plan_proposal',
-      target: { type: 'json_file', scope: `dashboard/public/data/bus/${BU()}/plan_proposals.json`, executor: `${BU()}-stewart` },
-      estimated_minutes: 90,
-      risk_level: 'low',
-      reversibility: 'high',
-      source: 'planning_view_ask_proposals',
-    };
-    const resp = await fetch('/api/file-stewart-task', {
+    const resp = await fetch('/api/request-plan-proposals', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ bu: BU() }),
     });
     const json = await resp.json().catch(() => ({}));
     if (!resp.ok || !json.ok) throw new Error(json.message || `HTTP ${resp.status}`);
@@ -1160,5 +1155,113 @@ function openNewPlanOverlay(ctx, onChange) {
   });
   document.getElementById('np-rationale').addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); save(); }
+  });
+}
+
+// ============ Plan-proposals banner + picker (Recovery Step 1, 2026-07-31) ============
+// When the Strategy Stewart has drafted proposals in response to
+// /api/request-plan-proposals, they land in bus/<bu>/plan_proposals.json with
+// status='proposed'. This block detects them + surfaces a banner at the top of
+// the Planning view. Click → picker modal → operator selects one → posts to
+// /api/select-plan-proposal which promotes the choice into a draft plan.
+
+async function checkAndRenderProposalsBanner(onChange) {
+  const host = document.getElementById('plan-proposals-banner');
+  if (!host) return;
+  let proposals = [];
+  try {
+    const resp = await fetch(`/data/bus/${BU()}/plan_proposals.json`, { cache: 'no-store' });
+    if (!resp.ok) { host.innerHTML = ''; return; }
+    const data = await resp.json();
+    if (!Array.isArray(data)) { host.innerHTML = ''; return; }
+    proposals = data.filter(p => p && p.status === 'proposed');
+  } catch { host.innerHTML = ''; return; }
+  if (proposals.length === 0) { host.innerHTML = ''; return; }
+
+  // Group by proposal_set_id — show a single banner per set.
+  const bySet = {};
+  proposals.forEach(p => {
+    const sid = p.proposal_set_id || p.id;
+    (bySet[sid] = bySet[sid] || []).push(p);
+  });
+  const sets = Object.entries(bySet).sort((a, b) => {
+    const ta = a[1][0]?.proposed_at || ''; const tb = b[1][0]?.proposed_at || '';
+    return tb.localeCompare(ta);
+  });
+  const [latestSetId, latestSet] = sets[0];
+  host.innerHTML = `
+    <div style="background:linear-gradient(135deg,#fef8dc,#fff);border:2px solid #af7e02;border-radius:10px;padding:14px 18px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:16px;">
+      <div>
+        <div style="font-weight:600;color:#1a1a1a;font-size:14px;margin-bottom:2px;">Stewart has drafted ${latestSet.length} plan ${latestSet.length === 1 ? 'proposal' : 'proposals'}.</div>
+        <div style="font-size:12px;color:#6b7280;">Set <span class="mono">${escapeHtml(latestSetId)}</span> · proposed ${escapeHtml((latestSet[0]?.proposed_at || '').slice(0, 16))}</div>
+      </div>
+      <button type="button" id="review-proposals-btn" class="plan-cycle-btn plan-cycle-btn-primary">Review proposals</button>
+    </div>
+  `;
+  const btn = document.getElementById('review-proposals-btn');
+  if (btn) btn.addEventListener('click', () => openProposalsPickerOverlay(latestSet, onChange));
+}
+
+function openProposalsPickerOverlay(proposals, onChange) {
+  const bodyHtml = `
+    <div style="display:grid;grid-template-columns:repeat(${proposals.length}, 1fr);gap:14px;">
+      ${proposals.map((p, idx) => `
+        <div data-proposal-idx="${idx}" style="border:2px solid var(--border);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px;background:#fefefe;">
+          <div>
+            <div style="font-size:11px;color:var(--text-faint);letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px;">Proposal ${idx + 1}</div>
+            <div style="font-size:15px;font-weight:600;color:var(--text);">${escapeHtml(p.title || 'Untitled')}</div>
+          </div>
+          <div style="font-size:12px;color:var(--text-faint);">
+            <div>${escapeHtml((p.period_start || '') + ' → ' + (p.period_target_end || ''))}</div>
+            <div>${(p.proposed_goals || []).length} goals · ${(p.proposed_initiatives || []).length} initiatives</div>
+          </div>
+          ${p.rationale ? `<div style="font-size:13px;color:var(--text);border-left:3px solid #af7e02;padding-left:10px;">${escapeHtml(p.rationale)}</div>` : ''}
+          ${p.reasoning ? `<details style="font-size:12px;color:var(--text-faint);"><summary style="cursor:pointer;font-weight:600;color:var(--text);">Reasoning</summary><div style="padding-top:6px;line-height:1.5;">${escapeHtml(p.reasoning)}</div></details>` : ''}
+          <details style="font-size:12px;color:var(--text-faint);"><summary style="cursor:pointer;font-weight:600;color:var(--text);">Goals + initiatives</summary>
+            <div style="padding-top:6px;">
+              <div style="font-weight:600;color:var(--text);margin-bottom:2px;">Goals:</div>
+              <ul style="margin:0 0 8px 18px;padding:0;">${(p.proposed_goals || []).map(g => `<li>${escapeHtml(g.title || '')}</li>`).join('') || '<li>—</li>'}</ul>
+              <div style="font-weight:600;color:var(--text);margin-bottom:2px;">Initiatives:</div>
+              <ul style="margin:0 0 4px 18px;padding:0;">${(p.proposed_initiatives || []).map(i => `<li>${escapeHtml(i.title || '')}</li>`).join('') || '<li>—</li>'}</ul>
+            </div>
+          </details>
+          <button type="button" class="plan-cycle-btn plan-cycle-btn-primary" data-pick-id="${escapeHtml(p.id)}" style="margin-top:auto;">Pick this one</button>
+        </div>
+      `).join('')}
+    </div>
+    <div class="proposals-pick-status mono" style="font-size:12px;min-height:16px;margin-top:12px;text-align:center;"></div>
+  `;
+
+  openOverlay({
+    title: 'Pick a plan',
+    subtitle: `Stewart drafted ${proposals.length} alternative ${proposals.length === 1 ? 'plan' : 'plans'}. Picking one promotes it into a draft — activate via the plan card controls when ready.`,
+    bodyHtml,
+    footerHtml: `<button type="button" class="plan-cycle-btn" id="proposals-cancel">Cancel</button>`,
+  });
+
+  document.getElementById('proposals-cancel').addEventListener('click', () => closeOverlay());
+
+  document.querySelectorAll('[data-pick-id]').forEach(pickBtn => {
+    pickBtn.addEventListener('click', async () => {
+      const proposalId = pickBtn.dataset.pickId;
+      const status = document.querySelector('.proposals-pick-status');
+      status.textContent = 'promoting…'; status.style.color = 'var(--text-faint)';
+      document.querySelectorAll('[data-pick-id]').forEach(b => b.disabled = true);
+      try {
+        const resp = await fetch('/api/select-plan-proposal', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bu: BU(), proposal_id: proposalId }),
+        });
+        const json = await resp.json().catch(() => ({}));
+        if (!resp.ok || !json.ok) throw new Error(json.message || `HTTP ${resp.status}`);
+        status.textContent = `✓ drafted ${json.plan?.id || 'plan'} (${(json.goal_ids || []).length} goals · ${(json.initiative_ids || []).length} initiatives)`;
+        status.style.color = 'var(--green-fg, #12b76a)';
+        setTimeout(() => { closeOverlay(); if (onChange) onChange(); }, 900);
+      } catch (e) {
+        status.textContent = `✗ ${e.message || 'failed'}`;
+        status.style.color = 'var(--red)';
+        document.querySelectorAll('[data-pick-id]').forEach(b => b.disabled = false);
+      }
+    });
   });
 }
