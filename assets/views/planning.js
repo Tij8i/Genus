@@ -928,10 +928,31 @@ function wirePlanCycleControls(scope, ctx, onChange) {
       const action = btn.dataset.draftAction;
       const draftId = btn.dataset.draftId;
       if (action === 'discard') return onDiscardDraft(draftId, btn, ctx, onChange);
-      if (action === 'finalize') return showAlert('Finalize wires in the next PR. For now, edit substrate directly or use Ask Stewart from the active plan card.');
-      if (action === 'activate') return showAlert('Activate wires in the PR after Finalize.');
+      if (action === 'finalize') return onFinalizeDraft(draftId, btn, ctx, onChange);
+      if (action === 'activate') return showAlert('Activate wires in the next PR.');
     });
   });
+}
+
+async function onFinalizeDraft(draftId, btn, ctx, onChange) {
+  const plan = (ctx.plans || []).find(p => p.id === draftId);
+  if (!plan) return;
+  if (!await showConfirm(`Ask the Strategy Stewart of ${BU()} to finalize draft "${plan.title || draftId}"?\n\nStewart adds milestones under each initiative + proposes tasks that advance them. Takes ~3-5 min. When done, this draft shows an [Activate] button instead of [Finalize].`)) return;
+  const original = btn.textContent;
+  btn.disabled = true; btn.textContent = 'queuing…';
+  try {
+    const resp = await fetch('/api/finalize-plan-draft', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bu: BU(), plan_id: draftId }),
+    });
+    const json = await resp.json().catch(() => ({}));
+    if (!resp.ok || !json.ok) throw new Error(json.message || `HTTP ${resp.status}`);
+    btn.textContent = '✓ queued';
+    setTimeout(() => { if (onChange) onChange(); }, 800);
+  } catch (e) {
+    btn.disabled = false; btn.textContent = original;
+    await showAlert(`Finalize failed: ${e.message || 'unknown'}`);
+  }
 }
 
 async function onDiscardDraft(draftId, btn, ctx, onChange) {
