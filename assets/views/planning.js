@@ -184,22 +184,60 @@ function renderDraftsList(drafts, ctx) {
   `;
 }
 
+// TERMINAL_TASK_STATUSES + inFlightTaskFor: general in-flight detector
+// per [[feedback_button_intermediate_state]]. Read substrate to know if
+// a matching runtime task is still in flight — never rely on local state.
+const TERMINAL_TASK_STATUSES = new Set(['done', 'failed', 'cancelled']);
+
+function inFlightTaskFor(ctx, predicate) {
+  return (ctx.tasks || []).find(t => predicate(t) && !TERMINAL_TASK_STATUSES.has(t.status));
+}
+
+function agoFromISO(iso) {
+  if (!iso) return '';
+  try {
+    const then = new Date(iso).getTime();
+    const mins = Math.round((Date.now() - then) / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.round(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    return `${Math.round(hours / 24)}d ago`;
+  } catch { return ''; }
+}
+
 function renderDraftRow(draft, ctx) {
   const goalCount = (draft.goal_ids || []).length;
   const initCount = (draft.initiative_ids || []).length;
   const period = `${draft.period_start || '?'} → ${draft.period_target_end || 'open'}`;
   const finalized = !!draft.finalized_at;
+
+  // In-flight detection: is a planning_finalize task for THIS draft still running?
+  const inFlightFinalize = !finalized && inFlightTaskFor(ctx, t =>
+    t.advances_plan === draft.id && t.category === 'planning_finalize'
+  );
+
+  let primaryBtn;
+  if (finalized) {
+    primaryBtn = `<button type="button" class="plan-cycle-btn plan-cycle-btn-primary" data-draft-action="activate" data-draft-id="${escapeHtml(draft.id)}">Activate</button>`;
+  } else if (inFlightFinalize) {
+    const started = inFlightFinalize.proposed_at || inFlightFinalize.created_at;
+    const label = `Finalizing… ${agoFromISO(started)}`.trim();
+    primaryBtn = `<button type="button" class="plan-cycle-btn" disabled title="Stewart is finalizing this draft. Refresh in a few minutes.">${escapeHtml(label)}</button>`;
+  } else {
+    primaryBtn = `<button type="button" class="plan-cycle-btn" data-draft-action="finalize" data-draft-id="${escapeHtml(draft.id)}">Finalize with Stewart</button>`;
+  }
+
+  const finalizedNote = finalized ? ' · finalized' : (inFlightFinalize ? ' · finalizing' : '');
+
   return `
     <div class="draft-row" data-draft-id="${escapeHtml(draft.id)}" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid var(--border);border-radius:6px;background:var(--surface);">
       <div style="flex:1;min-width:0;">
         <div style="font-weight:600;font-size:14px;color:var(--text);">${escapeHtml(draft.title || 'Untitled draft')}</div>
-        <div class="mono" style="font-size:11px;color:var(--text-faint);margin-top:2px;">${escapeHtml(period)} · ${goalCount} goal${goalCount === 1 ? '' : 's'} · ${initCount} initiative${initCount === 1 ? '' : 's'}${finalized ? ' · finalized' : ''}</div>
+        <div class="mono" style="font-size:11px;color:var(--text-faint);margin-top:2px;">${escapeHtml(period)} · ${goalCount} goal${goalCount === 1 ? '' : 's'} · ${initCount} initiative${initCount === 1 ? '' : 's'}${finalizedNote}</div>
       </div>
       <div style="display:flex;gap:6px;">
-        ${finalized
-          ? `<button type="button" class="plan-cycle-btn plan-cycle-btn-primary" data-draft-action="activate" data-draft-id="${escapeHtml(draft.id)}">Activate</button>`
-          : `<button type="button" class="plan-cycle-btn" data-draft-action="finalize" data-draft-id="${escapeHtml(draft.id)}">Finalize with Stewart</button>`
-        }
+        ${primaryBtn}
         <button type="button" class="plan-cycle-btn" data-draft-action="discard" data-draft-id="${escapeHtml(draft.id)}">Discard</button>
       </div>
     </div>
