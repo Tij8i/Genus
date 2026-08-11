@@ -1718,13 +1718,45 @@ body {
 /* Linked tasks in overlay */
 .overlay-task-list { display: flex; flex-direction: column; gap: 8px; }
 .overlay-task-row {
-  display: grid; grid-template-columns: 110px 1fr 60px;
-  align-items: center; gap: 12px;
+  display: grid; grid-template-columns: 110px auto 1fr 60px;
+  align-items: center; gap: 10px;
   padding: 9px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
 }
+.overlay-task-row-input-needed {
+  border-color: var(--amber-fg, #b57500);
+  background: var(--amber-bg, rgba(255, 190, 60, 0.06));
+}
 .overlay-task-title { font-size: 13.5px; }
+.overlay-task-input-prompt {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  margin-top: 3px;
+  font-style: italic;
+}
+.input-needed-chip {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--amber-bg, rgba(255, 190, 60, 0.15));
+  color: var(--amber-fg, #b57500);
+  border: 1px solid var(--amber-fg, #b57500);
+  white-space: nowrap;
+}
+.input-needed-tag {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--amber-fg, #b57500);
+  margin-left: 6px;
+  letter-spacing: normal;
+  text-transform: none;
+}
 
 /* ============ KPIS ============ */
 
