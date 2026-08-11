@@ -1,19 +1,25 @@
-// In-Node scheduler for autonomous memo processing.
+// In-Node scheduler for autonomous background ticks.
 //
-// Closes the "operator drops a memo, comes back later, suggestion is
-// there" loop without an external cron. Boots inside the Node server;
-// polls every N minutes (default: 60 in dev / operator can override via
-// GENUS_SCHEDULE_INTERVAL_MINUTES). Skips entirely if ANTHROPIC_API_KEY
-// isn't set — no work possible, no noise.
+// Boots inside the Node server; polls every N minutes (default: 60 in dev /
+// operator can override via GENUS_SCHEDULE_INTERVAL_MINUTES). Skips entirely
+// if ANTHROPIC_API_KEY isn't set — no work possible, no noise.
 //
-// v0 does one thing: iterate BUs in _registry.json, call processMemosForBu
-// for each. Future ticks (KPI captures, campaign-age scan, red-check) plug
-// into the same loop.
+// Ticks currently registered (each iterates BUs in _registry.json, minus
+// synthetic):
+//   1. memo tick — process unprocessed memos → file task suggestions
+//   2. retro tick (feature e) — find plans where completed_at + 30d has
+//      elapsed AND retrospective_generated_at is unset; file an auto-approved
+//      retrospective task to the Strategy Stewart.
+//
+// Future ticks (KPI captures, campaign-age scan, red-check) plug into the
+// same loop.
 
 import { getFile } from '../storage/index.js';
 import { processMemosForBu } from '../api/process-memos.js';
+import { generateRetrospectiveForBu } from '../api/generate-retrospective.js';
 
 const PAT = 'local-mode-no-pat';
+const RETRO_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;  // 30 days post plan.completed_at
 
 function readIntervalMs() {
   const raw = process.env.GENUS_SCHEDULE_INTERVAL_MINUTES;
@@ -49,6 +55,42 @@ async function tickOnce() {
   }
 }
 
+// Feature (e): 30-day auto-retro tick. For each configured BU, find plans where
+// completed_at + 30d ≤ now AND retrospective_generated_at is null. File the
+// retrospective task once per eligible plan. Runs on the same interval as memo
+// tick; safe to fire on top of unchanged state (no-op when nothing is due).
+async function retroTickOnce() {
+  const bus = await listBus();
+  const summary = [];
+  const now = Date.now();
+  for (const bu of bus) {
+    try {
+      let plans = [];
+      try { plans = JSON.parse((await getFile(PAT, `dashboard/public/data/bus/${bu}/plans.json`)).content); } catch { continue; }
+      if (!Array.isArray(plans) || plans.length === 0) continue;
+      const eligible = plans.filter(p =>
+        p.status === 'completed' &&
+        p.completed_at &&
+        !p.retrospective_generated_at &&
+        (new Date(p.completed_at).getTime() + RETRO_WINDOW_MS) <= now
+      );
+      for (const plan of eligible) {
+        try {
+          await generateRetrospectiveForBu({ bu, plan_id: plan.id, pat: PAT });
+          summary.push(`${bu}: filed retro for ${plan.id}`);
+        } catch (e) {
+          summary.push(`${bu}: retro-error ${plan.id} — ${e?.message || e}`);
+        }
+      }
+    } catch (e) {
+      summary.push(`${bu}: retro-scan ERROR ${e?.message || e}`);
+    }
+  }
+  if (summary.length) {
+    console.log('[scheduler] retro tick →', summary.join(' | '));
+  }
+}
+
 let timer = null;
 
 export function startAutonomousScheduler() {
@@ -62,9 +104,13 @@ export function startAutonomousScheduler() {
   console.log(`[scheduler] autonomous memo processing enabled (every ${Math.round(intervalMs / 60_000)} min)`);
   // Kick off the first tick 30s after boot so the server has time to settle
   // and any first-run seed can complete before we start hitting substrate.
-  setTimeout(() => { tickOnce().catch(e => console.error('[scheduler] first-tick error:', e?.message || e)); }, 30_000);
+  setTimeout(() => {
+    tickOnce().catch(e => console.error('[scheduler] first-tick error:', e?.message || e));
+    retroTickOnce().catch(e => console.error('[scheduler] first-retro-tick error:', e?.message || e));
+  }, 30_000);
   timer = setInterval(() => {
     tickOnce().catch(e => console.error('[scheduler] tick error:', e?.message || e));
+    retroTickOnce().catch(e => console.error('[scheduler] retro-tick error:', e?.message || e));
   }, intervalMs);
   // Node keeps running as long as the timer exists — no ref/unref needed
   // since the parent express server holds the event loop open.
