@@ -1,6 +1,6 @@
 // POST /api/update-plan
 //
-// Operator-facing plan-cycle controls. Two actions:
+// Operator-facing plan-cycle controls. Actions:
 //
 //   action="complete_cycle"
 //     Body: { bu, plan_id, closing_notes? }
@@ -11,6 +11,23 @@
 //     - Writes a retro stub to plan.closing_notes (or appends if non-empty).
 //     - Sets plan.closure_status = "pending_evaluation" so update-initiative
 //       can later flip it to "evaluated" when actual_outcome data lands.
+//     - Feature (d): auto-promotes the earliest queued plan (by queued_at)
+//       to status="active" and returns auto_promoted_plan_id in the response.
+//
+//   action="activate"
+//     Body: { bu, plan_id }
+//     - Requires plan.status === "draft" AND plan.finalized_at set.
+//     - If no active plan exists → status="active".
+//     - If active plan exists → status="queued" (feature d). Waits behind
+//       current active; auto-promotes when that plan is complete_cycle'd.
+//
+//   action="unqueue"
+//     Body: { bu, plan_id }
+//     - Requires plan.status === "queued". Reverts to status="draft".
+//
+//   action="discard"
+//     Body: { bu, plan_id, closing_notes? }
+//     - Flips plan.status = "discarded" (any state except completed/discarded).
 //
 //   action="edit_plan"
 //     Body: { bu, plan_id, edits: { title?, rationale?, period_target_end?,
@@ -29,7 +46,7 @@ import { getFile, putFile, jsonResponse, todayISO } from '../storage/index.js';
 import { requireAdmin } from './_identity.js';
 import { requireExternalRead } from './_external_auth.js';
 
-const VALID_ACTIONS = new Set(['complete_cycle', 'edit_plan', 'discard', 'activate']);
+const VALID_ACTIONS = new Set(['complete_cycle', 'edit_plan', 'discard', 'activate', 'unqueue']);
 const EDITABLE_FIELDS = new Set(['title', 'rationale', 'period_target_end', 'initiative_ids', 'goal_ids']);
 const ARCHIVE_FROM_STATUSES = new Set(['not_started', 'scoping', 'in_progress', 'blocked', 'review', 'active', 'on_track', 'at_risk']);
 
@@ -72,6 +89,7 @@ export async function onRequestPost({ request, env }) {
   const now = todayISO();
   let initsCommitSha = null;
   let archivedInitIds = [];
+  let autoPromotedPlanId = null;
 
   if (action === 'complete_cycle') {
     if (plan.status === 'completed' || plan.status === 'superseded') {
@@ -125,6 +143,21 @@ export async function onRequestPost({ request, env }) {
         return jsonResponse(e.status || 500, { ok: false, message: `archive write failed: ${e.message || String(e)}` });
       }
     }
+
+    // Feature (d): auto-promote the earliest queued plan to active.
+    // FIFO by queued_at; ties broken by created_at.
+    const queued = plans
+      .filter(p => p.status === 'queued' && p.id !== planId)
+      .sort((a, b) => (a.queued_at || a.created_at || '').localeCompare(b.queued_at || b.created_at || ''));
+    if (queued.length > 0) {
+      const promoted = queued[0];
+      promoted.status = 'active';
+      promoted.activated_at = now;
+      promoted.superseded_plan_id = planId;
+      promoted.queued_at = null;
+      promoted.queued_after_plan_id = null;
+      autoPromotedPlanId = promoted.id;
+    }
   } else if (action === 'activate') {
     if (plan.status !== 'draft') {
       return jsonResponse(409, { ok: false, message: `Only drafts can be activated. Plan ${planId} is ${plan.status}.` });
@@ -132,17 +165,24 @@ export async function onRequestPost({ request, env }) {
     if (!plan.finalized_at) {
       return jsonResponse(409, { ok: false, message: `Plan ${planId} is not finalized yet. Finalize with Stewart first.` });
     }
+    // Feature (d): activate now if no active plan; otherwise queue.
     const previousActive = plans.find(p => p.status === 'active');
-    if (previousActive && previousActive.id !== planId) {
-      previousActive.status = 'completed';
-      previousActive.completed_at = now;
-      previousActive.closing_notes = previousActive.closing_notes
-        ? `${previousActive.closing_notes}\n\n— ${now.slice(0, 10)} (superseded) —\nSuperseded by ${planId} (operator activated).`
-        : `Superseded by ${planId} (operator activated ${now.slice(0, 10)}).`;
+    if (!previousActive) {
+      plan.status = 'active';
+      plan.activated_at = now;
+      plan.superseded_plan_id = null;
+    } else {
+      plan.status = 'queued';
+      plan.queued_at = now;
+      plan.queued_after_plan_id = previousActive.id;
     }
-    plan.status = 'active';
-    plan.activated_at = now;
-    plan.superseded_plan_id = previousActive?.id || null;
+  } else if (action === 'unqueue') {
+    if (plan.status !== 'queued') {
+      return jsonResponse(409, { ok: false, message: `Only queued plans can be unqueued. Plan ${planId} is ${plan.status}.` });
+    }
+    plan.status = 'draft';
+    plan.queued_at = null;
+    plan.queued_after_plan_id = null;
   } else if (action === 'discard') {
     if (plan.status === 'discarded' || plan.status === 'completed') {
       return jsonResponse(409, { ok: false, message: `Plan ${planId} is already ${plan.status}` });
@@ -192,6 +232,7 @@ export async function onRequestPost({ request, env }) {
     commit_sha: commit.commit.sha,
     archived_initiative_ids: archivedInitIds,
     initiatives_commit_sha: initsCommitSha,
+    auto_promoted_plan_id: autoPromotedPlanId,
   });
 }
 
