@@ -976,9 +976,33 @@ function wirePlanCycleControls(scope, ctx, onChange) {
       const draftId = btn.dataset.draftId;
       if (action === 'discard') return onDiscardDraft(draftId, btn, ctx, onChange);
       if (action === 'finalize') return onFinalizeDraft(draftId, btn, ctx, onChange);
-      if (action === 'activate') return showAlert('Activate wires in the next PR.');
+      if (action === 'activate') return onActivateDraft(draftId, btn, ctx, onChange);
     });
   });
+}
+
+async function onActivateDraft(draftId, btn, ctx, onChange) {
+  const plan = (ctx.plans || []).find(p => p.id === draftId);
+  if (!plan) return;
+  const activeNow = (ctx.plans || []).find(p => p.status === 'active');
+  const msg = activeNow
+    ? `Activate "${plan.title}"?\n\nThis will close the current active plan "${activeNow.title}" (status=completed, superseded). Only one plan can be active at a time.`
+    : `Activate "${plan.title}"?\n\nNo other plan is currently active. This becomes the active plan for ${buLabel()}.`;
+  if (!await showConfirm(msg)) return;
+  const original = btn.textContent;
+  btn.disabled = true; btn.textContent = 'activating…';
+  try {
+    const resp = await fetch('/api/update-plan', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bu: BU(), plan_id: draftId, action: 'activate', actor: 'operator' }),
+    });
+    const json = await resp.json().catch(() => ({}));
+    if (!resp.ok || !json.ok) throw new Error(json.message || `HTTP ${resp.status}`);
+    if (onChange) onChange();
+  } catch (e) {
+    btn.disabled = false; btn.textContent = original;
+    await showAlert(`Activate failed: ${e.message || 'unknown'}`);
+  }
 }
 
 async function onFinalizeDraft(draftId, btn, ctx, onChange) {
