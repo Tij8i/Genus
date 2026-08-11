@@ -29,7 +29,7 @@ import { getFile, putFile, jsonResponse, todayISO } from './_gh.js';
 import { requireAdmin } from './_identity.js';
 import { requireExternalRead } from './_external_auth.js';
 
-const VALID_ACTIONS = new Set(['complete_cycle', 'edit_plan']);
+const VALID_ACTIONS = new Set(['complete_cycle', 'edit_plan', 'discard']);
 const EDITABLE_FIELDS = new Set(['title', 'rationale', 'period_target_end', 'initiative_ids', 'goal_ids']);
 const ARCHIVE_FROM_STATUSES = new Set(['not_started', 'scoping', 'in_progress', 'blocked', 'review', 'active', 'on_track', 'at_risk']);
 
@@ -125,6 +125,15 @@ export async function onRequestPost({ request, env }) {
         return jsonResponse(e.status || 500, { ok: false, message: `archive write failed: ${e.message || String(e)}` });
       }
     }
+  } else if (action === 'discard') {
+    if (plan.status === 'discarded' || plan.status === 'completed') {
+      return jsonResponse(409, { ok: false, message: `Plan ${planId} is already ${plan.status}` });
+    }
+    plan.status = 'discarded';
+    plan.discarded_at = now;
+    plan.discarded_by = actor;
+    const note = (body.closing_notes || '').toString().trim() || `Discarded by ${actor} at ${now.slice(0, 10)}.`;
+    plan.closing_notes = plan.closing_notes ? `${plan.closing_notes}\n\n— ${now.slice(0, 10)} (discard) —\n${note}` : note;
   } else if (action === 'edit_plan') {
     if (plan.status !== 'active') {
       return jsonResponse(409, { ok: false, message: `edit_plan only allowed on active plans; ${planId} is ${plan.status}` });

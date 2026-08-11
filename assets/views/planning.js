@@ -107,8 +107,10 @@ function renderActiveSubTab(ctx) {
   const planInits = activePlan
     ? (activePlan.initiative_ids || []).map(iid => ctx.initiatives.find(i => i.id === iid)).filter(Boolean)
     : [];
+  const drafts = (ctx.plans || []).filter(p => p.status === 'draft');
   return `
     ${renderActivePlanCard(activePlan, planInits)}
+    ${renderDraftsList(drafts, ctx)}
     ${renderCoreKpisStrip(ctx)}
     ${renderGroupedTimeline(ctx, activePlan, planInits)}
   `;
@@ -151,6 +153,48 @@ function formatKpiValue(v, unit) {
     return unit ? `${formatted} ${unit}` : formatted;
   }
   return String(v);
+}
+
+// Drafts list (2026-08-11). Shows every plan with status=draft. Each row:
+// title · period · goals count · initiatives count · Finalize (stub) · Discard.
+// Finalize + Activate wire in follow-up PRs.
+function renderDraftsList(drafts, ctx) {
+  if (!drafts || drafts.length === 0) return '';
+  return `
+    <div class="card" style="margin-top:14px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div>
+          <div class="mono" style="font-size:11px;color:var(--text-faint);letter-spacing:.12em;text-transform:uppercase;">Drafts</div>
+          <div style="font-size:13px;color:var(--text-faint);">${drafts.length} plan${drafts.length === 1 ? '' : 's'} waiting to be finalized + activated.</div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        ${drafts.map(d => renderDraftRow(d, ctx)).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function renderDraftRow(draft, ctx) {
+  const goalCount = (draft.goal_ids || []).length;
+  const initCount = (draft.initiative_ids || []).length;
+  const period = `${draft.period_start || '?'} → ${draft.period_target_end || 'open'}`;
+  const finalized = !!draft.finalized_at;
+  return `
+    <div class="draft-row" data-draft-id="${escapeHtml(draft.id)}" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid var(--border);border-radius:6px;background:var(--surface);">
+      <div style="flex:1;min-width:0;">
+        <div style="font-weight:600;font-size:14px;color:var(--text);">${escapeHtml(draft.title || 'Untitled draft')}</div>
+        <div class="mono" style="font-size:11px;color:var(--text-faint);margin-top:2px;">${escapeHtml(period)} · ${goalCount} goal${goalCount === 1 ? '' : 's'} · ${initCount} initiative${initCount === 1 ? '' : 's'}${finalized ? ' · finalized' : ''}</div>
+      </div>
+      <div style="display:flex;gap:6px;">
+        ${finalized
+          ? `<button type="button" class="plan-cycle-btn plan-cycle-btn-primary" data-draft-action="activate" data-draft-id="${escapeHtml(draft.id)}">Activate</button>`
+          : `<button type="button" class="plan-cycle-btn" data-draft-action="finalize" data-draft-id="${escapeHtml(draft.id)}">Finalize with Stewart</button>`
+        }
+        <button type="button" class="plan-cycle-btn" data-draft-action="discard" data-draft-id="${escapeHtml(draft.id)}">Discard</button>
+      </div>
+    </div>
+  `;
 }
 
 function renderActivePlanCard(activePlan, planInits) {
@@ -865,19 +909,49 @@ function initTaskColor(status) {
 
 function wirePlanCycleControls(scope, ctx, onChange) {
   const controls = scope.querySelector('.plan-card-controls');
-  if (!controls) return;
-  const planId = controls.dataset.planId;
-  const buttons = controls.querySelectorAll('.plan-cycle-btn');
-  if (cycleBusy) buttons.forEach(b => { b.disabled = true; });
-
-  buttons.forEach(btn => {
+  if (controls) {
+    const planId = controls.dataset.planId;
+    const buttons = controls.querySelectorAll('.plan-cycle-btn');
+    if (cycleBusy) buttons.forEach(b => { b.disabled = true; });
+    buttons.forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const action = btn.dataset.cycleAction;
+        if (action === 'complete') return onCompleteCycle(planId, btn, ctx, onChange);
+        if (action === 'propose') return onRequestProposals(planId, btn, ctx, onChange);
+        if (action === 'edit') { editPlanOpen = true; renderEditPlanOverlay(ctx, onChange); }
+      });
+    });
+  }
+  // Draft rows (2026-08-11): Finalize / Activate / Discard buttons.
+  scope.querySelectorAll('[data-draft-action]').forEach(btn => {
     btn.addEventListener('click', async () => {
-      const action = btn.dataset.cycleAction;
-      if (action === 'complete') return onCompleteCycle(planId, btn, ctx, onChange);
-      if (action === 'propose') return onRequestProposals(planId, btn, ctx, onChange);
-      if (action === 'edit') { editPlanOpen = true; renderEditPlanOverlay(ctx, onChange); }
+      const action = btn.dataset.draftAction;
+      const draftId = btn.dataset.draftId;
+      if (action === 'discard') return onDiscardDraft(draftId, btn, ctx, onChange);
+      if (action === 'finalize') return showAlert('Finalize wires in the next PR. For now, edit substrate directly or use Ask Stewart from the active plan card.');
+      if (action === 'activate') return showAlert('Activate wires in the PR after Finalize.');
     });
   });
+}
+
+async function onDiscardDraft(draftId, btn, ctx, onChange) {
+  const plan = (ctx.plans || []).find(p => p.id === draftId);
+  if (!plan) return;
+  if (!await showConfirm(`Discard draft "${plan.title || draftId}"?\n\nGoals + initiatives created for this draft stay in substrate (backlog_state=promoted_to_plan). The plan itself flips to status=discarded.`)) return;
+  const original = btn.textContent;
+  btn.disabled = true; btn.textContent = 'discarding…';
+  try {
+    const resp = await fetch('/api/update-plan', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bu: BU(), plan_id: draftId, action: 'discard', closing_notes: 'Discarded from Drafts list', actor: 'operator' }),
+    });
+    const json = await resp.json().catch(() => ({}));
+    if (!resp.ok || !json.ok) throw new Error(json.message || `HTTP ${resp.status}`);
+    if (onChange) onChange();
+  } catch (e) {
+    btn.disabled = false; btn.textContent = original;
+    await showAlert(`Discard failed: ${e.message || 'unknown'}`);
+  }
 }
 
 async function onCompleteCycle(planId, btn, ctx, onChange) {
