@@ -117,11 +117,48 @@ function renderActiveSubTab(ctx) {
     ? (activePlan.initiative_ids || []).map(iid => ctx.initiatives.find(i => i.id === iid)).filter(Boolean)
     : [];
   const drafts = (ctx.plans || []).filter(p => p.status === 'draft');
+  const queued = (ctx.plans || [])
+    .filter(p => p.status === 'queued')
+    .sort((a, b) => (a.queued_at || a.created_at || '').localeCompare(b.queued_at || b.created_at || ''));
   return `
     ${renderActivePlanCard(activePlan, planInits)}
-    ${renderDraftsList(drafts, ctx)}
+    ${renderQueuedList(queued, activePlan)}
+    ${renderDraftsList(drafts, ctx, activePlan)}
     ${renderCoreKpisStrip(ctx)}
     ${renderGroupedTimeline(ctx, activePlan, planInits)}
+  `;
+}
+
+function renderQueuedList(queued, activePlan) {
+  if (!queued || queued.length === 0) return '';
+  return `
+    <div class="card" style="margin-top:14px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div>
+          <div class="mono" style="font-size:11px;color:var(--text-faint);letter-spacing:.12em;text-transform:uppercase;">Queued</div>
+          <div style="font-size:13px;color:var(--text-faint);">${queued.length} plan${queued.length === 1 ? '' : 's'} waiting${activePlan ? ` for "${escapeHtml((activePlan.title || activePlan.id).slice(0, 40))}" to finish` : ''}.</div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        ${queued.map((q, i) => {
+          const goalCount = (q.goal_ids || []).length;
+          const initCount = (q.initiative_ids || []).length;
+          const period = `${q.period_start || '?'} → ${q.period_target_end || 'open'}`;
+          const pos = queued.length > 1 ? ` · #${i + 1} in queue` : '';
+          return `
+            <div class="draft-row" data-draft-id="${escapeHtml(q.id)}" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid var(--border);border-radius:6px;background:var(--surface);">
+              <div style="flex:1;min-width:0;">
+                <div style="font-weight:600;font-size:14px;color:var(--text);">${escapeHtml(q.title || 'Untitled')}</div>
+                <div class="mono" style="font-size:11px;color:var(--text-faint);margin-top:2px;">${escapeHtml(period)} · ${goalCount} goal${goalCount === 1 ? '' : 's'} · ${initCount} initiative${initCount === 1 ? '' : 's'}${pos} · queued ${agoFromISO(q.queued_at)}</div>
+              </div>
+              <div style="display:flex;gap:6px;">
+                <button type="button" class="plan-cycle-btn" data-draft-action="unqueue" data-draft-id="${escapeHtml(q.id)}" title="Move back to Drafts so it won't auto-activate next.">Unqueue</button>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    </div>
   `;
 }
 
@@ -167,18 +204,18 @@ function formatKpiValue(v, unit) {
 // Drafts list (2026-08-11). Shows every plan with status=draft. Each row:
 // title · period · goals count · initiatives count · Finalize (stub) · Discard.
 // Finalize + Activate wire in follow-up PRs.
-function renderDraftsList(drafts, ctx) {
+function renderDraftsList(drafts, ctx, activePlan) {
   if (!drafts || drafts.length === 0) return '';
   return `
     <div class="card" style="margin-top:14px;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
         <div>
           <div class="mono" style="font-size:11px;color:var(--text-faint);letter-spacing:.12em;text-transform:uppercase;">Drafts</div>
-          <div style="font-size:13px;color:var(--text-faint);">${drafts.length} plan${drafts.length === 1 ? '' : 's'} waiting to be finalized + activated.</div>
+          <div style="font-size:13px;color:var(--text-faint);">${drafts.length} plan${drafts.length === 1 ? '' : 's'} waiting to be finalized${activePlan ? ' + queued or activated' : ' + activated'}.</div>
         </div>
       </div>
       <div style="display:flex;flex-direction:column;gap:8px;">
-        ${drafts.map(d => renderDraftRow(d, ctx)).join('')}
+        ${drafts.map(d => renderDraftRow(d, ctx, activePlan)).join('')}
       </div>
     </div>
   `;
@@ -206,7 +243,7 @@ function agoFromISO(iso) {
   } catch { return ''; }
 }
 
-function renderDraftRow(draft, ctx) {
+function renderDraftRow(draft, ctx, activePlan) {
   const goalCount = (draft.goal_ids || []).length;
   const initCount = (draft.initiative_ids || []).length;
   const period = `${draft.period_start || '?'} → ${draft.period_target_end || 'open'}`;
@@ -219,7 +256,15 @@ function renderDraftRow(draft, ctx) {
 
   let primaryBtn;
   if (finalized) {
-    primaryBtn = `<button type="button" class="plan-cycle-btn plan-cycle-btn-primary" data-draft-action="activate" data-draft-id="${escapeHtml(draft.id)}">Activate</button>`;
+    // Feature (d): if there's already an active plan, the button queues; otherwise it activates now.
+    const activeTitle = activePlan ? (activePlan.title || activePlan.id) : '';
+    const btnLabel = activePlan
+      ? `Queue after «${escapeHtml(activeTitle.length > 22 ? activeTitle.slice(0, 20) + '…' : activeTitle)}»`
+      : 'Activate now';
+    const btnTitle = activePlan
+      ? `Waits behind "${escapeHtml(activeTitle)}"; auto-activates when that plan is marked complete.`
+      : 'No active plan — this becomes the active plan immediately.';
+    primaryBtn = `<button type="button" class="plan-cycle-btn plan-cycle-btn-primary" data-draft-action="activate" data-draft-id="${escapeHtml(draft.id)}" title="${btnTitle}">${btnLabel}</button>`;
   } else if (inFlightFinalize) {
     const started = inFlightFinalize.proposed_at || inFlightFinalize.created_at;
     const label = `Finalizing… ${agoFromISO(started)}`.trim();
@@ -1012,7 +1057,7 @@ function wirePlanCycleControls(scope, ctx, onChange) {
       });
     });
   }
-  // Draft rows (2026-08-11): Finalize / Activate / Discard buttons.
+  // Draft rows (2026-08-11): Finalize / Activate / Discard / Unqueue buttons.
   scope.querySelectorAll('[data-draft-action]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const action = btn.dataset.draftAction;
@@ -1020,20 +1065,42 @@ function wirePlanCycleControls(scope, ctx, onChange) {
       if (action === 'discard') return onDiscardDraft(draftId, btn, ctx, onChange);
       if (action === 'finalize') return onFinalizeDraft(draftId, btn, ctx, onChange);
       if (action === 'activate') return onActivateDraft(draftId, btn, ctx, onChange);
+      if (action === 'unqueue') return onUnqueueDraft(draftId, btn, ctx, onChange);
     });
   });
+}
+
+async function onUnqueueDraft(draftId, btn, ctx, onChange) {
+  const plan = (ctx.plans || []).find(p => p.id === draftId);
+  if (!plan) return;
+  if (!await showConfirm(`Remove "${plan.title || draftId}" from the queue?\n\nIt goes back to Drafts. You can re-activate it later.`)) return;
+  const original = btn.textContent;
+  btn.disabled = true; btn.textContent = 'unqueuing…';
+  try {
+    const resp = await fetch('/api/update-plan', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bu: BU(), plan_id: draftId, action: 'unqueue', actor: 'operator' }),
+    });
+    const json = await resp.json().catch(() => ({}));
+    if (!resp.ok || !json.ok) throw new Error(json.message || `HTTP ${resp.status}`);
+    if (onChange) onChange();
+  } catch (e) {
+    btn.disabled = false; btn.textContent = original;
+    await showAlert(`Unqueue failed: ${e.message || 'unknown'}`);
+  }
 }
 
 async function onActivateDraft(draftId, btn, ctx, onChange) {
   const plan = (ctx.plans || []).find(p => p.id === draftId);
   if (!plan) return;
   const activeNow = (ctx.plans || []).find(p => p.status === 'active');
+  // Feature (d): the button either queues (active exists) or activates immediately.
   const msg = activeNow
-    ? `Activate "${plan.title}"?\n\nThis will close the current active plan "${activeNow.title}" (status=completed, superseded). Only one plan can be active at a time.`
-    : `Activate "${plan.title}"?\n\nNo other plan is currently active. This becomes the active plan for ${buLabel()}.`;
+    ? `Queue "${plan.title}" after "${activeNow.title}"?\n\nIt sits in the Queued list until you mark "${activeNow.title}" complete, then auto-activates. You can unqueue any time.`
+    : `Activate "${plan.title}"?\n\nNo other plan is active. This becomes the active plan for ${buLabel()} immediately.`;
   if (!await showConfirm(msg)) return;
   const original = btn.textContent;
-  btn.disabled = true; btn.textContent = 'activating…';
+  btn.disabled = true; btn.textContent = activeNow ? 'queuing…' : 'activating…';
   try {
     const resp = await fetch('/api/update-plan', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1044,7 +1111,7 @@ async function onActivateDraft(draftId, btn, ctx, onChange) {
     if (onChange) onChange();
   } catch (e) {
     btn.disabled = false; btn.textContent = original;
-    await showAlert(`Activate failed: ${e.message || 'unknown'}`);
+    await showAlert(`${activeNow ? 'Queue' : 'Activate'} failed: ${e.message || 'unknown'}`);
   }
 }
 
@@ -1096,11 +1163,15 @@ async function onCompleteCycle(planId, btn, ctx, onChange) {
     .map(iid => (ctx.initiatives || []).find(i => i.id === iid))
     .filter(Boolean);
   const stillOpen = inits.filter(i => !['completed', 'abandoned', 'discarded'].includes((i.status || '').toLowerCase())).length;
+  // Feature (d): warn if a queued plan will auto-promote.
+  const queuedCount = (ctx.plans || []).filter(p => p.status === 'queued').length;
+  const queueLine = queuedCount > 0 ? `\n\n${queuedCount} queued plan${queuedCount === 1 ? '' : 's'} in line — the earliest will auto-activate.` : '';
   const msg = stillOpen > 0
-    ? `Mark cycle "${plan.title}" complete?\n\n${stillOpen} of ${inits.length} initiatives are still open — they will be auto-archived as completed. A retrospective stub will be written.\n\nThis is reversible only by editing data files directly.`
-    : `Mark cycle "${plan.title}" complete?\n\nA retrospective stub will be written.`;
+    ? `Mark cycle "${plan.title}" complete?\n\n${stillOpen} of ${inits.length} initiatives are still open — they will be auto-archived as completed. A retrospective stub will be written.${queueLine}\n\nThis is reversible only by editing data files directly.`
+    : `Mark cycle "${plan.title}" complete?\n\nA retrospective stub will be written.${queueLine}`;
   const notes = await showPrompt(msg + '\n\nOptional closing note (blank → default stub):', '');
   if (notes === null) return;  // cancelled
+  let promotedId = null;
   await runCycleAction(btn, async () => {
     const resp = await fetch('/api/update-plan', {
       method: 'POST',
@@ -1109,8 +1180,12 @@ async function onCompleteCycle(planId, btn, ctx, onChange) {
     });
     const json = await resp.json().catch(() => ({}));
     if (!resp.ok || !json.ok) throw new Error(json.message || `HTTP ${resp.status}`);
+    promotedId = json.auto_promoted_plan_id || null;
     return json;
   }, onChange);
+  if (promotedId) {
+    await showAlert(`Cycle closed. Plan "${promotedId}" was queued behind it — it's now the active plan.`);
+  }
 }
 
 async function onRequestProposals(planId, btn, ctx, onChange) {

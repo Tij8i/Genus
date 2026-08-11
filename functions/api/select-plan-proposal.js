@@ -152,14 +152,14 @@ export async function onRequestPost({ request, env }) {
   const planId = `plan-${today}-${String(nextSuffix).padStart(2, '0')}`;
   const stewartCredit = stewartId || 'stewart';
 
-  // Auto-activate on pick. Operator's mental model is "pick = it becomes THE plan."
-  // Close the current active plan (if any) as completed, superseded by the new one.
+  // Feature (d): conditional initial status.
+  //   - No active plan → the picked proposal becomes 'active' immediately
+  //     (nothing to wait behind).
+  //   - Active plan exists → new plan is 'draft'. Operator finalizes with
+  //     Stewart and then explicitly activates (immediately or queued) via
+  //     update-plan. We no longer force-supersede the current active on pick.
   const previousActive = plans.find(p => p.status === 'active');
-  if (previousActive) {
-    previousActive.status = 'completed';
-    previousActive.completed_at = now;
-    previousActive.closing_notes = `Superseded by ${planId} (operator picked proposal ${picked.id})`;
-  }
+  const initialStatus = previousActive ? 'draft' : 'active';
 
   const newPlan = {
     id: planId,
@@ -168,16 +168,16 @@ export async function onRequestPost({ request, env }) {
     rationale: `[Stewart proposal ${picked.id}]\n${picked.reasoning || picked.rationale || ''}`,
     period_start: picked.period_start,
     period_target_end: picked.period_target_end,
-    status: 'active',
+    status: initialStatus,
     goal_ids: newGoalIds,
     initiative_ids: newInitIds,
     created_at: now,
     created_by: ['operator', stewartCredit],
-    activated_at: now,
+    activated_at: initialStatus === 'active' ? now : null,
     completed_at: null,
     closing_notes: null,
     from_proposal: picked.id,
-    superseded_plan_id: previousActive?.id || null,
+    superseded_plan_id: null,
     closure_status: null,
     evaluation_due_at: null,
     expected_impact: Array.isArray(picked.expected_impact) ? picked.expected_impact : [],
@@ -231,7 +231,9 @@ export async function onRequestPost({ request, env }) {
         initiatives: r3.commit.sha,
         plans: r4.commit.sha,
       },
-      message: `Plan ${planId} activated from proposal ${proposalId}${previousActive ? ` (superseded ${previousActive.id})` : ''}.`,
+      message: initialStatus === 'active'
+        ? `Plan ${planId} activated from proposal ${proposalId} (no active plan to queue behind).`
+        : `Plan ${planId} created as draft from proposal ${proposalId}. Finalize with Stewart, then activate (or queue after ${previousActive.id}).`,
     });
   } catch (e) {
     return jsonResponse(e.status || 500, { ok: false, message: `Write failed: ${e.message || e}` });
