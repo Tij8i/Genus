@@ -144,10 +144,34 @@ export async function onRequestPost({ request, env }) {
     if ((ms.status || '').toLowerCase() === 'done') {
       return jsonResponse(409, { ok: false, message: `Milestone ${msId} already done` });
     }
+    // Recovery Step 3: gate on task completion. All tasks that advance this
+    // milestone must be in a terminal status. Operator can override with
+    // force=true (retroactive/offline closure).
+    if (!body.force) {
+      const tasksPath = `dashboard/public/data/bus/${bu}/tasks.json`;
+      try {
+        const tf = await getFile(env.GITHUB_PAT, tasksPath);
+        const tasks = JSON.parse(tf.content);
+        if (Array.isArray(tasks)) {
+          const TERMINAL = new Set(['done', 'closed', 'completed', 'cancelled', 'rejected']);
+          const openLinked = tasks.filter(t =>
+            t.advances_milestone === msId && !TERMINAL.has((t.status || '').toLowerCase())
+          );
+          if (openLinked.length > 0) {
+            return jsonResponse(409, {
+              ok: false,
+              message: `Milestone ${msId} has ${openLinked.length} open task(s). Close them first, or pass force=true to override.`,
+              open_task_ids: openLinked.map(t => t.id),
+            });
+          }
+        }
+      } catch (_) { /* tasks.json missing = nothing to gate against */ }
+    }
     ms.status = 'done';
     ms.closed_at = now;
     ms.closed_by = body.actor || 'operator';
     ms.closed_by_meeting = null;  // explicitly null — this path is not meeting-driven
+    if (body.force) ms.closed_forced = true;
     if (body.note) ms.close_note = body.note.toString().slice(0, 500);
   }
 
