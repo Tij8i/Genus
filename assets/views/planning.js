@@ -22,6 +22,15 @@ function BU() {
     || 'tuto';
 }
 
+// Operator-facing label. Uses the display_name resolved by app.js into the
+// sidebar #bu-name element (e.g. "Acme Roastery" for the synthetic BU).
+// Falls back to the raw internal id if the DOM isn't populated yet.
+function buLabel() {
+  const el = document.getElementById('bu-name');
+  const t = el && el.textContent ? el.textContent.trim() : '';
+  return (t && t !== '…' && t !== 'loading' && t !== BU()) ? t : BU();
+}
+
 let openInitiativeId = null;
 let activeSubTab = 'active';
 let editPlanOpen = false;
@@ -937,7 +946,7 @@ function wirePlanCycleControls(scope, ctx, onChange) {
 async function onFinalizeDraft(draftId, btn, ctx, onChange) {
   const plan = (ctx.plans || []).find(p => p.id === draftId);
   if (!plan) return;
-  if (!await showConfirm(`Ask the Strategy Stewart of ${BU()} to finalize draft "${plan.title || draftId}"?\n\nStewart adds milestones under each initiative + proposes tasks that advance them. Takes ~3-5 min. When done, this draft shows an [Activate] button instead of [Finalize].`)) return;
+  if (!await showConfirm(`Ask the Strategy Stewart of ${buLabel()} to finalize draft "${plan.title || draftId}"?\n\nStewart adds milestones under each initiative + proposes tasks that advance them. Takes ~3-5 min. When done, this draft shows an [Activate] button instead of [Finalize].`)) return;
   const original = btn.textContent;
   btn.disabled = true; btn.textContent = 'queuing…';
   try {
@@ -1004,7 +1013,7 @@ async function onRequestProposals(planId, btn, ctx, onChange) {
   // Previously used /api/file-stewart-task with executor=`${BU()}-stewart` — a name
   // that doesn't resolve to any real agent, so it silently fell back to genus-agent.
   // The new endpoint resolves the Strategy Stewart from agent_bindings.json.
-  if (!await showConfirm(`Ask the Strategy Stewart of ${BU()} to draft 3 alternative plan proposals?\n\nThe Stewart will read the current plan + backlog + memos, then produce 3 genuinely different plan shapes. You pick ONE to promote into a draft plan.`)) return;
+  if (!await showConfirm(`Ask the Strategy Stewart of ${buLabel()} to draft 3 alternative plan proposals?\n\nThe Stewart will read the current plan + backlog + memos, then produce 3 genuinely different plan shapes. You pick ONE to promote into a draft plan.`)) return;
   await runCycleAction(btn, async () => {
     const resp = await fetch('/api/request-plan-proposals', {
       method: 'POST',
