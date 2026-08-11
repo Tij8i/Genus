@@ -146,6 +146,7 @@ async function loadContext(pat, bu) {
     goals: `dashboard/public/data/bus/${bu}/goals.json`,
     initiatives: `dashboard/public/data/bus/${bu}/initiatives.json`,
     memos: `dashboard/public/data/bus/${bu}/memos.jsonl`,
+    kpis: `dashboard/public/data/bus/${bu}/kpis.json`,
   };
   const results = {};
   for (const [k, p] of Object.entries(paths)) {
@@ -157,6 +158,21 @@ async function loadContext(pat, bu) {
     } catch (e) {
       results[k] = [];
     }
+  }
+  // For primary + north_star KPIs, fetch the latest measurement so the
+  // synthesis prompt can size the gap. Skip secondary/lower-priority to keep
+  // the fan-out bounded (≤~5 measurement file loads per proposal request).
+  const primaryKpis = (results.kpis || []).filter(k =>
+    (k.priority || '').toLowerCase() === 'primary' ||
+    (k.category || '').toLowerCase() === 'north_star'
+  );
+  results.kpiLatest = {};
+  for (const k of primaryKpis) {
+    try {
+      const f = await getFile(pat, `dashboard/public/data/bus/${bu}/measurements/${k.id}.jsonl`);
+      const rows = f.content.split('\n').filter(l => l.trim()).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+      if (rows.length) results.kpiLatest[k.id] = rows[rows.length - 1];
+    } catch (_) { /* measurement file may not exist yet */ }
   }
   return results;
 }
@@ -191,6 +207,24 @@ function buildSynthesisPrompt(bu, stewartId, ctx) {
     lines.push('No active plan.');
   }
   lines.push('');
+  lines.push(`## Current KPI state (primary + north-star only)`);
+  const kpis = ctx.kpis || [];
+  const primaryKpis = kpis.filter(k =>
+    (k.priority || '').toLowerCase() === 'primary' ||
+    (k.category || '').toLowerCase() === 'north_star'
+  );
+  if (primaryKpis.length) {
+    primaryKpis.forEach(k => {
+      const latest = (ctx.kpiLatest || {})[k.id];
+      const curr = latest ? `${latest.value}${latest.at ? ` (as of ${latest.at.slice(0, 10)})` : ''}` : 'no measurement yet';
+      const dir = k.direction === 'higher_is_better' ? '↑' : k.direction === 'lower_is_better' ? '↓' : '~';
+      const tgt = k.target != null ? `target ${k.target}` : 'no target set';
+      lines.push(`- ${k.id} · ${k.category || 'operational'} · "${k.name}" [${k.unit || '?'}] ${dir} · current: ${curr} · ${tgt}`);
+    });
+  } else {
+    lines.push('No primary or north-star KPIs configured. Proposals will lack quantified impact — flag this in your reasoning and recommend the operator define KPIs first if the gap matters.');
+  }
+  lines.push('');
   lines.push(`## Backlog — ready items (vetted by operator)`);
   if (readyBacklog.length) {
     readyBacklog.forEach(it => {
@@ -222,6 +256,7 @@ function buildSynthesisPrompt(bu, stewartId, ctx) {
   lines.push(`- Period (30 days default; adjust if a different window fits)`);
   lines.push(`- 1–3 goals, 3–5 initiatives drawn from either backlog OR new ideas you justify`);
   lines.push(`- A "reasoning" section: why this set, what it sacrifices, what it bets on`);
+  lines.push(`- **Expected KPI impact** (\`expected_impact[]\`): for each primary/north-star KPI above, name the predicted delta by end of period + the mechanism. If a KPI won't move under this proposal, still list it with \`predicted_delta: 0\` and say why. If no KPIs are configured, use an empty array and flag it in the reasoning.`);
   lines.push('');
   lines.push(`## Output: write to dashboard/public/data/bus/${bu}/plan_proposals.json`);
   lines.push('');
@@ -251,6 +286,16 @@ function buildSynthesisPrompt(bu, stewartId, ctx) {
       },
     ],
     backlog_ids_drawn_from: ['<existing backlog goal/init id>', '...'],
+    expected_impact: [
+      {
+        kpi_id: '<from Current KPI state section>',
+        current_value: '<current numeric or null>',
+        predicted_value_at_period_end: '<numeric>',
+        predicted_delta: '<numeric — positive if higher_is_better direction is favourable>',
+        mechanism: '<one sentence: which initiative(s) drive this and how>',
+        confidence: 'low | medium | high',
+      },
+    ],
     reasoning: '<why this set: what it bets on, what it sacrifices, why over the alternatives>',
     proposed_by: stewartId,
     proposed_at: 'YYYY-MM-DDTHH:MM:SSZ',

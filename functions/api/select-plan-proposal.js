@@ -180,6 +180,7 @@ export async function onRequestPost({ request, env }) {
     superseded_plan_id: previousActive?.id || null,
     closure_status: null,
     evaluation_due_at: null,
+    expected_impact: Array.isArray(picked.expected_impact) ? picked.expected_impact : [],
   };
   plans.push(newPlan);
 
