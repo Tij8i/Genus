@@ -143,8 +143,13 @@ export async function onRequestPost({ request, env }) {
     newInitIds.push(iId);
   });
 
-  // Create the new plan (draft — operator activates via existing update-plan endpoint)
-  const planId = `plan-${today}-${String(plans.length + 1).padStart(2, '0')}`;
+  // Create the new plan. Use max(existing suffix) + 1 to avoid collision with
+  // discarded plans still in the array.
+  const existingSuffixes = plans
+    .map(p => (typeof p.id === 'string' ? p.id.match(new RegExp(`^plan-${today}-(\\d+)$`)) : null))
+    .map(m => (m ? parseInt(m[1], 10) : 0));
+  const nextSuffix = (existingSuffixes.length ? Math.max(...existingSuffixes) : 0) + 1;
+  const planId = `plan-${today}-${String(nextSuffix).padStart(2, '0')}`;
   const stewartCredit = stewartId || 'stewart';
 
   // Auto-activate on pick. Operator's mental model is "pick = it becomes THE plan."

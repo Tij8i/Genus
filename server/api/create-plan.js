@@ -67,8 +67,13 @@ export async function onRequestPost({ request, env }) {
 
   const today = todayDate();
   const now = todayISO();
-  const existingToday = plans.filter(p => typeof p.id === 'string' && p.id.startsWith(`plan-${today}-`));
-  const planId = `plan-${today}-${String(existingToday.length + 1).padStart(2, '0')}`;
+  // Compute next suffix as max(existing) + 1, not count + 1 — otherwise
+  // a discarded plan sits in the array and the next create collides.
+  const existingSuffixes = plans
+    .map(p => (typeof p.id === 'string' ? p.id.match(new RegExp(`^plan-${today}-(\\d+)$`)) : null))
+    .map(m => (m ? parseInt(m[1], 10) : 0));
+  const nextSuffix = (existingSuffixes.length ? Math.max(...existingSuffixes) : 0) + 1;
+  const planId = `plan-${today}-${String(nextSuffix).padStart(2, '0')}`;
 
   // Create goals (with placeholder promoted_to_plan_id — filled after plan id known)
   const newGoalIds = [];
