@@ -37,10 +37,10 @@ let editPlanOpen = false;
 let cycleBusy = false;  // disables buttons while a plan-cycle mutation is in flight
 let showArchive = false;  // Backlog kanban: toggle Promoted + Discarded columns (GEN-50)
 
-// Sub-tab visibility. Backlog + Retrospective render functions stay (see
-// below) but are hidden from nav per operator ask 2026-07-30. Restore either
-// by adding its name back to VISIBLE_SUBTABS.
-const VISIBLE_SUBTABS = ['active'];
+// Sub-tab visibility. Retrospective re-enabled 2026-08-11 alongside feature (e)
+// so operators can see retros land + trigger them manually. Backlog stays
+// hidden — re-enable by adding its name back to VISIBLE_SUBTABS.
+const VISIBLE_SUBTABS = ['active', 'retrospective'];
 
 export function renderPlanning(ctx, { onChange }) {
   // Read sub-tab from URL query (#planning?tab=backlog). Router strips the
@@ -104,6 +104,9 @@ export function renderPlanning(ctx, { onChange }) {
 
   // Wire Backlog kanban triage buttons + archive toggle (GEN-50)
   if (activeSubTab === 'backlog') wireBacklogActions(body, ctx, onChange);
+
+  // Wire Retrospective sub-tab "Generate now" buttons (feature e)
+  if (activeSubTab === 'retrospective') wireRetrospectiveButtons(body, onChange);
 
   if (openInitiativeId) renderInitiativeDetailOverlay(ctx, onChange);
   if (editPlanOpen) renderEditPlanOverlay(ctx, onChange);
@@ -634,26 +637,68 @@ function renderRetrospectiveSubTab(ctx) {
   if (!completedPlans.length) {
     return `<div class="card"><div class="card-title">Retrospective</div><p class="card-sub">Past plans + their outcomes will appear here as cycles close.</p><div class="empty-state">No completed cycles yet.</div></div>`;
   }
+  const now = Date.now();
+  const RETRO_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
   return `
     <div class="card">
       <div class="card-title">Past cycles</div>
-      <p class="card-sub">Completed + superseded plans. Click into one to see actual outcomes vs hypotheses.</p>
+      <p class="card-sub">Completed + superseded plans. A retrospective is auto-filed 30 days after each plan's completion; you can also trigger it manually.</p>
       <div class="retro-list">
-        ${completedPlans.map(p => `
-          <div class="retro-row">
-            <div class="retro-row-body">
-              <div class="retro-row-title">${escapeHtml(p.title || 'Untitled plan')}</div>
-              <div class="mono" style="font-size:10.5px;color:var(--text-faint);margin-top:3px">
-                ${p.status === 'completed' ? 'completed' : 'superseded'} ${ago(p.completed_at || p.superseded_at)} ·
-                ${(p.initiative_ids || []).length} initiative${(p.initiative_ids || []).length === 1 ? '' : 's'}${p.closure_status ? ` · ${escapeHtml(p.closure_status)}` : ''}
+        ${completedPlans.map(p => {
+          const closedMs = p.completed_at ? new Date(p.completed_at).getTime() : null;
+          const dueAt = closedMs ? closedMs + RETRO_WINDOW_MS : null;
+          const dueInDays = dueAt ? Math.ceil((dueAt - now) / (24 * 60 * 60 * 1000)) : null;
+          let retroLine;
+          if (p.retrospective_generated_at) {
+            retroLine = `<span class="retro-status retro-status-filed">Retro filed ${ago(p.retrospective_generated_at)}${p.retrospective_task_id ? ` · ${escapeHtml(p.retrospective_task_id)}` : ''}</span>`;
+          } else if (dueInDays !== null && dueInDays > 0) {
+            retroLine = `<span class="retro-status retro-status-pending">Retro due in ${dueInDays} day${dueInDays === 1 ? '' : 's'}</span> <button type="button" class="retro-generate-btn" data-plan-id="${escapeHtml(p.id)}">Generate now</button>`;
+          } else if (p.status === 'completed') {
+            retroLine = `<span class="retro-status retro-status-overdue">Retro overdue — next scheduler tick will file it</span> <button type="button" class="retro-generate-btn" data-plan-id="${escapeHtml(p.id)}">Generate now</button>`;
+          } else {
+            retroLine = '';
+          }
+          return `
+            <div class="retro-row">
+              <div class="retro-row-body">
+                <div class="retro-row-title">${escapeHtml(p.title || 'Untitled plan')}</div>
+                <div class="mono" style="font-size:10.5px;color:var(--text-faint);margin-top:3px">
+                  ${p.status === 'completed' ? 'completed' : 'superseded'} ${ago(p.completed_at || p.superseded_at)} ·
+                  ${(p.initiative_ids || []).length} initiative${(p.initiative_ids || []).length === 1 ? '' : 's'}${p.closure_status ? ` · ${escapeHtml(p.closure_status)}` : ''}
+                </div>
+                ${p.closing_notes ? `<div class="retro-notes">${escapeHtml(p.closing_notes.slice(0, 240))}${p.closing_notes.length > 240 ? '…' : ''}</div>` : ''}
+                ${retroLine ? `<div style="margin-top:6px;font-size:11.5px;">${retroLine}</div>` : ''}
               </div>
-              ${p.closing_notes ? `<div class="retro-notes">${escapeHtml(p.closing_notes.slice(0, 240))}${p.closing_notes.length > 240 ? '…' : ''}</div>` : ''}
             </div>
-          </div>
-        `).join('')}
+          `;
+        }).join('')}
       </div>
     </div>
   `;
+}
+
+function wireRetrospectiveButtons(scope, onChange) {
+  scope.querySelectorAll('.retro-generate-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const planId = btn.dataset.planId;
+      if (!await showConfirm(`File a retrospective task for ${planId} now?\n\nStrategy Stewart will read predicted vs actual KPI impact and append a retro entry to retrospectives.jsonl.`)) return;
+      const original = btn.textContent;
+      btn.disabled = true; btn.textContent = 'filing…';
+      try {
+        const resp = await fetch('/api/generate-retrospective', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bu: BU(), plan_id: planId }),
+        });
+        const json = await resp.json().catch(() => ({}));
+        if (!resp.ok || !json.ok) throw new Error(json.message || `HTTP ${resp.status}`);
+        btn.textContent = '✓ filed';
+        setTimeout(() => { if (onChange) onChange(); }, 800);
+      } catch (e) {
+        btn.disabled = false; btn.textContent = original;
+        await showAlert(`Retro filing failed: ${e.message || 'unknown'}`);
+      }
+    });
+  });
 }
 
 // ============ Initiative detail overlay ============

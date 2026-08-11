@@ -1438,6 +1438,28 @@ body {
 }
 .retro-row-title { font-size: 14.5px; font-weight: 600; }
 .retro-notes { font-size: 12.5px; color: var(--text-dim); margin-top: 5px; line-height: 1.5; }
+.retro-status {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-right: 4px;
+}
+.retro-status-filed { color: var(--green-fg, #0e9f6e); background: rgba(14, 159, 110, 0.1); }
+.retro-status-pending { color: var(--text-dim); background: rgba(0, 0, 0, 0.05); }
+.retro-status-overdue { color: var(--amber-fg, #b57500); background: rgba(255, 190, 60, 0.12); }
+.retro-generate-btn {
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  cursor: pointer;
+  font-family: inherit;
+}
+.retro-generate-btn:hover:not(:disabled) { background: var(--surface-hover, var(--border-faint)); }
+.retro-generate-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
 /* Initiative detail overlay */
 .overlay-backdrop {
