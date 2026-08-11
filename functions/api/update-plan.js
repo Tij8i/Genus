@@ -29,7 +29,7 @@ import { getFile, putFile, jsonResponse, todayISO } from './_gh.js';
 import { requireAdmin } from './_identity.js';
 import { requireExternalRead } from './_external_auth.js';
 
-const VALID_ACTIONS = new Set(['complete_cycle', 'edit_plan', 'discard']);
+const VALID_ACTIONS = new Set(['complete_cycle', 'edit_plan', 'discard', 'activate']);
 const EDITABLE_FIELDS = new Set(['title', 'rationale', 'period_target_end', 'initiative_ids', 'goal_ids']);
 const ARCHIVE_FROM_STATUSES = new Set(['not_started', 'scoping', 'in_progress', 'blocked', 'review', 'active', 'on_track', 'at_risk']);
 
@@ -125,6 +125,25 @@ export async function onRequestPost({ request, env }) {
         return jsonResponse(e.status || 500, { ok: false, message: `archive write failed: ${e.message || String(e)}` });
       }
     }
+  } else if (action === 'activate') {
+    if (plan.status !== 'draft') {
+      return jsonResponse(409, { ok: false, message: `Only drafts can be activated. Plan ${planId} is ${plan.status}.` });
+    }
+    if (!plan.finalized_at) {
+      return jsonResponse(409, { ok: false, message: `Plan ${planId} is not finalized yet. Finalize with Stewart first.` });
+    }
+    // Close current active (if any) — superseded by this one.
+    const previousActive = plans.find(p => p.status === 'active');
+    if (previousActive && previousActive.id !== planId) {
+      previousActive.status = 'completed';
+      previousActive.completed_at = now;
+      previousActive.closing_notes = previousActive.closing_notes
+        ? `${previousActive.closing_notes}\n\n— ${now.slice(0, 10)} (superseded) —\nSuperseded by ${planId} (operator activated).`
+        : `Superseded by ${planId} (operator activated ${now.slice(0, 10)}).`;
+    }
+    plan.status = 'active';
+    plan.activated_at = now;
+    plan.superseded_plan_id = previousActive?.id || null;
   } else if (action === 'discard') {
     if (plan.status === 'discarded' || plan.status === 'completed') {
       return jsonResponse(409, { ok: false, message: `Plan ${planId} is already ${plan.status}` });
