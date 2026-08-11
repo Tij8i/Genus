@@ -625,6 +625,18 @@ function renderInitiativeDetailOverlay(ctx, onChange) {
   const ms = init.milestones || [];
   const firstPendingIdx = ms.findIndex(m => (m.status || 'pending').toLowerCase() !== 'done');
   const currentMs = firstPendingIdx >= 0 ? ms[firstPendingIdx] : null;
+  // Recovery Step 3: gate mark-done on task completion. Tasks that advance this
+  // milestone must all be terminal (done/closed/completed/cancelled/rejected).
+  const TERMINAL_MS_TASK = new Set(['done', 'closed', 'completed', 'cancelled', 'rejected']);
+  const openTasksForMs = currentMs
+    ? (ctx.tasks || []).filter(t =>
+        t.advances_milestone === currentMs.id && !TERMINAL_MS_TASK.has((t.status || '').toLowerCase())
+      )
+    : [];
+  const totalTasksForMs = currentMs
+    ? (ctx.tasks || []).filter(t => t.advances_milestone === currentMs.id).length
+    : 0;
+  const canMarkMsDone = currentMs && openTasksForMs.length === 0;
 
   host.innerHTML = `
     <div class="overlay-backdrop" id="overlay-backdrop"></div>
@@ -650,7 +662,20 @@ function renderInitiativeDetailOverlay(ctx, onChange) {
           ${renderMilestoneStrip(ms, currentMs)}
           ${currentMs ? `
             <div class="overlay-mark-done-row">
-              <button type="button" class="overlay-mark-done-btn" data-init-id="${escapeHtml(init.id)}" data-ms-id="${escapeHtml(currentMs.id)}">✓ Mark «${escapeHtml(currentMs.name)}» done</button>
+              <button type="button" class="overlay-mark-done-btn"
+                      data-init-id="${escapeHtml(init.id)}"
+                      data-ms-id="${escapeHtml(currentMs.id)}"
+                      ${canMarkMsDone ? '' : 'disabled'}
+                      title="${canMarkMsDone
+                        ? `Mark this milestone done — the next becomes current`
+                        : `${openTasksForMs.length} of ${totalTasksForMs} linked task(s) still open. Close them first, or shift-click to force.`}">
+                ✓ Mark «${escapeHtml(currentMs.name || currentMs.title || currentMs.id)}» done
+              </button>
+              ${canMarkMsDone
+                ? (totalTasksForMs > 0
+                    ? `<span class="overlay-mark-hint">All ${totalTasksForMs} linked task(s) closed.</span>`
+                    : `<span class="overlay-mark-hint">No linked tasks — closing manually.</span>`)
+                : `<span class="overlay-mark-hint overlay-mark-hint-blocked">${openTasksForMs.length} of ${totalTasksForMs} linked task(s) still open · shift-click to force</span>`}
             </div>
           ` : ''}
         </div>
@@ -701,24 +726,42 @@ function renderInitiativeDetailOverlay(ctx, onChange) {
 
   const markBtn = host.querySelector('.overlay-mark-done-btn');
   if (markBtn) {
-    markBtn.addEventListener('click', async () => {
+    // Force-override binding: shift-click bypasses the disabled state AND sends
+    // force=true to the endpoint. Lets operator retroactively close milestones
+    // whose tasks were settled offline.
+    markBtn.addEventListener('click', async (e) => {
+      const force = e.shiftKey === true;
+      if (markBtn.disabled && !force) return;
       const initId = markBtn.dataset.initId;
       const msId = markBtn.dataset.msId;
-      if (!await showConfirm(`Mark milestone «${currentMs.name}» done? The next milestone becomes current.`)) return;
+      const msName = currentMs.name || currentMs.title || currentMs.id;
+      const prompt = force
+        ? `Force-close milestone «${msName}» despite ${openTasksForMs.length} open task(s)?`
+        : `Mark milestone «${msName}» done? The next milestone becomes current.`;
+      if (!await showConfirm(prompt)) return;
       markBtn.disabled = true;
-      markBtn.textContent = 'marking…';
+      const origText = markBtn.textContent;
+      markBtn.textContent = force ? 'force-marking…' : 'marking…';
       try {
         const resp = await fetch('/api/update-initiative', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ bu: BU(), init_id: initId, action: 'mark_milestone_done', milestone_id: msId, actor: 'operator' }),
+          body: JSON.stringify({
+            bu: BU(),
+            init_id: initId,
+            action: 'mark_milestone_done',
+            milestone_id: msId,
+            actor: 'operator',
+            ...(force ? { force: true } : {}),
+          }),
         });
         const json = await resp.json().catch(() => ({}));
         if (!resp.ok || !json.ok) throw new Error(json.message || `HTTP ${resp.status}`);
         onChange();
-      } catch (e) {
+      } catch (err) {
         markBtn.disabled = false;
-        markBtn.textContent = `✗ ${e.message}`;
+        markBtn.textContent = `✗ ${err.message || err}`;
+        setTimeout(() => { markBtn.textContent = origText; }, 4000);
       }
     });
   }
