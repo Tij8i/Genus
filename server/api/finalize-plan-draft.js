@@ -205,9 +205,14 @@ function buildFinalizePrompt(bu, stewartId, plan, planGoals, planInits) {
     estimated_minutes: 30,
     risk_level: 'low',
     reversibility: 'high',
+    requires_operator_input: false,
+    operator_input_prompt: null,
     created_at: '<ISO now>',
   }, null, 2));
   L.push('```');
+  L.push('');
+  L.push(`**Feature (c) — human-input tasks grouped at plan start.** Set \`requires_operator_input: true\` on any task where you genuinely need information, decisions, or artifacts from the operator BEFORE an agent can execute (e.g. brand tone, target customer names, financial thresholds, access credentials, brainstorming choices). When true, also set \`operator_input_prompt\` to a one-sentence question the UI can display next to the task. **These tasks must be listed FIRST in the tasks.json array for their initiative**, so the operator can front-load their input and then let the agent execute autonomously. Do NOT flag tasks that just need routine oversight — reserve this for cases where execution is genuinely blocked without operator input.`);
+  L.push('');
   L.push(`Tasks land as status=**proposed** — the operator reviews + approves them via the Backlog / Suggestions flow before adapter pushes to Paperclip.`);
   L.push('');
   L.push(`3. **Update the plan**: set \`finalized_at\` to the current ISO timestamp and \`finalized_by\` to your agent name.`);

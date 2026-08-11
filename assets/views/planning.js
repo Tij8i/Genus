@@ -744,21 +744,47 @@ function renderInitiativeDetailOverlay(ctx, onChange) {
         </div>
       ` : ''}
 
-      ${linked.length ? `
+      ${linked.length ? (() => {
+        // Feature (c): tasks requiring operator input come first, so the operator
+        // can front-load their input and then let the agent execute autonomously.
+        // Within each bucket, terminal tasks sink to the bottom.
+        const TERMINAL_TASK_STATUS = new Set(['done', 'closed', 'completed', 'cancelled', 'rejected']);
+        const sortedLinked = linked.slice().sort((a, b) => {
+          const aInput = a.requires_operator_input === true ? 0 : 1;
+          const bInput = b.requires_operator_input === true ? 0 : 1;
+          if (aInput !== bInput) return aInput - bInput;
+          const aDone = TERMINAL_TASK_STATUS.has((a.status || '').toLowerCase()) ? 1 : 0;
+          const bDone = TERMINAL_TASK_STATUS.has((b.status || '').toLowerCase()) ? 1 : 0;
+          if (aDone !== bDone) return aDone - bDone;
+          return (a.proposed_at || a.created_at || '').localeCompare(b.proposed_at || b.created_at || '');
+        });
+        const openInputCount = sortedLinked.filter(t => t.requires_operator_input === true && !TERMINAL_TASK_STATUS.has((t.status || '').toLowerCase())).length;
+        const header = openInputCount > 0
+          ? `Linked tasks · ${linked.length} · <span class="input-needed-tag">${openInputCount} need your input first</span>`
+          : `Linked tasks · ${linked.length}`;
+        return `
         <div class="overlay-section">
-          <div class="card-section-label" style="margin-bottom:12px">Linked tasks · ${linked.length}</div>
+          <div class="card-section-label" style="margin-bottom:12px">${header}</div>
           <div class="overlay-task-list">
-            ${linked.slice(0, 10).map(t => `
-              <div class="overlay-task-row">
+            ${sortedLinked.slice(0, 10).map(t => {
+              const needsInput = t.requires_operator_input === true && !TERMINAL_TASK_STATUS.has((t.status || '').toLowerCase());
+              const inputPrompt = t.operator_input_prompt || '';
+              return `
+              <div class="overlay-task-row${needsInput ? ' overlay-task-row-input-needed' : ''}">
                 <span class="init-state-chip init-state-chip-${initTaskColor(t.status)}">${escapeHtml((t.status || '').replace(/_/g, ' '))}</span>
-                <div class="overlay-task-title">${escapeHtml(t.title)}</div>
+                ${needsInput
+                  ? `<span class="input-needed-chip" title="${escapeHtml(inputPrompt || 'Needs your input before an agent can run it.')}">needs input</span>`
+                  : `<span></span>`}
+                <div class="overlay-task-title">${escapeHtml(t.title)}${needsInput && inputPrompt ? `<div class="overlay-task-input-prompt">${escapeHtml(inputPrompt)}</div>` : ''}</div>
                 <span class="mono" style="font-size:10.5px;color:var(--text-faint)">${escapeHtml(t.id.replace('task-', ''))}</span>
               </div>
-            `).join('')}
-            ${linked.length > 10 ? `<div class="see-more">+ ${linked.length - 10} more — see Outputs</div>` : ''}
+            `;
+            }).join('')}
+            ${sortedLinked.length > 10 ? `<div class="see-more">+ ${sortedLinked.length - 10} more — see Outputs</div>` : ''}
           </div>
         </div>
-      ` : ''}
+        `;
+      })() : ''}
     </div>
   `;
 
