@@ -1666,32 +1666,68 @@ async function checkAndRenderProposalsBanner(onChange) {
   if (btn) btn.addEventListener('click', () => openProposalsPickerOverlay(latestSet, onChange));
 }
 
+function renderProposalCard(p, idx) {
+  const goals = p.proposed_goals || [];
+  const inits = p.proposed_initiatives || [];
+  const impact = Array.isArray(p.expected_impact) ? p.expected_impact.filter(x => x && x.kpi_id) : [];
+
+  const impactBlock = impact.length ? `
+    <div style="border:1px solid #dfe1e6;border-radius:8px;padding:10px 12px;background:#f7f9fc;">
+      <div style="font-size:11px;color:var(--text-faint);letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px;">Expected KPI impact</div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        ${impact.map(e => {
+          const delta = e.predicted_delta != null ? String(e.predicted_delta) : '?';
+          const arrow = (typeof e.predicted_delta === 'number' && e.predicted_delta > 0) ? '↑'
+                      : (typeof e.predicted_delta === 'number' && e.predicted_delta < 0) ? '↓' : '·';
+          const conf = e.confidence ? `<span style="font-size:11px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.05em;">${escapeHtml(e.confidence)} conf.</span>` : '';
+          return `
+            <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;">
+              <span class="mono" style="font-size:12px;color:var(--text);font-weight:600;">${escapeHtml(e.kpi_id)}</span>
+              <span style="font-size:13px;color:var(--text);">${arrow} Δ ${escapeHtml(delta)}</span>
+              ${e.current_value != null ? `<span style="font-size:11.5px;color:var(--text-faint);">from ${escapeHtml(String(e.current_value))}${e.predicted_value_at_period_end != null ? ` → ${escapeHtml(String(e.predicted_value_at_period_end))}` : ''}</span>` : ''}
+              ${conf}
+              ${e.mechanism ? `<div style="width:100%;font-size:12px;color:var(--text-faint);padding-left:4px;">— ${escapeHtml(e.mechanism)}</div>` : ''}
+            </div>
+          `;
+        }).join('')}
+      </div>
+    </div>
+  ` : `
+    <div style="border:1px dashed #dfe1e6;border-radius:8px;padding:8px 12px;background:transparent;font-size:11.5px;color:var(--text-faint);">
+      Expected KPI impact: not sized (Stewart didn't populate this — likely proposed before KPIs were configured for this BU).
+    </div>
+  `;
+
+  return `
+    <div data-proposal-idx="${idx}" style="border:2px solid var(--border);border-radius:10px;padding:16px 18px;display:flex;flex-direction:column;gap:12px;background:#fefefe;">
+      <div>
+        <div style="font-size:11px;color:var(--text-faint);letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px;">Proposal ${idx + 1} of 3</div>
+        <div style="font-size:17px;font-weight:600;color:var(--text);">${escapeHtml(p.title || 'Untitled')}</div>
+      </div>
+      <div style="font-size:12px;color:var(--text-faint);display:flex;gap:14px;flex-wrap:wrap;">
+        <span>${escapeHtml((p.period_start || '') + ' → ' + (p.period_target_end || ''))}</span>
+        <span>${goals.length} goal${goals.length === 1 ? '' : 's'} · ${inits.length} initiative${inits.length === 1 ? '' : 's'}</span>
+      </div>
+      ${p.rationale ? `<div style="font-size:13.5px;color:var(--text);border-left:3px solid #af7e02;padding-left:12px;line-height:1.55;">${escapeHtml(p.rationale)}</div>` : ''}
+      ${impactBlock}
+      ${p.reasoning ? `<details style="font-size:12.5px;color:var(--text-faint);"><summary style="cursor:pointer;font-weight:600;color:var(--text);">Reasoning</summary><div style="padding-top:6px;line-height:1.55;">${escapeHtml(p.reasoning)}</div></details>` : ''}
+      <details style="font-size:12.5px;color:var(--text-faint);"><summary style="cursor:pointer;font-weight:600;color:var(--text);">Goals + initiatives</summary>
+        <div style="padding-top:6px;">
+          <div style="font-weight:600;color:var(--text);margin-bottom:2px;">Goals:</div>
+          <ul style="margin:0 0 8px 18px;padding:0;">${goals.map(g => `<li>${escapeHtml(g.title || '')}${g.description ? `<div style="font-size:11.5px;color:var(--text-faint);">${escapeHtml(g.description)}</div>` : ''}</li>`).join('') || '<li>—</li>'}</ul>
+          <div style="font-weight:600;color:var(--text);margin-bottom:2px;">Initiatives:</div>
+          <ul style="margin:0 0 4px 18px;padding:0;">${inits.map(i => `<li>${escapeHtml(i.title || '')}${i.active_hypothesis ? `<div style="font-size:11.5px;color:var(--text-faint);">${escapeHtml(i.active_hypothesis)}</div>` : ''}</li>`).join('') || '<li>—</li>'}</ul>
+        </div>
+      </details>
+      <button type="button" class="plan-cycle-btn plan-cycle-btn-primary" data-pick-id="${escapeHtml(p.id)}" style="align-self:flex-start;">Pick this one</button>
+    </div>
+  `;
+}
+
 function openProposalsPickerOverlay(proposals, onChange) {
   const bodyHtml = `
-    <div style="display:grid;grid-template-columns:repeat(${proposals.length}, 1fr);gap:14px;">
-      ${proposals.map((p, idx) => `
-        <div data-proposal-idx="${idx}" style="border:2px solid var(--border);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px;background:#fefefe;">
-          <div>
-            <div style="font-size:11px;color:var(--text-faint);letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px;">Proposal ${idx + 1}</div>
-            <div style="font-size:15px;font-weight:600;color:var(--text);">${escapeHtml(p.title || 'Untitled')}</div>
-          </div>
-          <div style="font-size:12px;color:var(--text-faint);">
-            <div>${escapeHtml((p.period_start || '') + ' → ' + (p.period_target_end || ''))}</div>
-            <div>${(p.proposed_goals || []).length} goals · ${(p.proposed_initiatives || []).length} initiatives</div>
-          </div>
-          ${p.rationale ? `<div style="font-size:13px;color:var(--text);border-left:3px solid #af7e02;padding-left:10px;">${escapeHtml(p.rationale)}</div>` : ''}
-          ${p.reasoning ? `<details style="font-size:12px;color:var(--text-faint);"><summary style="cursor:pointer;font-weight:600;color:var(--text);">Reasoning</summary><div style="padding-top:6px;line-height:1.5;">${escapeHtml(p.reasoning)}</div></details>` : ''}
-          <details style="font-size:12px;color:var(--text-faint);"><summary style="cursor:pointer;font-weight:600;color:var(--text);">Goals + initiatives</summary>
-            <div style="padding-top:6px;">
-              <div style="font-weight:600;color:var(--text);margin-bottom:2px;">Goals:</div>
-              <ul style="margin:0 0 8px 18px;padding:0;">${(p.proposed_goals || []).map(g => `<li>${escapeHtml(g.title || '')}</li>`).join('') || '<li>—</li>'}</ul>
-              <div style="font-weight:600;color:var(--text);margin-bottom:2px;">Initiatives:</div>
-              <ul style="margin:0 0 4px 18px;padding:0;">${(p.proposed_initiatives || []).map(i => `<li>${escapeHtml(i.title || '')}</li>`).join('') || '<li>—</li>'}</ul>
-            </div>
-          </details>
-          <button type="button" class="plan-cycle-btn plan-cycle-btn-primary" data-pick-id="${escapeHtml(p.id)}" style="margin-top:auto;">Pick this one</button>
-        </div>
-      `).join('')}
+    <div style="display:flex;flex-direction:column;gap:16px;">
+      ${proposals.map((p, idx) => renderProposalCard(p, idx)).join('')}
     </div>
     <div class="proposals-pick-status mono" style="font-size:12px;min-height:16px;margin-top:12px;text-align:center;"></div>
   `;
