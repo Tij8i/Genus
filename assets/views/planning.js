@@ -51,10 +51,10 @@ let editPlanOpen = false;
 let cycleBusy = false;  // disables buttons while a plan-cycle mutation is in flight
 let showArchive = false;  // Backlog kanban: toggle Promoted + Discarded columns (GEN-50)
 
-// Sub-tab visibility. Retrospective re-enabled 2026-08-11 alongside feature (e)
-// so operators can see retros land + trigger them manually. Backlog stays
-// hidden — re-enable by adding its name back to VISIBLE_SUBTABS.
-const VISIBLE_SUBTABS = ['active', 'retrospective'];
+// Sub-tab visibility. Backlog surfaced 2026-08-12 per operator ask: backlog
+// is the single source of truth for "things to do"; planning is the grooming
+// ritual that pulls from backlog into a cycle.
+const VISIBLE_SUBTABS = ['active', 'backlog', 'retrospective'];
 
 export function renderPlanning(ctx, { onChange }) {
   // Read sub-tab from URL query (#planning?tab=backlog). Router strips the
@@ -133,14 +133,16 @@ function renderActiveSubTab(ctx) {
   const planInits = activePlan
     ? (activePlan.initiative_ids || []).map(iid => ctx.initiatives.find(i => i.id === iid)).filter(Boolean)
     : [];
-  const drafts = (ctx.plans || []).filter(p => p.status === 'draft');
   const queued = (ctx.plans || [])
     .filter(p => p.status === 'queued')
     .sort((a, b) => (a.queued_at || a.created_at || '').localeCompare(b.queued_at || b.created_at || ''));
+  // Kill-Draft-State (2026-08-12): drafts no longer created. Legacy drafts, if
+  // any, are auto-discarded via the substrate cleanup — the Drafts section is
+  // gone from the UI entirely. Pick a proposal → plan lands active or queued;
+  // Stewart populates checkpoints + tasks in the background.
   return `
     ${renderActivePlanCard(activePlan, planInits)}
     ${renderQueuedList(queued, activePlan)}
-    ${renderDraftsList(drafts, ctx, activePlan)}
     ${renderCoreKpisStrip(ctx)}
     ${renderGroupedTimeline(ctx, activePlan, planInits)}
   `;
@@ -162,14 +164,15 @@ function renderQueuedList(queued, activePlan) {
           const initCount = (q.initiative_ids || []).length;
           const period = `${q.period_start || '?'} → ${q.period_target_end || 'open'}`;
           const pos = queued.length > 1 ? ` · #${i + 1} in queue` : '';
+          const populating = !q.finalized_at;
           return `
             <div class="draft-row" data-draft-id="${escapeHtml(q.id)}" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid var(--border);border-radius:6px;background:var(--surface);">
               <div style="flex:1;min-width:0;">
                 <div style="font-weight:600;font-size:14px;color:var(--text);">${escapeHtml(q.title || 'Untitled')}</div>
-                <div class="mono" style="font-size:11px;color:var(--text-faint);margin-top:2px;">${escapeHtml(period)} · ${goalCount} goal${goalCount === 1 ? '' : 's'} · ${initCount} initiative${initCount === 1 ? '' : 's'}${pos} · queued ${agoFromISO(q.queued_at)}</div>
+                <div class="mono" style="font-size:11px;color:var(--text-faint);margin-top:2px;">${escapeHtml(period)} · ${goalCount} goal${goalCount === 1 ? '' : 's'} · ${initCount} initiative${initCount === 1 ? '' : 's'}${pos} · queued ${agoFromISO(q.queued_at)}${populating ? ' · <span style="color:var(--amber-fg,#b57500);font-weight:600;">Stewart populating</span>' : ' · <span style="color:var(--green-fg,#0e9f6e);font-weight:600;">ready</span>'}</div>
               </div>
               <div style="display:flex;gap:6px;">
-                <button type="button" class="plan-cycle-btn" data-draft-action="unqueue" data-draft-id="${escapeHtml(q.id)}" title="Move back to Drafts so it won't auto-activate next.">Unqueue</button>
+                <button type="button" class="plan-cycle-btn" data-draft-action="discard" data-draft-id="${escapeHtml(q.id)}" title="Cancel this queued plan (marks it discarded so it won't auto-activate).">Cancel</button>
               </div>
             </div>
           `;
@@ -320,6 +323,10 @@ function renderActivePlanCard(activePlan, planInits) {
   const inProgress = planInits.filter(i => ['in_progress', 'review', 'scoping'].includes((i.status || '').toLowerCase())).length;
   const completionPct = total > 0 ? Math.round((done / total) * 100) : 0;
   const timeProg = cycleTimeProgress(activePlan);
+  // Kill-Draft-State: plan can be active + not-yet-finalized (Stewart is
+  // still populating checkpoints + tasks in the background). Surface it.
+  const populating = !activePlan.finalized_at;
+  const populatingSince = populating && activePlan.created_at ? agoFromISO(activePlan.created_at) : '';
   return `
     <div class="card">
       <div class="plan-card-header">
@@ -331,6 +338,12 @@ function renderActivePlanCard(activePlan, planInits) {
             <span class="plan-card-locked"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Locked ${escapeHtml(activePlan.activated_at ? activePlan.activated_at.slice(0, 10) : '')}</span>
           </div>
           ${activePlan.rationale ? `<p class="plan-card-rationale">${escapeHtml(activePlan.rationale)}</p>` : ''}
+          ${populating ? `
+            <div class="plan-populating-strip">
+              <span class="plan-populating-spinner"></span>
+              <span>Stewart is populating checkpoints + tasks${populatingSince ? ` — picked ${populatingSince}` : ''}. Refresh in a few minutes.</span>
+            </div>
+          ` : ''}
         </div>
         <div class="plan-card-stats">
           <div class="plan-card-pct mono">${completionPct}%</div>
@@ -342,6 +355,7 @@ function renderActivePlanCard(activePlan, planInits) {
         <button type="button" class="plan-cycle-btn" data-cycle-action="complete">Mark cycle complete</button>
         <button type="button" class="plan-cycle-btn" data-cycle-action="propose">Ask Stewart for 3 plan proposals</button>
         <button type="button" class="plan-cycle-btn plan-cycle-btn-primary" data-cycle-action="edit">Edit current plan</button>
+        ${populating ? `<button type="button" class="plan-cycle-btn" data-cycle-action="discard-populating" title="Discard this plan before Stewart finishes populating it (rare — use if you picked wrong).">Discard</button>` : ''}
       </div>
     </div>
   `;
@@ -1174,6 +1188,7 @@ function wirePlanCycleControls(scope, ctx, onChange) {
         if (action === 'complete') return onCompleteCycle(planId, btn, ctx, onChange);
         if (action === 'propose') return onRequestProposals(planId, btn, ctx, onChange);
         if (action === 'edit') { editPlanOpen = true; renderEditPlanOverlay(ctx, onChange); }
+        if (action === 'discard-populating') return onDiscardDraft(planId, btn, ctx, onChange);
       });
     });
   }

@@ -17,6 +17,7 @@ import { getFile, putFile, jsonResponse, todayISO } from '../storage/index.js';
 import { requireAdmin } from './_identity.js';
 import { requireExternalRead } from './_external_auth.js';
 import { getSchemaVersion, isV2 } from './_schema-version.js';
+import { buildFinalizePrompt, resolveStrategyStewart } from './finalize-plan-draft.js';
 
 export async function onRequestPost({ request, env }) {
   if (!env.GITHUB_PAT) return jsonResponse(500, { ok: false, message: 'GITHUB_PAT not set' });
@@ -163,14 +164,12 @@ export async function onRequestPost({ request, env }) {
   const planId = `plan-${today}-${String(nextSuffix).padStart(2, '0')}`;
   const stewartCredit = stewartId || 'stewart';
 
-  // Feature (d): conditional initial status.
-  //   - No active plan → the picked proposal becomes 'active' immediately
-  //     (nothing to wait behind).
-  //   - Active plan exists → new plan is 'draft'. Operator finalizes with
-  //     Stewart and then explicitly activates (immediately or queued) via
-  //     update-plan. We no longer force-supersede the current active on pick.
+  // Kill-Draft-State (2026-08-12): pick lands as 'active' if no active plan
+  // exists, otherwise 'queued'. The finalize task is filed automatically
+  // below — no operator "Finalize" click, no draft-limbo state. UI shows
+  // "Stewart populating..." until finalized_at is set.
   const previousActive = plans.find(p => p.status === 'active');
-  const initialStatus = previousActive ? 'draft' : 'active';
+  const initialStatus = previousActive ? 'queued' : 'active';
 
   const newPlan = {
     id: planId,
@@ -185,8 +184,13 @@ export async function onRequestPost({ request, env }) {
     created_at: now,
     created_by: ['operator', stewartCredit],
     activated_at: initialStatus === 'active' ? now : null,
+    queued_at: initialStatus === 'queued' ? now : null,
+    queued_after_plan_id: initialStatus === 'queued' ? previousActive.id : null,
     completed_at: null,
     closing_notes: null,
+    finalized_at: null,               // Stewart populates checkpoints + tasks; set when done
+    finalized_by: null,
+    finalize_task_id: null,           // filled below after task is filed
     from_proposal: picked.id,
     superseded_plan_id: null,
     closure_status: null,
@@ -223,6 +227,7 @@ export async function onRequestPost({ request, env }) {
   });
 
   // Write all 4 files (sequential — shas chain)
+  let finalizeTaskId = null;
   try {
     const r1 = await putFile(env.GITHUB_PAT, proposalsPath, JSON.stringify(proposals, null, 2) + '\n', proposalsFile.sha, `proposals: pick ${proposalId} (set ${setId})`);
     const goalsFile2 = await getFile(env.GITHUB_PAT, goalsPath);
@@ -230,13 +235,38 @@ export async function onRequestPost({ request, env }) {
     const initsFile2 = await getFile(env.GITHUB_PAT, initsPath);
     const r3 = await putFile(env.GITHUB_PAT, initsPath, JSON.stringify(initiatives, null, 2) + '\n', initsFile2.sha, `initiatives: +${newInitIds.length} from proposal ${proposalId}`);
     const plansFile2 = await getFile(env.GITHUB_PAT, plansPath);
-    const r4 = await putFile(env.GITHUB_PAT, plansPath, JSON.stringify(plans, null, 2) + '\n', plansFile2.sha, `plans: draft ${planId} from proposal ${proposalId}`);
+    const r4 = await putFile(env.GITHUB_PAT, plansPath, JSON.stringify(plans, null, 2) + '\n', plansFile2.sha, `plans: ${initialStatus} ${planId} from proposal ${proposalId}`);
+
+    // Kill-Draft-State (2026-08-12): auto-file the finalize task. Stewart
+    // populates checkpoints + tasks in the background while the plan is
+    // live (active or queued). UI shows "Stewart populating..." until
+    // finalized_at lands. Failure here is non-fatal — operator can retry
+    // finalize manually via the legacy /api/finalize-plan-draft endpoint.
+    try {
+      finalizeTaskId = await autoFileFinalizeTask({
+        pat: env.GITHUB_PAT, bu, plan: newPlan, planGoals: newGoalIds.map(id => goals.find(g => g.id === id)).filter(Boolean),
+        planInits: newInitIds.map(id => initiatives.find(i => i.id === id)).filter(Boolean),
+      });
+      // Stamp finalize_task_id on the plan (one more write).
+      if (finalizeTaskId) {
+        const plansFile3 = await getFile(env.GITHUB_PAT, plansPath);
+        const plans3 = JSON.parse(plansFile3.content);
+        const p3 = plans3.find(x => x.id === planId);
+        if (p3) {
+          p3.finalize_task_id = finalizeTaskId;
+          await putFile(env.GITHUB_PAT, plansPath, JSON.stringify(plans3, null, 2) + '\n', plansFile3.sha, `plans: ${planId} finalize_task_id → ${finalizeTaskId}`);
+        }
+      }
+    } catch (fe) {
+      console.warn('[select-plan-proposal] auto-finalize failed (plan is live but not populated):', fe.message || fe);
+    }
 
     return jsonResponse(200, {
       ok: true,
       plan: newPlan,
       goal_ids: newGoalIds,
       initiative_ids: newInitIds,
+      finalize_task_id: finalizeTaskId,
       rejected_count: proposals.filter(p => p.proposal_set_id === setId && p.status === 'rejected').length,
       commit_shas: {
         proposals: r1.commit.sha,
@@ -245,8 +275,8 @@ export async function onRequestPost({ request, env }) {
         plans: r4.commit.sha,
       },
       message: initialStatus === 'active'
-        ? `Plan ${planId} activated from proposal ${proposalId} (no active plan to queue behind).`
-        : `Plan ${planId} created as draft from proposal ${proposalId}. Finalize with Stewart, then activate (or queue after ${previousActive.id}).`,
+        ? `Plan ${planId} activated from proposal ${proposalId}. Stewart is populating checkpoints + tasks (~3-5 min).`
+        : `Plan ${planId} queued behind ${previousActive.id}. Stewart is populating checkpoints + tasks in the background.`,
     });
   } catch (e) {
     return jsonResponse(e.status || 500, { ok: false, message: `Write failed: ${e.message || e}` });
@@ -265,6 +295,61 @@ async function resolveStrategyStewartId(pat, bu) {
   } catch {
     return null;
   }
+}
+
+// Kill-Draft-State helper: called immediately after the plan is created +
+// substrate written. Files an auto-approved 'planning_finalize' task
+// targeted at the Strategy Stewart, mirroring the shape of
+// finalize-plan-draft.js. Returns the task id so the caller can stamp it
+// on plan.finalize_task_id.
+async function autoFileFinalizeTask({ pat, bu, plan, planGoals, planInits }) {
+  const stewart = await resolveStrategyStewart(pat, bu);
+  if (!stewart) return null;
+  const schemaVersion = await getSchemaVersion(pat, bu);
+  const tasksPath = `dashboard/public/data/bus/${bu}/tasks.json`;
+  const tasksFile = await getFile(pat, tasksPath);
+  const tasks = JSON.parse(tasksFile.content);
+  if (!Array.isArray(tasks)) return null;
+  const now = todayISO();
+  const today = now.slice(0, 10);
+  const todayTasks = tasks.filter(t => t.id && t.id.startsWith(`task-${today}-`));
+  const nextNum = String(todayTasks.length + 1).padStart(3, '0');
+  const taskId = `task-${today}-${nextNum}`;
+  const description = buildFinalizePrompt(bu, stewart.agent_id, plan, planGoals, planInits, schemaVersion);
+  const newTask = {
+    id: taskId, bu,
+    title: `Finalize plan ${plan.id} — add tasks + ${isV2(schemaVersion) ? 'checkpoints' : 'milestones + gateways'} (auto-filed on pick)`,
+    description,
+    origin: 'auto_on_pick',
+    proposer: 'operator',
+    proposed_at: now,
+    source_heartbeat: 'plan-pick-auto-finalize',
+    category: 'planning_finalize',
+    risk_level: 'low',
+    reversibility: 'high',
+    estimated_minutes: 30,
+    target: {
+      type: 'planning_finalize',
+      scope: `dashboard/public/data/bus/${bu}/initiatives.json + tasks.json + plans.json`,
+      executor: stewart.agent_id,
+    },
+    advances_initiative: null,
+    advances_plan: plan.id,
+    affects_kpi: null,
+    from_memo: null,
+    status: 'approved',
+    approval: {
+      rule_evaluation: 'auto_on_pick → auto-approved (kill-draft-state flow)',
+      decided_by: 'operator',
+      decided_at: now,
+      notes: null,
+    },
+    execution: { paperclip_issue_id: null, paperclip_issue_url: null, started_at: null, completed_at: null, outcome: null },
+  };
+  tasks.push(newTask);
+  await putFile(pat, tasksPath, JSON.stringify(tasks, null, 2) + '\n', tasksFile.sha,
+    `tasks: ${taskId} — auto-finalize ${plan.id} on pick (→ ${stewart.agent_id})`);
+  return taskId;
 }
 
 export function onRequestGet() {
