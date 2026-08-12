@@ -133,16 +133,12 @@ function renderActiveSubTab(ctx) {
   const planInits = activePlan
     ? (activePlan.initiative_ids || []).map(iid => ctx.initiatives.find(i => i.id === iid)).filter(Boolean)
     : [];
-  const queued = (ctx.plans || [])
-    .filter(p => p.status === 'queued')
-    .sort((a, b) => (a.queued_at || a.created_at || '').localeCompare(b.queued_at || b.created_at || ''));
-  // Kill-Draft-State (2026-08-12): drafts no longer created. Legacy drafts, if
-  // any, are auto-discarded via the substrate cleanup — the Drafts section is
-  // gone from the UI entirely. Pick a proposal → plan lands active or queued;
-  // Stewart populates checkpoints + tasks in the background.
+  // Active tab (2026-08-12 reshape) is now minimal: JUST the active plan +
+  // its KPIs + timeline. Queued plans and "Ask Stewart for 3 proposals"
+  // moved to the Backlog tab per operator model: "backlog is where you
+  // plan; active is where you execute."
   return `
     ${renderActivePlanCard(activePlan, planInits)}
-    ${renderQueuedList(queued, activePlan)}
     ${renderCoreKpisStrip(ctx)}
     ${renderGroupedTimeline(ctx, activePlan, planInits)}
   `;
@@ -353,7 +349,6 @@ function renderActivePlanCard(activePlan, planInits) {
       </div>
       <div class="plan-card-controls" data-plan-id="${escapeHtml(activePlan.id)}">
         <button type="button" class="plan-cycle-btn" data-cycle-action="complete">Mark cycle complete</button>
-        <button type="button" class="plan-cycle-btn" data-cycle-action="propose">Ask Stewart for 3 plan proposals</button>
         <button type="button" class="plan-cycle-btn plan-cycle-btn-primary" data-cycle-action="edit">Edit current plan</button>
         ${populating ? `<button type="button" class="plan-cycle-btn" data-cycle-action="discard-populating" title="Discard this plan before Stewart finishes populating it (rare — use if you picked wrong).">Discard</button>` : ''}
       </div>
@@ -540,24 +535,73 @@ function renderBacklogSubTab(ctx) {
     promoted_to_plan: allItems.filter(x => x.backlog_state === 'promoted_to_plan'),
     discarded: allItems.filter(x => x.backlog_state === 'discarded'),
   };
+  // Queued plans (2026-08-12 reshape): they live in Backlog now, not on
+  // Active. Cards show one per plan, ordered FIFO by queued_at.
+  const queuedPlans = (ctx.plans || [])
+    .filter(p => p.status === 'queued')
+    .sort((a, b) => (a.queued_at || a.created_at || '').localeCompare(b.queued_at || b.created_at || ''));
+  const activePlan = (ctx.plans || []).find(p => p.status === 'active');
 
   return `
     <div class="card">
       <div class="backlog-header">
         <div class="backlog-tagline">
           Candidate pool. Memos + agent scans feed <strong>Untriaged</strong>. Vet → <strong>Ready</strong>.
-          Promote to a Plan from the Active tab.
+          Group into a plan (auto-queues if a plan is already active).
         </div>
-        <label class="backlog-archive-toggle">
-          <input type="checkbox" id="backlog-show-archive" ${showArchive ? 'checked' : ''}>
-          Show Promoted + Discarded
-        </label>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button type="button" class="plan-cycle-btn plan-cycle-btn-primary" data-cycle-action="propose">Ask Stewart for 3 plan proposals</button>
+          <label class="backlog-archive-toggle">
+            <input type="checkbox" id="backlog-show-archive" ${showArchive ? 'checked' : ''}>
+            Show Promoted + Discarded
+          </label>
+        </div>
       </div>
       <div class="kanban">
         ${renderBacklogColumn('Untriaged', '🆕', cols.untriaged, 'untriaged')}
         ${renderBacklogColumn('Ready', '✓', cols.ready, 'ready')}
+        ${renderQueuedPlansColumn(queuedPlans, activePlan)}
         ${showArchive ? renderBacklogColumn('Promoted', '➤', cols.promoted_to_plan, 'promoted_to_plan') : ''}
         ${showArchive ? renderBacklogColumn('Discarded', '✗', cols.discarded, 'discarded') : ''}
+      </div>
+    </div>
+  `;
+}
+
+// Queued plans as a Backlog column. Each card = one queued plan.
+function renderQueuedPlansColumn(plans, activePlan) {
+  const items = plans.map((p, i) => {
+    const goalCount = (p.goal_ids || []).length;
+    const initCount = (p.initiative_ids || []).length;
+    const populating = !p.finalized_at;
+    const pos = plans.length > 1 ? ` · #${i + 1}` : '';
+    const afterLine = activePlan
+      ? `after "${escapeHtml((activePlan.title || activePlan.id).slice(0, 28))}"`
+      : `no active plan — will auto-activate`;
+    return `
+      <div class="kanban-card kanban-card-queued" data-queued-id="${escapeHtml(p.id)}">
+        <div style="font-weight:600;font-size:13.5px;color:var(--text);">${escapeHtml(p.title || 'Untitled')}</div>
+        <div class="mono" style="font-size:10.5px;color:var(--text-faint);margin-top:3px;">${goalCount} goal${goalCount === 1 ? '' : 's'} · ${initCount} init${initCount === 1 ? '' : 's'}${pos}</div>
+        <div style="font-size:11px;color:var(--text-faint);margin-top:4px;">${afterLine}</div>
+        <div style="margin-top:5px;font-size:11px;">
+          ${populating
+            ? '<span style="color:var(--amber-fg,#b57500);font-weight:600;">Stewart populating…</span>'
+            : '<span style="color:var(--green-fg,#0e9f6e);font-weight:600;">Ready to activate</span>'}
+        </div>
+        <div style="margin-top:6px;display:flex;gap:6px;">
+          <button type="button" class="b-action b-discard" data-action="cancel_queued" data-plan-id="${escapeHtml(p.id)}">Cancel</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+  return `
+    <div class="kanban-col" data-state="queued">
+      <div class="kanban-col-h">
+        <span>📅 Queued</span>
+        <span class="kanban-count">${plans.length}</span>
+      </div>
+      <div class="kanban-col-body">
+        ${plans.length ? items : '<div class="kanban-empty">—</div>'}
       </div>
     </div>
   `;
@@ -630,8 +674,37 @@ function wireBacklogActions(scope, ctx, onChange) {
     });
   }
 
-  // Per-card action buttons
+  // "Ask Stewart for 3 plan proposals" (moved from Active tab to Backlog).
+  scope.querySelectorAll('button[data-cycle-action="propose"]').forEach(btn => {
+    btn.addEventListener('click', () => onRequestProposals(null, btn, ctx, onChange));
+  });
+
+  // Queued plan Cancel buttons.
+  scope.querySelectorAll('button[data-action="cancel_queued"]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const planId = btn.dataset.planId;
+      if (!await showConfirm(`Cancel queued plan ${planId}?\n\nIt won't auto-activate when the current active plan finishes. Marked as discarded.`)) return;
+      const original = btn.textContent;
+      btn.disabled = true; btn.textContent = 'cancelling…';
+      try {
+        const resp = await fetch('/api/update-plan', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bu: BU(), plan_id: planId, action: 'discard', actor: 'operator' }),
+        });
+        const json = await resp.json().catch(() => ({}));
+        if (!resp.ok || !json.ok) throw new Error(json.message || `HTTP ${resp.status}`);
+        if (onChange) onChange();
+      } catch (e) {
+        btn.disabled = false; btn.textContent = original;
+        await showAlert(`Cancel failed: ${e.message || 'unknown'}`);
+      }
+    });
+  });
+
+  // Per-card backlog-item action buttons (Untriaged / Ready / Discarded).
   scope.querySelectorAll('button.b-action[data-action]').forEach(btn => {
+    // Skip queued cancel buttons — already handled above with a different endpoint.
+    if (btn.dataset.action === 'cancel_queued') return;
     btn.addEventListener('click', async () => {
       const itemType = btn.dataset.itemType;
       const itemId = btn.dataset.itemId;
@@ -659,7 +732,7 @@ function wireBacklogActions(scope, ctx, onChange) {
         });
         const json = await resp.json().catch(() => ({}));
         if (!resp.ok || !json.ok) throw new Error(json.message || `HTTP ${resp.status}`);
-        onChange();  // re-fetches ctx + re-renders
+        onChange();
       } catch (e) {
         btn.disabled = false;
         btn.textContent = originalText;
@@ -1328,7 +1401,7 @@ async function onRequestProposals(planId, btn, ctx, onChange) {
   // Previously used /api/file-stewart-task with executor=`${BU()}-stewart` — a name
   // that doesn't resolve to any real agent, so it silently fell back to genus-agent.
   // The new endpoint resolves the Strategy Stewart from agent_bindings.json.
-  if (!await showConfirm(`Ask the Strategy Stewart of ${buLabel()} to draft 3 alternative plan proposals?\n\nThe Stewart will read the current plan + backlog + memos, then produce 3 genuinely different plan shapes. You pick ONE to promote into a draft plan.`)) return;
+  if (!await showConfirm(`Ask the Strategy Stewart of ${buLabel()} to draft 3 alternative plan proposals?\n\nThe Stewart will read the current plan + backlog + memos, then produce 3 genuinely different plan shapes. Pick ONE — it will queue behind the current active plan (or activate immediately if none). Takes ~3-5 min.`)) return;
   await runCycleAction(btn, async () => {
     const resp = await fetch('/api/request-plan-proposals', {
       method: 'POST',
