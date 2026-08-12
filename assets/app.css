@@ -2845,6 +2845,23 @@ body {
   text-transform: uppercase;
   margin-right: 6px;
 }
+.tl3-row-milestones {
+  font-size: 12.5px;
+  color: var(--text-dim);
+  margin-top: 4px;
+  line-height: 1.4;
+}
+.tl3-ms-label {
+  font-size: 10px;
+  letter-spacing: .06em;
+  color: var(--text-veryfaint);
+  text-transform: uppercase;
+  margin-right: 6px;
+}
+.tl3-ms-next {
+  color: var(--text);
+  font-weight: 500;
+}
 .core-kpi-strip {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
