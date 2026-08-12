@@ -20,6 +20,7 @@
 import { getFile, putFile, jsonResponse, todayISO, todayDate } from './_gh.js';
 import { requireAdmin } from './_identity.js';
 import { requireExternalRead } from './_external_auth.js';
+import { getSchemaVersion, isV2 } from './_schema-version.js';
 
 export async function onRequestPost({ request, env }) {
   if (!env.GITHUB_PAT) return jsonResponse(500, { ok: false, message: 'GITHUB_PAT not set' });
@@ -48,8 +49,9 @@ export async function onRequestPost({ request, env }) {
 
   // Gather context for the synthesis prompt
   const ctx = await loadContext(env.GITHUB_PAT, bu);
+  const schemaVersion = await getSchemaVersion(env.GITHUB_PAT, bu);
 
-  const description = buildSynthesisPrompt(bu, stewart.agent_id, ctx);
+  const description = buildSynthesisPrompt(bu, stewart.agent_id, ctx, schemaVersion);
 
   const tasksPath = `dashboard/public/data/bus/${bu}/tasks.json`;
   let tasksFile;
@@ -177,7 +179,8 @@ async function loadContext(pat, bu) {
   return results;
 }
 
-function buildSynthesisPrompt(bu, stewartId, ctx) {
+function buildSynthesisPrompt(bu, stewartId, ctx, schemaVersion) {
+  const v2 = isV2(schemaVersion);
   const activePlan = (ctx.plans || []).find(p => p.status === 'active');
   const readyBacklog = [
     ...(ctx.goals || []).filter(g => g.backlog_state === 'ready').map(g => ({ ...g, _type: 'goal' })),
@@ -256,46 +259,17 @@ function buildSynthesisPrompt(bu, stewartId, ctx) {
   lines.push(`- Period (30 days default; adjust if a different window fits)`);
   lines.push(`- 1–3 goals, 3–5 initiatives drawn from either backlog OR new ideas you justify`);
   lines.push(`- A "reasoning" section: why this set, what it sacrifices, what it bets on`);
-  lines.push(`- **Expected KPI impact** (\`expected_impact[]\`): for each primary/north-star KPI above, name the predicted delta by end of period + the mechanism. If a KPI won't move under this proposal, still list it with \`predicted_delta: 0\` and say why. If no KPIs are configured, use an empty array and flag it in the reasoning.`);
+  if (v2) {
+    lines.push(`- **Every proposed Goal MUST have \`kpi_id\` + \`target_value\` + \`target_date\`** (schema fusion — Goals are KPI targets now). If the right KPI doesn't exist in the "Current KPI state" section above, propose adding one in the reasoning; the operator will create it before finalizing. Do NOT emit an \`expected_impact[]\` field — it's derived from the Goals themselves in v2.`);
+  } else {
+    lines.push(`- **Expected KPI impact** (\`expected_impact[]\`): for each primary/north-star KPI above, name the predicted delta by end of period + the mechanism. If a KPI won't move under this proposal, still list it with \`predicted_delta: 0\` and say why. If no KPIs are configured, use an empty array and flag it in the reasoning.`);
+  }
   lines.push('');
   lines.push(`## Output: write to dashboard/public/data/bus/${bu}/plan_proposals.json`);
   lines.push('');
   lines.push(`Schema for each proposal entry:`);
   lines.push('```json');
-  lines.push(JSON.stringify({
-    id: 'plan-proposal-YYYYMMDDHHMMSS-NN',
-    proposal_set_id: 'pset-YYYYMMDDHHMMSS',
-    bu,
-    status: 'proposed',
-    title: '<distinct title>',
-    rationale: '<2-4 sentences why this plan>',
-    period_start: 'YYYY-MM-DD',
-    period_target_end: 'YYYY-MM-DD',
-    proposed_goals: [
-      { title: '<goal title>', description: '<goal description>' },
-    ],
-    proposed_initiatives: [
-      {
-        title: '<initiative title>',
-        goal_index: 0,
-        active_hypothesis: '<falsifiable claim>',
-        success_criterion: '<measurable outcome>',
-        target_close_date: 'YYYY-MM-DD',
-        priority_in_plan: 'primary|secondary',
-        depends_on_index: [],
-      },
-    ],
-    backlog_ids_drawn_from: ['<existing backlog goal/init id>', '...'],
-    expected_impact: [
-      {
-        kpi_id: '<from Current KPI state section>',
-        current_value: '<current numeric or null>',
-        predicted_value_at_period_end: '<numeric>',
-        predicted_delta: '<numeric — positive if higher_is_better direction is favourable>',
-        mechanism: '<one sentence: which initiative(s) drive this and how>',
-        confidence: 'low | medium | high',
-      },
-    ],
+  const commonTail = {
     reasoning: '<why this set: what it bets on, what it sacrifices, why over the alternatives>',
     proposed_by: stewartId,
     proposed_at: 'YYYY-MM-DDTHH:MM:SSZ',
@@ -305,7 +279,57 @@ function buildSynthesisPrompt(bu, stewartId, ctx) {
       backlog_ready_count: readyBacklog.length,
       memos_considered: recentMemos.length,
     },
-  }, null, 2));
+  };
+  const commonHead = {
+    id: 'plan-proposal-YYYYMMDDHHMMSS-NN',
+    proposal_set_id: 'pset-YYYYMMDDHHMMSS',
+    bu,
+    status: 'proposed',
+    title: '<distinct title>',
+    rationale: '<2-4 sentences why this plan>',
+    period_start: 'YYYY-MM-DD',
+    period_target_end: 'YYYY-MM-DD',
+  };
+  const initiativeSchema = [{
+    title: '<initiative title>',
+    goal_index: 0,
+    active_hypothesis: '<falsifiable claim>',
+    success_criterion: '<measurable outcome>',
+    target_close_date: 'YYYY-MM-DD',
+    priority_in_plan: 'primary|secondary',
+    depends_on_index: [],
+  }];
+  if (v2) {
+    lines.push(JSON.stringify({
+      ...commonHead,
+      proposed_goals: [{
+        title: '<goal title>',
+        description: '<goal description>',
+        kpi_id: '<from Current KPI state section>',
+        target_value: '<numeric — what the KPI should reach by target_date>',
+        target_date: 'YYYY-MM-DD',
+      }],
+      proposed_initiatives: initiativeSchema,
+      backlog_ids_drawn_from: ['<existing backlog goal/init id>', '...'],
+      ...commonTail,
+    }, null, 2));
+  } else {
+    lines.push(JSON.stringify({
+      ...commonHead,
+      proposed_goals: [{ title: '<goal title>', description: '<goal description>' }],
+      proposed_initiatives: initiativeSchema,
+      backlog_ids_drawn_from: ['<existing backlog goal/init id>', '...'],
+      expected_impact: [{
+        kpi_id: '<from Current KPI state section>',
+        current_value: '<current numeric or null>',
+        predicted_value_at_period_end: '<numeric>',
+        predicted_delta: '<numeric — positive if higher_is_better direction is favourable>',
+        mechanism: '<one sentence: which initiative(s) drive this and how>',
+        confidence: 'low | medium | high',
+      }],
+      ...commonTail,
+    }, null, 2));
+  }
   lines.push('```');
   lines.push('');
   lines.push(`All 3 proposals share the same \`proposal_set_id\`. Append them to the existing array in plan_proposals.json (don't overwrite — proposals from past requests stay for reference).`);

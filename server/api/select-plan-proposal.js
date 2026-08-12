@@ -16,6 +16,7 @@
 import { getFile, putFile, jsonResponse, todayISO } from '../storage/index.js';
 import { requireAdmin } from './_identity.js';
 import { requireExternalRead } from './_external_auth.js';
+import { getSchemaVersion, isV2 } from './_schema-version.js';
 
 export async function onRequestPost({ request, env }) {
   if (!env.GITHUB_PAT) return jsonResponse(500, { ok: false, message: 'GITHUB_PAT not set' });
@@ -36,8 +37,9 @@ export async function onRequestPost({ request, env }) {
     if (gate instanceof Response) return gate;
   }
 
-  // Resolve Stewart for credit line
+  // Resolve Stewart for credit line + schema version
   const stewartId = await resolveStrategyStewartId(env.GITHUB_PAT, bu);
+  const schemaVersion = await getSchemaVersion(env.GITHUB_PAT, bu);
 
   const proposalsPath = `dashboard/public/data/bus/${bu}/plan_proposals.json`;
   const plansPath = `dashboard/public/data/bus/${bu}/plans.json`;
@@ -78,13 +80,15 @@ export async function onRequestPost({ request, env }) {
   const setId = picked.proposal_set_id;
   const today = now.slice(0, 10);
 
-  // Create goals from proposed_goals
+  // Create goals from proposed_goals. In v2, Goals are KPI targets (kpi_id +
+  // target_value + target_date required); we carry those fields through if
+  // present. v1 Goals just have title + description.
   const proposedGoals = picked.proposed_goals || [];
   const proposedInits = picked.proposed_initiatives || [];
   const newGoalIds = [];
   proposedGoals.forEach((pg, i) => {
     const gId = `goal-${today}-${String(goals.length + i + 1).padStart(2, '0')}`;
-    goals.push({
+    const goal = {
       id: gId,
       bu,
       title: pg.title || 'Untitled goal',
@@ -101,7 +105,12 @@ export async function onRequestPost({ request, env }) {
       discarded_at: null,
       discarded_reason: null,
       from_proposal: picked.id,
-    });
+    };
+    // v2 fusion — Goal ≡ KPI target. Carry KPI linkage if Stewart populated it.
+    if (pg.kpi_id) goal.kpi_id = pg.kpi_id;
+    if (pg.target_value != null) goal.target_value = pg.target_value;
+    if (pg.target_date) goal.target_date = pg.target_date;
+    goals.push(goal);
     newGoalIds.push(gId);
   });
 
@@ -182,7 +191,9 @@ export async function onRequestPost({ request, env }) {
     superseded_plan_id: null,
     closure_status: null,
     evaluation_due_at: null,
-    expected_impact: Array.isArray(picked.expected_impact) ? picked.expected_impact : [],
+    // v2: expected_impact is derived from Goals (each Goal has kpi_id + target_value + target_date).
+    //     Don't materialize it on the plan.
+    ...(isV2(schemaVersion) ? {} : { expected_impact: Array.isArray(picked.expected_impact) ? picked.expected_impact : [] }),
   };
   plans.push(newPlan);
 

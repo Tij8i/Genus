@@ -17,6 +17,7 @@
 import { getFile, putFile, jsonResponse, todayISO, todayDate } from '../storage/index.js';
 import { requireAdmin } from './_identity.js';
 import { requireExternalRead } from './_external_auth.js';
+import { getSchemaVersion, isV2 } from './_schema-version.js';
 
 export async function onRequestPost({ request, env }) {
   if (!env.GITHUB_PAT) return jsonResponse(500, { ok: false, message: 'GITHUB_PAT not set' });
@@ -85,12 +86,13 @@ export async function onRequestPost({ request, env }) {
   const nextNum = String(todayTasks.length + 1).padStart(3, '0');
   const taskId = `task-${today}-${nextNum}`;
 
-  const description = buildFinalizePrompt(bu, stewart.agent_id, plan, planGoals, planInits);
+  const schemaVersion = await getSchemaVersion(env.GITHUB_PAT, bu);
+  const description = buildFinalizePrompt(bu, stewart.agent_id, plan, planGoals, planInits, schemaVersion);
 
   const newTask = {
     id: taskId,
     bu,
-    title: `Finalize plan draft ${plan.id} — add tasks + milestones + gateways`,
+    title: `Finalize plan draft ${plan.id} — add tasks + ${isV2(schemaVersion) ? 'checkpoints' : 'milestones + gateways'}`,
     description,
     origin: 'operator_request',
     proposer: 'operator',
@@ -150,9 +152,11 @@ async function resolveStrategyStewart(pat, bu) {
   } catch { return null; }
 }
 
-function buildFinalizePrompt(bu, stewartId, plan, planGoals, planInits) {
+function buildFinalizePrompt(bu, stewartId, plan, planGoals, planInits, schemaVersion) {
+  const v2 = isV2(schemaVersion);
+  const cpWord = v2 ? 'checkpoints' : 'milestones';
   const L = [];
-  L.push(`You are ${stewartId} — the Strategy Stewart of the ${bu} BU. The operator has drafted a plan and asked you to finalize it: add milestones + tasks so it's executable.`);
+  L.push(`You are ${stewartId} — the Strategy Stewart of the ${bu} BU. The operator has drafted a plan and asked you to finalize it: add ${cpWord} + tasks so it's executable.`);
   L.push('');
   L.push(`## The draft plan`);
   L.push(`- **ID**: ${plan.id}`);
@@ -163,53 +167,97 @@ function buildFinalizePrompt(bu, stewartId, plan, planGoals, planInits) {
   L.push(`## Goals in this plan (${planGoals.length})`);
   planGoals.forEach(g => L.push(`- ${g.id} · **${g.title}** — ${g.description || '(no description)'}`));
   L.push('');
-  L.push(`## Initiatives (${planInits.length}) — you must populate milestones + tasks under each`);
+  L.push(`## Initiatives (${planInits.length}) — you must populate ${cpWord} + tasks under each`);
   planInits.forEach(i => {
     L.push(`- **${i.id}** · "${i.title}"`);
     L.push(`    - goal: ${i.goal_id || '(unassigned)'}`);
     L.push(`    - hypothesis: ${i.active_hypothesis || '(none)'}`);
     L.push(`    - success criterion: ${i.success_criterion || '(none)'}`);
-    L.push(`    - milestones today: ${(i.milestones || []).length}`);
+    L.push(`    - ${cpWord} today: ${((v2 ? i.checkpoints : i.milestones) || []).length}`);
   });
   L.push('');
   L.push(`## What to do`);
   L.push('');
   L.push(`For each initiative in this plan:`);
-  L.push(`1. **Add 2–4 milestones** to the initiative's \`milestones[]\` array. Each milestone is a named checkpoint the operator can validate. Schema per milestone:`);
-  L.push('```json');
-  L.push(JSON.stringify({
-    id: 'ms-<initiative-id>-<n>',
-    name: '<short name of the checkpoint>',
-    criticality: 'critical | strategic | tactical',
-    status: 'not_started',
-    gateway: true,
-    source: 'stewart_finalize',
-    created_at: '<ISO now>',
-  }, null, 2));
-  L.push('```');
-  L.push(`Follow the milestone rules in \`docs/system/GATEWAYS_AND_MILESTONES.md\`: ≤5 gateways per initiative, meaningful strategic checkpoints (not low-level ticks). Tag \`gateway: true\` on the ones the operator MUST sign off on.`);
-  L.push('');
-  L.push(`2. **Add tasks** to \`tasks.json\` that advance each milestone. Each task has:`);
-  L.push('```json');
-  L.push(JSON.stringify({
-    id: 'task-YYYY-MM-DD-NNN',
-    bu,
-    title: '<concrete action>',
-    description: '<what to do, what to produce, where to write>',
-    category: 'execution',
-    status: 'proposed',
-    advances_initiative: '<init-id>',
-    advances_milestone: '<ms-id>',
-    target: { executor: '<the-right-agent-name>' },
-    priority: 'medium',
-    estimated_minutes: 30,
-    risk_level: 'low',
-    reversibility: 'high',
-    requires_operator_input: false,
-    operator_input_prompt: null,
-    created_at: '<ISO now>',
-  }, null, 2));
-  L.push('```');
+  if (v2) {
+    L.push(`1. **Add 2–4 checkpoints** to the initiative's \`checkpoints[]\` array. A checkpoint is a plan-level milestone: a named point where something meaningful is done. Some checkpoints are deliverables that auto-close when their tasks are done; others require explicit operator approval before the plan can proceed. Schema per checkpoint:`);
+    L.push('```json');
+    L.push(JSON.stringify({
+      id: 'cp-<initiative-id>-<n>',
+      name: '<short name of the checkpoint>',
+      criticality: 'critical | strategic | tactical',
+      status: 'pending',
+      requires_approval: false,
+      produces_artifact: true,
+      source: 'stewart_finalize',
+      created_at: '<ISO now>',
+    }, null, 2));
+    L.push('```');
+    L.push(`**Rules** (schema fusion — see docs/genus/prds/i66-schema-fusion.md):`);
+    L.push(`- ≤5 checkpoints per initiative. Strategic checkpoints only — not low-level ticks.`);
+    L.push(`- Set \`requires_approval: true\` for checkpoints where you MUST have operator sign-off before task emission can continue (typically: information-retrieval done, test results in, brainstorming converged, external decision landed). These correspond to what pre-fusion Genus called "gateways."`);
+    L.push(`- Set \`produces_artifact: true\` when the checkpoint should leave a persistent deliverable in the venture's documentation (files, docs, board updates). This is the norm.`);
+    L.push(`- Do NOT populate the deprecated \`milestones[]\` or \`gateways[]\` arrays on this BU — they're gone from v2.`);
+    L.push('');
+    L.push(`2. **Add tasks** to \`tasks.json\` that advance each checkpoint. Each task has:`);
+    L.push('```json');
+    L.push(JSON.stringify({
+      id: 'task-YYYY-MM-DD-NNN',
+      bu,
+      title: '<concrete action>',
+      description: '<what to do, what to produce, where to write>',
+      category: 'execution',
+      status: 'proposed',
+      advances_initiative: '<init-id>',
+      advances_checkpoint: '<cp-id>',
+      target: { executor: '<the-right-agent-name>' },
+      priority: 'medium',
+      estimated_minutes: 30,
+      risk_level: 'low',
+      reversibility: 'high',
+      requires_operator_input: false,
+      operator_input_prompt: null,
+      created_at: '<ISO now>',
+    }, null, 2));
+    L.push('```');
+    L.push(`Note: field is \`advances_checkpoint\`, NOT \`advances_milestone\`. Do NOT emit a \`subtasks[]\` field — subtasks are Paperclip-internal in v2.`);
+  } else {
+    L.push(`1. **Add 2–4 milestones** to the initiative's \`milestones[]\` array. Each milestone is a named checkpoint the operator can validate. Schema per milestone:`);
+    L.push('```json');
+    L.push(JSON.stringify({
+      id: 'ms-<initiative-id>-<n>',
+      name: '<short name of the checkpoint>',
+      criticality: 'critical | strategic | tactical',
+      status: 'not_started',
+      gateway: true,
+      source: 'stewart_finalize',
+      created_at: '<ISO now>',
+    }, null, 2));
+    L.push('```');
+    L.push(`Follow the milestone rules in \`docs/system/GATEWAYS_AND_MILESTONES.md\`: ≤5 gateways per initiative, meaningful strategic checkpoints (not low-level ticks). Tag \`gateway: true\` on the ones the operator MUST sign off on.`);
+    L.push('');
+    L.push(`2. **Add tasks** to \`tasks.json\` that advance each milestone. Each task has:`);
+    L.push('```json');
+    L.push(JSON.stringify({
+      id: 'task-YYYY-MM-DD-NNN',
+      bu,
+      title: '<concrete action>',
+      description: '<what to do, what to produce, where to write>',
+      category: 'execution',
+      status: 'proposed',
+      advances_initiative: '<init-id>',
+      advances_milestone: '<ms-id>',
+      target: { executor: '<the-right-agent-name>' },
+      priority: 'medium',
+      estimated_minutes: 30,
+      risk_level: 'low',
+      reversibility: 'high',
+      requires_operator_input: false,
+      operator_input_prompt: null,
+      created_at: '<ISO now>',
+    }, null, 2));
+    L.push('```');
+  }
   L.push('');
   L.push(`**Feature (c) — human-input tasks grouped at plan start.** Set \`requires_operator_input: true\` on any task where you genuinely need information, decisions, or artifacts from the operator BEFORE an agent can execute (e.g. brand tone, target customer names, financial thresholds, access credentials, brainstorming choices). When true, also set \`operator_input_prompt\` to a one-sentence question the UI can display next to the task. **These tasks must be listed FIRST in the tasks.json array for their initiative**, so the operator can front-load their input and then let the agent execute autonomously. Do NOT flag tasks that just need routine oversight — reserve this for cases where execution is genuinely blocked without operator input.`);
   L.push('');
@@ -220,11 +268,11 @@ function buildFinalizePrompt(bu, stewartId, plan, planGoals, planInits) {
   L.push(`## Output`);
   L.push('');
   L.push(`Write updates to:`);
-  L.push(`- \`dashboard/public/data/bus/${bu}/initiatives.json\` (add milestones[] on each initiative)`);
+  L.push(`- \`dashboard/public/data/bus/${bu}/initiatives.json\` (add ${cpWord}[] on each initiative)`);
   L.push(`- \`dashboard/public/data/bus/${bu}/tasks.json\` (append tasks)`);
   L.push(`- \`dashboard/public/data/bus/${bu}/plans.json\` (set finalized_at + finalized_by on ${plan.id})`);
   L.push('');
-  L.push(`Commit with message \`plans: finalize ${plan.id} — <N> milestones + <M> tasks added\`, git push.`);
+  L.push(`Commit with message \`plans: finalize ${plan.id} — <N> ${cpWord} + <M> tasks added\`, git push.`);
   return L.join('\n');
 }
 

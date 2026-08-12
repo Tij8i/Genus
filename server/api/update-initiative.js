@@ -20,7 +20,14 @@ import { getFile, putFile, jsonResponse, todayISO } from '../storage/index.js';
 import { requireAdmin } from './_identity.js';
 import { requireExternalRead } from './_external_auth.js';
 
-const VALID_ACTIONS = new Set(['log_actual', 'add_learning', 'set_status', 'mark_milestone_done', 'edit_gateway']);
+// v1 actions (pre-fusion): mark_milestone_done, edit_gateway
+// v2 actions (i66 fusion): mark_checkpoint_done, approve_checkpoint, edit_checkpoint
+// Legacy v1 actions still accepted on v2 BUs — they read the v1 fields if present.
+const VALID_ACTIONS = new Set([
+  'log_actual', 'add_learning', 'set_status',
+  'mark_milestone_done', 'edit_gateway',
+  'mark_checkpoint_done', 'approve_checkpoint', 'edit_checkpoint',
+]);
 // Legacy statuses kept for backwards-compat: active / on_track / at_risk.
 // New Genus-native cycle states per docs/system/EXECUTION_CYCLE.md:
 // not_started / scoping / gateways_pending_approval (GEN-34) / in_progress / blocked / review / completed (was done) / abandoned (was discarded).
@@ -173,6 +180,84 @@ export async function onRequestPost({ request, env }) {
     ms.closed_by_meeting = null;  // explicitly null — this path is not meeting-driven
     if (body.force) ms.closed_forced = true;
     if (body.note) ms.close_note = body.note.toString().slice(0, 500);
+  } else if (action === 'mark_checkpoint_done' || action === 'approve_checkpoint') {
+    // i66 fusion — v2 checkpoint action. Merges the v1 mark_milestone_done +
+    // gateway-approval logic into one action-family:
+    //   mark_checkpoint_done → sets status='done' if !requires_approval, or
+    //                          status='pending_approval' if requires_approval.
+    //   approve_checkpoint    → transitions pending_approval → done.
+    const cpId = (body.checkpoint_id || body.milestone_id || '').toString();
+    if (!cpId) return jsonResponse(400, { ok: false, message: 'checkpoint_id required' });
+    // Support both v2 (checkpoints[]) and v1-during-transition (milestones[]).
+    const list = Array.isArray(target.checkpoints) ? target.checkpoints
+               : Array.isArray(target.milestones) ? target.milestones : [];
+    const cp = list.find(x => x.id === cpId);
+    if (!cp) return jsonResponse(404, { ok: false, message: `Checkpoint ${cpId} not found on initiative ${initId}` });
+
+    if (action === 'approve_checkpoint') {
+      if ((cp.status || '').toLowerCase() !== 'pending_approval') {
+        return jsonResponse(409, { ok: false, message: `Checkpoint ${cpId} is ${cp.status || 'pending'}, not pending_approval` });
+      }
+      cp.status = 'done';
+      cp.approved_at = now;
+      cp.approved_by = body.actor || 'operator';
+      if (body.note) cp.approval_note = body.note.toString().slice(0, 500);
+    } else {
+      // mark_checkpoint_done
+      if ((cp.status || '').toLowerCase() === 'done') {
+        return jsonResponse(409, { ok: false, message: `Checkpoint ${cpId} already done` });
+      }
+      // Task-completion gate (same rule as v1 mark_milestone_done).
+      if (!body.force) {
+        const tasksPath = `dashboard/public/data/bus/${bu}/tasks.json`;
+        try {
+          const tf = await getFile(env.GITHUB_PAT, tasksPath);
+          const tasks = JSON.parse(tf.content);
+          if (Array.isArray(tasks)) {
+            const TERMINAL = new Set(['done', 'closed', 'completed', 'cancelled', 'rejected']);
+            const openLinked = tasks.filter(t =>
+              (t.advances_checkpoint === cpId || t.advances_milestone === cpId) &&
+              !TERMINAL.has((t.status || '').toLowerCase())
+            );
+            if (openLinked.length > 0) {
+              return jsonResponse(409, {
+                ok: false,
+                message: `Checkpoint ${cpId} has ${openLinked.length} open task(s). Close them first, or pass force=true to override.`,
+                open_task_ids: openLinked.map(t => t.id),
+              });
+            }
+          }
+        } catch (_) { /* tasks.json missing = nothing to gate against */ }
+      }
+      // If the checkpoint requires operator approval, mark done as
+      // pending_approval — a follow-up approve_checkpoint call will close it.
+      // Otherwise it's just done.
+      const needsApproval = cp.requires_approval === true;
+      cp.status = needsApproval ? 'pending_approval' : 'done';
+      cp.closed_at = now;
+      cp.closed_by = body.actor || 'operator';
+      if (body.force) cp.closed_forced = true;
+      if (body.note) cp.close_note = body.note.toString().slice(0, 500);
+    }
+  } else if (action === 'edit_checkpoint') {
+    // Inline edit of a v2 checkpoint's title, criticality, or requires_approval flag.
+    const cpId = (body.checkpoint_id || '').toString();
+    if (!cpId) return jsonResponse(400, { ok: false, message: 'checkpoint_id required for edit_checkpoint' });
+    const edits = body.edits || {};
+    if (typeof edits !== 'object') return jsonResponse(400, { ok: false, message: 'edits must be an object' });
+    const list = Array.isArray(target.checkpoints) ? target.checkpoints : [];
+    const cp = list.find(x => x.id === cpId);
+    if (!cp) return jsonResponse(404, { ok: false, message: `Checkpoint ${cpId} not found on initiative ${initId}` });
+    if (typeof edits.name === 'string' && edits.name.trim()) cp.name = edits.name.trim().slice(0, 200);
+    if (typeof edits.criticality === 'string') {
+      const c = edits.criticality.trim().toLowerCase();
+      if (!VALID_GATEWAY_CRITICALITIES.has(c)) return jsonResponse(400, { ok: false, message: `criticality must be one of: ${[...VALID_GATEWAY_CRITICALITIES].join(', ')}` });
+      cp.criticality = c;
+    }
+    if (typeof edits.requires_approval === 'boolean') cp.requires_approval = edits.requires_approval;
+    if (typeof edits.produces_artifact === 'boolean') cp.produces_artifact = edits.produces_artifact;
+    cp.last_edited_at = now;
+    cp.last_edited_by = body.actor || 'operator';
   }
 
   const newContent = JSON.stringify(initiatives, null, 2) + '\n';
