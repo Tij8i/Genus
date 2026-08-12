@@ -439,7 +439,8 @@ function renderTimelineRow(init, ctx, pct, today) {
   const overdue = end < today && !['completed', 'done'].includes(status);
 
   // Milestone ticks
-  const ms = init.milestones || [];
+  // v1/v2 compat: prefer checkpoints[] (v2), fall back to milestones[] (v1).
+  const ms = (Array.isArray(init.checkpoints) ? init.checkpoints : init.milestones) || [];
   const firstPendingIdx = ms.findIndex(m => (m.status || 'pending').toLowerCase() !== 'done');
   const ticks = ms.map((m, idx) => {
     const tickPos = ms.length === 1 ? 50 : (idx / (ms.length - 1)) * 100;
@@ -723,7 +724,8 @@ function renderInitiativeDetailOverlay(ctx, onChange) {
   const status = (init.status || 'not_started').toLowerCase();
   const stateColor = initStateColor(status);
   const linked = (ctx.tasks || []).filter(t => t.advances_initiative === init.id);
-  const ms = init.milestones || [];
+  // v1/v2 compat: prefer checkpoints[] (v2), fall back to milestones[] (v1).
+  const ms = (Array.isArray(init.checkpoints) ? init.checkpoints : init.milestones) || [];
   const firstPendingIdx = ms.findIndex(m => (m.status || 'pending').toLowerCase() !== 'done');
   const currentMs = firstPendingIdx >= 0 ? ms[firstPendingIdx] : null;
   // Recovery Step 3: gate mark-done on task completion. Tasks that advance this
@@ -731,11 +733,11 @@ function renderInitiativeDetailOverlay(ctx, onChange) {
   const TERMINAL_MS_TASK = new Set(['done', 'closed', 'completed', 'cancelled', 'rejected']);
   const openTasksForMs = currentMs
     ? (ctx.tasks || []).filter(t =>
-        t.advances_milestone === currentMs.id && !TERMINAL_MS_TASK.has((t.status || '').toLowerCase())
+        (t.advances_checkpoint === currentMs.id || t.advances_milestone === currentMs.id) && !TERMINAL_MS_TASK.has((t.status || '').toLowerCase())
       )
     : [];
   const totalTasksForMs = currentMs
-    ? (ctx.tasks || []).filter(t => t.advances_milestone === currentMs.id).length
+    ? (ctx.tasks || []).filter(t => t.advances_checkpoint === currentMs.id || t.advances_milestone === currentMs.id).length
     : 0;
   const canMarkMsDone = currentMs && openTasksForMs.length === 0;
 
@@ -880,14 +882,17 @@ function renderInitiativeDetailOverlay(ctx, onChange) {
       const origText = markBtn.textContent;
       markBtn.textContent = force ? 'force-marking…' : 'marking…';
       try {
+        // v2: mark_checkpoint_done (server accepts checkpoint_id OR milestone_id).
+        // We use the v2 action name universally — the endpoint reads either field
+        // so v1 substrate (milestones[]) still works.
         const resp = await fetch('/api/update-initiative', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             bu: BU(),
             init_id: initId,
-            action: 'mark_milestone_done',
-            milestone_id: msId,
+            action: 'mark_checkpoint_done',
+            checkpoint_id: msId,
             actor: 'operator',
             ...(force ? { force: true } : {}),
           }),
