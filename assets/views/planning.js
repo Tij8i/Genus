@@ -459,11 +459,22 @@ function renderTimelineRow(init, ctx, pct, today) {
   const hypothesisHtml = init.active_hypothesis
     ? `<div class="tl3-row-hypothesis"><span class="tl3-hypothesis-label mono">HYPOTHESIS</span>${escapeHtml((init.active_hypothesis || '').slice(0, 180))}${(init.active_hypothesis || '').length > 180 ? '…' : ''}</div>`
     : '';
+
+  // Milestone summary — surfaced as text on the row so operators don't need to
+  // click into the overlay to see progress. The tiny tick dots on the bar are
+  // additive; this line is the primary readout.
+  const msDoneCount = ms.filter(m => (m.status || 'pending').toLowerCase() === 'done').length;
+  const nextMs = ms[firstPendingIdx];
+  const msHtml = ms.length
+    ? `<div class="tl3-row-milestones"><span class="tl3-ms-label mono">MILESTONES</span>${msDoneCount}/${ms.length} done${nextMs ? ` · next: <span class="tl3-ms-next">${escapeHtml(nextMs.name || nextMs.title || nextMs.id)}</span>` : ' · all complete'}</div>`
+    : '';
+
   return `
     <div class="tl3-row" data-init-id="${escapeHtml(init.id)}" role="button" tabindex="0">
       <div class="tl3-row-label">
         <div class="tl3-row-title">${escapeHtml(init.title)}</div>
         ${hypothesisHtml}
+        ${msHtml}
         <div class="tl3-row-meta mono">
           ${escapeHtml(dlLabel)}
           ${linked.length ? ` · ${doneCount}/${linked.length} tasks` : ''}
@@ -746,9 +757,18 @@ function renderInitiativeDetailOverlay(ctx, onChange) {
 
       ${renderGatewayApprovalPanel(init, ms)}
 
-      ${ms.length ? `
+      ${ms.length ? (() => {
+        const msDoneCount = ms.filter(m => (m.status || 'pending').toLowerCase() === 'done').length;
+        const currentIdx = firstPendingIdx;
+        const currentPos = currentIdx >= 0 ? currentIdx + 1 : ms.length;
+        return `
         <div class="overlay-section">
-          <div class="card-section-label" style="margin-bottom:14px">Milestones</div>
+          <div class="card-section-label" style="margin-bottom:6px">
+            Milestones · ${msDoneCount} of ${ms.length} done${currentMs ? ` · current: <span style="text-transform:none;letter-spacing:0;color:var(--text);font-weight:600;">${escapeHtml(currentMs.name || currentMs.title || currentMs.id)}</span>` : ' · all complete'}
+          </div>
+          <p class="overlay-prose" style="margin-top:0;margin-bottom:14px;font-size:12.5px;color:var(--text-faint);">
+            Milestones are the plan-level checkpoints for this initiative. Each rolls up multiple tasks. Mark one done when all its linked tasks are closed.
+          </p>
           ${renderMilestoneStrip(ms, currentMs)}
           ${currentMs ? `
             <div class="overlay-mark-done-row">
@@ -759,7 +779,7 @@ function renderInitiativeDetailOverlay(ctx, onChange) {
                       title="${canMarkMsDone
                         ? `Mark this milestone done — the next becomes current`
                         : `${openTasksForMs.length} of ${totalTasksForMs} linked task(s) still open. Close them first, or shift-click to force.`}">
-                ✓ Mark «${escapeHtml(currentMs.name || currentMs.title || currentMs.id)}» done
+                ✓ Mark milestone ${currentPos} of ${ms.length} done: «${escapeHtml(currentMs.name || currentMs.title || currentMs.id)}»
               </button>
               ${canMarkMsDone
                 ? (totalTasksForMs > 0
@@ -769,7 +789,8 @@ function renderInitiativeDetailOverlay(ctx, onChange) {
             </div>
           ` : ''}
         </div>
-      ` : `
+        `;
+      })() : `
         <div class="overlay-section">
           <div class="empty-state">No milestones defined. Tuto's next heartbeat will improvise one if the Initiative has an active_hypothesis.</div>
         </div>
