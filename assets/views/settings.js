@@ -48,7 +48,12 @@ export function renderSettings(ctx, opts = {}) {
     body.innerHTML = renderGovernanceSubTab(ctx);
     wireGovernanceControls(ctx, opts.onChange);
   }
-  else if (activeSubTab === 'wiring') body.innerHTML = renderWiringSubTab(ctx);
+  else if (activeSubTab === 'wiring') {
+    body.innerHTML = renderWiringSubTab(ctx);
+    // Live-probe the operating stack. Placeholder 'good' dots have been
+    // replaced by 'checking…' until the /api/wiring-status response lands.
+    hydrateWiringStatus();
+  }
   else if (activeSubTab === 'runtimes') { body.innerHTML = '<div class="card"><div class="card-body">Loading runtimes…</div></div>'; renderRuntimesSubTab(ctx, opts); }
   else if (activeSubTab === 'appearance') {
     body.innerHTML = renderAppearanceSubTab(ctx);
@@ -594,12 +599,12 @@ function renderWiringSubTab(ctx) {
       <!-- Operating stack -->
       <div class="card">
         <div class="card-section-label">Operating stack</div>
-        <p class="card-sub" style="margin-bottom:8px">How Genus runs the venture.</p>
+        <p class="card-sub" style="margin-bottom:8px">How Genus runs the venture. Status dots below are live-probed on tab load.</p>
         <div class="row-list">
-          ${renderOpRow('P', 'Runtime · Paperclip', 'Executes agent work · localhost:3100', 'accent', 'good')}
+          ${renderOpRow('P', 'Runtime · Paperclip', 'Executes agent work · localhost:3100', 'accent', 'unknown', 'wiring-probe-paperclip')}
           ${renderOpRow('C', 'LLM · Claude', 'via claude --print + meeting server', 'dark', 'good')}
-          ${renderOpRow('S', 'Meeting server', 'Local · localhost:8765 · launchd', 'gray', 'good')}
-          ${renderOpRow('T', 'Ticker (10-min loop)', 'launchd · adapter + emit + cycle diag', 'gray', 'good')}
+          ${renderOpRow('S', 'Meeting server', 'Local · localhost:8765 · launchd', 'gray', 'unknown', 'wiring-probe-meeting_server')}
+          ${renderOpRow('T', 'Ticker · adapter (30s loop)', 'launchd · adapter push/pull sync', 'gray', 'unknown', 'wiring-probe-adapter')}
           ${renderOpRow('M', 'MCP connectors', `${connectors.length} total · ${healthy} healthy`, 'gray', healthy === total ? 'good' : 'warn')}
         </div>
       </div>
@@ -641,20 +646,60 @@ function renderInfraRow(letter, name, sub, status) {
   `;
 }
 
-function renderOpRow(letter, name, sub, iconStyle, status) {
+function renderOpRow(letter, name, sub, iconStyle, status, hydrateId) {
   const iconClass = iconStyle === 'accent' ? 'row-icon-letter-accent'
     : iconStyle === 'dark' ? 'row-icon-letter-dark'
     : '';
+  const rowId = hydrateId ? ` id="${hydrateId}"` : '';
+  const subId = hydrateId ? ` data-role="sub"` : '';
   return `
-    <div class="row-with-icon">
+    <div class="row-with-icon"${rowId}>
       <span class="row-icon-letter ${iconClass}">${escapeHtml(letter)}</span>
       <div class="row-body">
         <div class="row-title">${escapeHtml(name)}</div>
-        <div class="row-sub">${escapeHtml(sub)}</div>
+        <div class="row-sub"${subId}>${escapeHtml(sub)}</div>
       </div>
-      <span class="status-dot status-dot-${status}" title="${escapeHtml(status)}"></span>
+      <span class="status-dot status-dot-${status}" data-role="dot" title="${escapeHtml(hydrateId ? 'checking…' : status)}"></span>
     </div>
   `;
+}
+
+// Live-probe hydrator for the Operating stack rows. Fetches /api/wiring-status
+// and updates every element with id="wiring-probe-<name>" to reflect real
+// health. Silent on the edge deploy (Pages returns probes_available:false).
+async function hydrateWiringStatus() {
+  let json;
+  try {
+    const resp = await fetch('/api/wiring-status', { credentials: 'include' });
+    json = await resp.json();
+  } catch (e) {
+    console.warn('[wiring] probe fetch failed:', e);
+    return;
+  }
+  const probes = (json && json.probes) || {};
+  const edge = json && json.probes_available === false;
+  for (const [name, probe] of Object.entries(probes)) {
+    const row = document.getElementById(`wiring-probe-${name}`);
+    if (!row) continue;
+    const dot = row.querySelector('[data-role="dot"]');
+    const sub = row.querySelector('[data-role="sub"]');
+    if (dot) {
+      dot.classList.remove('status-dot-good', 'status-dot-warn', 'status-dot-bad', 'status-dot-unknown');
+      dot.classList.add(`status-dot-${probe.status || 'unknown'}`);
+      const parts = [probe.status];
+      if (probe.latency_ms != null) parts.push(`${probe.latency_ms}ms`);
+      if (probe.code != null) parts.push(`HTTP ${probe.code}`);
+      if (probe.seconds_since_log != null) parts.push(`log ${probe.seconds_since_log}s ago`);
+      if (probe.message) parts.push(probe.message);
+      dot.title = parts.filter(Boolean).join(' · ');
+    }
+    if (sub && probe.message && !edge) {
+      sub.textContent = `${sub.textContent.split(' · ')[0]} · ${probe.message}`;
+    }
+    if (sub && edge) {
+      sub.textContent = `${sub.textContent.split(' · ')[0]} · not probed at edge`;
+    }
+  }
 }
 
 function statusToColor(s) {
