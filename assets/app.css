@@ -1373,6 +1373,19 @@ body {
   font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-dim);
   letter-spacing: .04em; display: flex; align-items: center; gap: 8px; cursor: pointer;
 }
+/* Backlog action strip: Groom → Draft → Propose buttons stacked in a row
+   between the header line and the kanban. */
+.backlog-action-strip {
+  display: flex; flex-wrap: wrap; gap: 10px;
+  padding: 12px 0 16px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+.backlog-action-strip .plan-cycle-btn { font-size: 13px; padding: 8px 14px; }
+/* Queued-plan card inside the Backlog kanban. */
+.kanban-card-queued {
+  border-left: 3px solid var(--amber-fg, #b57500);
+}
 
 .kanban { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
 .kanban-col {

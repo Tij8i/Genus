@@ -79,7 +79,6 @@ export function renderPlanning(ctx, { onChange }) {
           `).join('')}
         </nav>
       ` : `<div></div>`}
-      <button type="button" id="new-plan-btn" class="plan-cycle-btn plan-cycle-btn-primary">+ New plan</button>
     </div>
     <div id="planning-subtab-body"></div>
     <div id="initiative-detail-host"></div>
@@ -96,9 +95,6 @@ export function renderPlanning(ctx, { onChange }) {
       renderPlanning(ctx, { onChange });
     });
   });
-
-  const newPlanBtn = document.getElementById('new-plan-btn');
-  if (newPlanBtn) newPlanBtn.addEventListener('click', () => openNewPlanOverlay(ctx, onChange));
 
   const body = document.getElementById('planning-subtab-body');
   if (activeSubTab === 'active') body.innerHTML = renderActiveSubTab(ctx);
@@ -546,16 +542,20 @@ function renderBacklogSubTab(ctx) {
     <div class="card">
       <div class="backlog-header">
         <div class="backlog-tagline">
-          Candidate pool. Memos + agent scans feed <strong>Untriaged</strong>. Vet → <strong>Ready</strong>.
-          Group into a plan (auto-queues if a plan is already active).
+          Candidate pool + planning workspace. The typical flow is
+          <strong>Groom → Draft → Propose</strong>: Stewart enriches the pool,
+          you sketch what you want, Stewart offers 3 concrete alternatives.
+          Any button works standalone too.
         </div>
-        <div style="display:flex;gap:8px;align-items:center;">
-          <button type="button" class="plan-cycle-btn plan-cycle-btn-primary" data-cycle-action="propose">Ask Stewart for 3 plan proposals</button>
-          <label class="backlog-archive-toggle">
-            <input type="checkbox" id="backlog-show-archive" ${showArchive ? 'checked' : ''}>
-            Show Promoted + Discarded
-          </label>
-        </div>
+        <label class="backlog-archive-toggle">
+          <input type="checkbox" id="backlog-show-archive" ${showArchive ? 'checked' : ''}>
+          Show Promoted + Discarded
+        </label>
+      </div>
+      <div class="backlog-action-strip">
+        <button type="button" class="plan-cycle-btn" data-cycle-action="groom" title="Ask Stewart to review the backlog: promote candidates, propose new items from memos, discard stale ones.">🧹 Groom backlog</button>
+        <button type="button" class="plan-cycle-btn" data-cycle-action="new-manual" title="Sketch your own plan — goals, initiatives, rationale. Auto-queues (or activates) once created.">✏️ New plan (manual)</button>
+        <button type="button" class="plan-cycle-btn plan-cycle-btn-primary" data-cycle-action="propose" title="Ask the Strategy Stewart to synthesize 3 distinct plan proposals from the current backlog + memos + KPI state.">✨ Ask Stewart for 3 proposals</button>
       </div>
       <div class="kanban">
         ${renderBacklogColumn('Untriaged', '🆕', cols.untriaged, 'untriaged')}
@@ -674,9 +674,18 @@ function wireBacklogActions(scope, ctx, onChange) {
     });
   }
 
-  // "Ask Stewart for 3 plan proposals" (moved from Active tab to Backlog).
+  // Backlog action strip: 3 buttons that seed a new plan cycle.
+  //   groom      → Stewart enriches the backlog (new POST /api/groom-backlog)
+  //   new-manual → open the existing manual-plan overlay
+  //   propose    → Stewart drafts 3 alternative plans (existing endpoint)
   scope.querySelectorAll('button[data-cycle-action="propose"]').forEach(btn => {
     btn.addEventListener('click', () => onRequestProposals(null, btn, ctx, onChange));
+  });
+  scope.querySelectorAll('button[data-cycle-action="new-manual"]').forEach(btn => {
+    btn.addEventListener('click', () => openNewPlanOverlay(ctx, onChange));
+  });
+  scope.querySelectorAll('button[data-cycle-action="groom"]').forEach(btn => {
+    btn.addEventListener('click', () => onGroomBacklog(btn, ctx, onChange));
   });
 
   // Queued plan Cancel buttons.
@@ -1394,6 +1403,19 @@ async function onCompleteCycle(planId, btn, ctx, onChange) {
   if (promotedId) {
     await showAlert(`Cycle closed. Plan "${promotedId}" was queued behind it — it's now the active plan.`);
   }
+}
+
+async function onGroomBacklog(btn, ctx, onChange) {
+  if (!await showConfirm(`Ask the Strategy Stewart of ${buLabel()} to groom the backlog?\n\nStewart will:\n • Review Untriaged items and promote sensible ones to Ready (or discard stale ones)\n • Propose new goals/initiatives implied by recent memos\n • NOT propose a plan yet — that's the next step\n\nTakes ~3-5 min.`)) return;
+  await runCycleAction(btn, async () => {
+    const resp = await fetch('/api/groom-backlog', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bu: BU() }),
+    });
+    const json = await resp.json().catch(() => ({}));
+    if (!resp.ok || !json.ok) throw new Error(json.message || `HTTP ${resp.status}`);
+    return json;
+  }, onChange);
 }
 
 async function onRequestProposals(planId, btn, ctx, onChange) {
