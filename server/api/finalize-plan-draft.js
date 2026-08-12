@@ -142,6 +142,10 @@ export async function onRequestPost({ request, env }) {
   }
 }
 
+// Exported so select-plan-proposal can auto-file the finalize task
+// immediately after pick (kill-draft-state flow, 2026-08-12).
+export { buildFinalizePrompt, resolveStrategyStewart };
+
 async function resolveStrategyStewart(pat, bu) {
   try {
     const f = await getFile(pat, 'dashboard/public/data/system/agent_bindings.json');
