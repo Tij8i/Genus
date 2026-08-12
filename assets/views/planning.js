@@ -25,6 +25,20 @@ function BU() {
 // Operator-facing label. Uses the display_name resolved by app.js into the
 // sidebar #bu-name element (e.g. "Acme Roastery" for the synthetic BU).
 // Falls back to the raw internal id if the DOM isn't populated yet.
+// Detect whether this BU is on the v2 schema (checkpoints[]) or v1 (milestones[])
+// by peeking at any initiative in the context. Prefer the singular initiative
+// when available; falls back to scanning the array. Returns the correct label
+// so overlay + timeline read consistently.
+function cpWord(ctx, plural = true) {
+  const hasV2 = (ctx?.initiatives || []).some(i => Array.isArray(i.checkpoints));
+  if (plural) return hasV2 ? 'checkpoints' : 'milestones';
+  return hasV2 ? 'checkpoint' : 'milestone';
+}
+function cpWordCap(ctx, plural = true) {
+  const w = cpWord(ctx, plural);
+  return w.charAt(0).toUpperCase() + w.slice(1);
+}
+
 function buLabel() {
   const el = document.getElementById('bu-name');
   const t = el && el.textContent ? el.textContent.trim() : '';
@@ -466,8 +480,9 @@ function renderTimelineRow(init, ctx, pct, today) {
   // additive; this line is the primary readout.
   const msDoneCount = ms.filter(m => (m.status || 'pending').toLowerCase() === 'done').length;
   const nextMs = ms[firstPendingIdx];
+  const label = cpWordCap(ctx).toUpperCase();
   const msHtml = ms.length
-    ? `<div class="tl3-row-milestones"><span class="tl3-ms-label mono">MILESTONES</span>${msDoneCount}/${ms.length} done${nextMs ? ` · next: <span class="tl3-ms-next">${escapeHtml(nextMs.name || nextMs.title || nextMs.id)}</span>` : ' · all complete'}</div>`
+    ? `<div class="tl3-row-milestones"><span class="tl3-ms-label mono">${label}</span>${msDoneCount}/${ms.length} done${nextMs ? ` · next: <span class="tl3-ms-next">${escapeHtml(nextMs.name || nextMs.title || nextMs.id)}</span>` : ' · all complete'}</div>`
     : '';
 
   return `
@@ -763,25 +778,27 @@ function renderInitiativeDetailOverlay(ctx, onChange) {
         const msDoneCount = ms.filter(m => (m.status || 'pending').toLowerCase() === 'done').length;
         const currentIdx = firstPendingIdx;
         const currentPos = currentIdx >= 0 ? currentIdx + 1 : ms.length;
+        const cpLabel = cpWordCap(ctx);
+        const cpLabelLower = cpWord(ctx);
         return `
         <div class="overlay-section">
           <div class="card-section-label" style="margin-bottom:6px">
-            Milestones · ${msDoneCount} of ${ms.length} done${currentMs ? ` · current: <span style="text-transform:none;letter-spacing:0;color:var(--text);font-weight:600;">${escapeHtml(currentMs.name || currentMs.title || currentMs.id)}</span>` : ' · all complete'}
+            ${cpLabel} · ${msDoneCount} of ${ms.length} done${currentMs ? ` · current: <span style="text-transform:none;letter-spacing:0;color:var(--text);font-weight:600;">${escapeHtml(currentMs.name || currentMs.title || currentMs.id)}</span>` : ' · all complete'}
           </div>
           <p class="overlay-prose" style="margin-top:0;margin-bottom:14px;font-size:12.5px;color:var(--text-faint);">
-            Milestones are the plan-level checkpoints for this initiative. Each rolls up multiple tasks. Mark one done when all its linked tasks are closed.
+            ${cpLabel} are the plan-level markers for this initiative. Each rolls up multiple tasks. Mark one done when all its linked tasks are closed.
           </p>
           ${renderMilestoneStrip(ms, currentMs)}
           ${currentMs ? `
             <div class="overlay-mark-done-row">
-              <button type="button" class="overlay-mark-done-btn"
+              <button type="button" class="overlay-mark-done-btn${canMarkMsDone ? '' : ' overlay-mark-done-btn-blocked'}"
                       data-init-id="${escapeHtml(init.id)}"
                       data-ms-id="${escapeHtml(currentMs.id)}"
-                      ${canMarkMsDone ? '' : 'disabled'}
+                      data-blocked="${canMarkMsDone ? 'false' : 'true'}"
                       title="${canMarkMsDone
-                        ? `Mark this milestone done — the next becomes current`
-                        : `${openTasksForMs.length} of ${totalTasksForMs} linked task(s) still open. Close them first, or shift-click to force.`}">
-                ✓ Mark milestone ${currentPos} of ${ms.length} done: «${escapeHtml(currentMs.name || currentMs.title || currentMs.id)}»
+                        ? `Mark this checkpoint done — the next becomes current`
+                        : `${openTasksForMs.length} of ${totalTasksForMs} linked task(s) still open. Close them first, or SHIFT-CLICK to force.`}">
+                ✓ Mark checkpoint ${currentPos} of ${ms.length} done: «${escapeHtml(currentMs.name || currentMs.title || currentMs.id)}»
               </button>
               ${canMarkMsDone
                 ? (totalTasksForMs > 0
@@ -870,15 +887,21 @@ function renderInitiativeDetailOverlay(ctx, onChange) {
     // whose tasks were settled offline.
     markBtn.addEventListener('click', async (e) => {
       const force = e.shiftKey === true;
-      if (markBtn.disabled && !force) return;
+      const isBlocked = markBtn.dataset.blocked === 'true';
+      // Blocked (task-gate not met) requires shift-click. Non-shift click on
+      // blocked button is a no-op with a hint toast, so operator isn't confused.
+      if (isBlocked && !force) {
+        markBtn.animate([{ transform: 'translateX(-3px)' }, { transform: 'translateX(3px)' }, { transform: 'translateX(0)' }], { duration: 200, iterations: 2 });
+        return;
+      }
       const initId = markBtn.dataset.initId;
       const msId = markBtn.dataset.msId;
       const msName = currentMs.name || currentMs.title || currentMs.id;
       const prompt = force
-        ? `Force-close milestone «${msName}» despite ${openTasksForMs.length} open task(s)?`
-        : `Mark milestone «${msName}» done? The next milestone becomes current.`;
+        ? `Force-close checkpoint «${msName}» despite ${openTasksForMs.length} open task(s)?`
+        : `Mark checkpoint «${msName}» done? The next checkpoint becomes current.`;
       if (!await showConfirm(prompt)) return;
-      markBtn.disabled = true;
+      markBtn.classList.add('overlay-mark-done-btn-inflight');
       const origText = markBtn.textContent;
       markBtn.textContent = force ? 'force-marking…' : 'marking…';
       try {
@@ -901,7 +924,7 @@ function renderInitiativeDetailOverlay(ctx, onChange) {
         if (!resp.ok || !json.ok) throw new Error(json.message || `HTTP ${resp.status}`);
         onChange();
       } catch (err) {
-        markBtn.disabled = false;
+        markBtn.classList.remove('overlay-mark-done-btn-inflight');
         markBtn.textContent = `✗ ${err.message || err}`;
         setTimeout(() => { markBtn.textContent = origText; }, 4000);
       }
@@ -1685,11 +1708,36 @@ async function checkAndRenderProposalsBanner(onChange) {
         <div style="font-weight:600;color:#1a1a1a;font-size:14px;margin-bottom:2px;">Stewart has drafted ${latestSet.length} plan ${latestSet.length === 1 ? 'proposal' : 'proposals'}.</div>
         <div style="font-size:12px;color:#6b7280;">Set <span class="mono">${escapeHtml(latestSetId)}</span> · proposed ${escapeHtml((latestSet[0]?.proposed_at || '').slice(0, 16))}</div>
       </div>
-      <button type="button" id="review-proposals-btn" class="plan-cycle-btn plan-cycle-btn-primary">Review proposals</button>
+      <div style="display:flex;gap:8px;">
+        <button type="button" id="review-proposals-btn" class="plan-cycle-btn plan-cycle-btn-primary">Review proposals</button>
+        <button type="button" id="dismiss-proposals-btn" class="plan-cycle-btn" title="Reject all ${latestSet.length} proposals in this set">Dismiss all</button>
+      </div>
     </div>
   `;
-  const btn = document.getElementById('review-proposals-btn');
-  if (btn) btn.addEventListener('click', () => openProposalsPickerOverlay(latestSet, onChange));
+  const reviewBtn = document.getElementById('review-proposals-btn');
+  if (reviewBtn) reviewBtn.addEventListener('click', () => openProposalsPickerOverlay(latestSet, onChange));
+  const dismissBtn = document.getElementById('dismiss-proposals-btn');
+  if (dismissBtn) {
+    dismissBtn.addEventListener('click', async () => {
+      if (!await showConfirm(`Dismiss all ${latestSet.length} proposals in this set?\n\nEach proposal will be marked "rejected" — the banner goes away. You can request fresh proposals any time.`)) return;
+      const original = dismissBtn.textContent;
+      dismissBtn.disabled = true;
+      dismissBtn.textContent = 'dismissing…';
+      try {
+        const resp = await fetch('/api/dismiss-plan-proposals', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bu: BU(), proposal_set_id: latestSetId }),
+        });
+        const json = await resp.json().catch(() => ({}));
+        if (!resp.ok || !json.ok) throw new Error(json.message || `HTTP ${resp.status}`);
+        if (onChange) onChange();
+      } catch (e) {
+        dismissBtn.disabled = false;
+        dismissBtn.textContent = original;
+        await showAlert(`Dismiss failed: ${e.message || 'unknown'}`);
+      }
+    });
+  }
 }
 
 function renderProposalCard(p, idx) {
