@@ -86,7 +86,7 @@ export function renderPlanning(ctx, { onChange }) {
   `;
 
   // Recovery Step 1: async-fetch plan_proposals.json + render banner if any proposals await picking.
-  checkAndRenderProposalsBanner(onChange);
+  checkAndRenderProposalsBanner(onChange, ctx);
 
   root.querySelectorAll('.subtab-link').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -1677,7 +1677,7 @@ function openNewPlanOverlay(ctx, onChange) {
 // the Planning view. Click → picker modal → operator selects one → posts to
 // /api/select-plan-proposal which promotes the choice into a draft plan.
 
-async function checkAndRenderProposalsBanner(onChange) {
+async function checkAndRenderProposalsBanner(onChange, ctx) {
   const host = document.getElementById('plan-proposals-banner');
   if (!host) return;
   // Fetch via the /api/substrate proxy (substrate lives cross-repo in
@@ -1715,7 +1715,7 @@ async function checkAndRenderProposalsBanner(onChange) {
     </div>
   `;
   const reviewBtn = document.getElementById('review-proposals-btn');
-  if (reviewBtn) reviewBtn.addEventListener('click', () => openProposalsPickerOverlay(latestSet, onChange));
+  if (reviewBtn) reviewBtn.addEventListener('click', () => openProposalsPickerOverlay(latestSet, onChange, ctx));
   const dismissBtn = document.getElementById('dismiss-proposals-btn');
   if (dismissBtn) {
     dismissBtn.addEventListener('click', async () => {
@@ -1740,12 +1740,16 @@ async function checkAndRenderProposalsBanner(onChange) {
   }
 }
 
-function renderProposalCard(p, idx) {
+function renderProposalCard(p, idx, kpiIndex) {
   const goals = p.proposed_goals || [];
   const inits = p.proposed_initiatives || [];
   const impact = Array.isArray(p.expected_impact) ? p.expected_impact.filter(x => x && x.kpi_id) : [];
+  // v2 detection: any goal has kpi_id / target_value → schema fusion applied.
+  const isV2Goal = goals.some(g => g && (g.kpi_id || g.target_value != null));
 
-  const impactBlock = impact.length ? `
+  // KPI-impact block. v2: goals carry the info themselves — hide this block.
+  // v1: keep the old behavior (renders expected_impact or a dashed "not sized" panel).
+  const impactBlock = isV2Goal ? '' : (impact.length ? `
     <div style="border:1px solid #dfe1e6;border-radius:8px;padding:10px 12px;background:#f7f9fc;">
       <div style="font-size:11px;color:var(--text-faint);letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px;">Expected KPI impact</div>
       <div style="display:flex;flex-direction:column;gap:6px;">
@@ -1770,6 +1774,37 @@ function renderProposalCard(p, idx) {
     <div style="border:1px dashed #dfe1e6;border-radius:8px;padding:8px 12px;background:transparent;font-size:11.5px;color:var(--text-faint);">
       Expected KPI impact: not sized (Stewart didn't populate this — likely proposed before KPIs were configured for this BU).
     </div>
+  `);
+
+  // Goals block — vertical stack (not hidden in <details>) so operator sees the
+  // KPI target inline. On v2, each goal renders its kpi_id + target_value +
+  // target_date. Warn if the kpi_id references a KPI not in kpis.json (Stewart
+  // proposed a new metric that needs to be created before finalize).
+  const goalsBlock = `
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <div class="mono" style="font-size:11px;color:var(--text-faint);letter-spacing:.1em;text-transform:uppercase;">Goals · ${goals.length}</div>
+      ${goals.map(g => {
+        const hasKpi = g.kpi_id && kpiIndex && kpiIndex[g.kpi_id];
+        const isNewKpi = g.kpi_id && kpiIndex && !kpiIndex[g.kpi_id];
+        const kpiRow = g.kpi_id ? `
+          <div style="font-size:12px;color:var(--text);margin-top:3px;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;">
+            <span class="mono" style="color:var(--text-faint);">KPI</span>
+            <span class="mono" style="font-weight:600;">${escapeHtml(g.kpi_id)}</span>
+            ${hasKpi ? `<span style="color:var(--text-faint);">"${escapeHtml((kpiIndex[g.kpi_id].name || '').slice(0, 40))}"</span>` : ''}
+            ${g.target_value != null ? `<span style="color:var(--text);">→ target ${escapeHtml(String(g.target_value))}${hasKpi && kpiIndex[g.kpi_id].unit ? ` ${escapeHtml(kpiIndex[g.kpi_id].unit)}` : ''}</span>` : ''}
+            ${g.target_date ? `<span style="color:var(--text-faint);">by ${escapeHtml(g.target_date)}</span>` : ''}
+            ${isNewKpi ? `<span style="font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:#b57500;background:rgba(255,190,60,.14);border:1px solid #b57500;border-radius:4px;padding:1px 6px;">new KPI — create before finalize</span>` : ''}
+          </div>
+        ` : '';
+        return `
+          <div style="border:1px solid var(--border);border-radius:6px;padding:8px 10px;background:#fbfbfc;">
+            <div style="font-size:13px;font-weight:600;color:var(--text);">${escapeHtml(g.title || '')}</div>
+            ${g.description ? `<div style="font-size:12px;color:var(--text-faint);margin-top:2px;line-height:1.4;">${escapeHtml(g.description)}</div>` : ''}
+            ${kpiRow}
+          </div>
+        `;
+      }).join('') || '<div style="font-size:12px;color:var(--text-faint);">—</div>'}
+    </div>
   `;
 
   return `
@@ -1783,25 +1818,26 @@ function renderProposalCard(p, idx) {
         <span>${goals.length} goal${goals.length === 1 ? '' : 's'} · ${inits.length} initiative${inits.length === 1 ? '' : 's'}</span>
       </div>
       ${p.rationale ? `<div style="font-size:13.5px;color:var(--text);border-left:3px solid #af7e02;padding-left:12px;line-height:1.55;">${escapeHtml(p.rationale)}</div>` : ''}
+      ${goalsBlock}
       ${impactBlock}
       ${p.reasoning ? `<details style="font-size:12.5px;color:var(--text-faint);"><summary style="cursor:pointer;font-weight:600;color:var(--text);">Reasoning</summary><div style="padding-top:6px;line-height:1.55;">${escapeHtml(p.reasoning)}</div></details>` : ''}
-      <details style="font-size:12.5px;color:var(--text-faint);"><summary style="cursor:pointer;font-weight:600;color:var(--text);">Goals + initiatives</summary>
-        <div style="padding-top:6px;">
-          <div style="font-weight:600;color:var(--text);margin-bottom:2px;">Goals:</div>
-          <ul style="margin:0 0 8px 18px;padding:0;">${goals.map(g => `<li>${escapeHtml(g.title || '')}${g.description ? `<div style="font-size:11.5px;color:var(--text-faint);">${escapeHtml(g.description)}</div>` : ''}</li>`).join('') || '<li>—</li>'}</ul>
-          <div style="font-weight:600;color:var(--text);margin-bottom:2px;">Initiatives:</div>
-          <ul style="margin:0 0 4px 18px;padding:0;">${inits.map(i => `<li>${escapeHtml(i.title || '')}${i.active_hypothesis ? `<div style="font-size:11.5px;color:var(--text-faint);">${escapeHtml(i.active_hypothesis)}</div>` : ''}</li>`).join('') || '<li>—</li>'}</ul>
-        </div>
+      <details style="font-size:12.5px;color:var(--text-faint);"><summary style="cursor:pointer;font-weight:600;color:var(--text);">Initiatives (${inits.length})</summary>
+        <ul style="margin:6px 0 4px 18px;padding:0;">${inits.map(i => `<li>${escapeHtml(i.title || '')}${i.active_hypothesis ? `<div style="font-size:11.5px;color:var(--text-faint);">${escapeHtml(i.active_hypothesis)}</div>` : ''}</li>`).join('') || '<li>—</li>'}</ul>
       </details>
       <button type="button" class="plan-cycle-btn plan-cycle-btn-primary" data-pick-id="${escapeHtml(p.id)}" style="align-self:flex-start;">Pick this one</button>
     </div>
   `;
 }
 
-function openProposalsPickerOverlay(proposals, onChange) {
+function openProposalsPickerOverlay(proposals, onChange, ctx) {
+  // Index existing KPIs so proposal cards can warn about kpi_ids that don't
+  // exist yet (Stewart proposed new KPIs — operator has to create them before
+  // this plan can be finalized meaningfully).
+  const kpiIndex = {};
+  (ctx?.kpis || []).forEach(k => { if (k && k.id) kpiIndex[k.id] = k; });
   const bodyHtml = `
     <div style="display:flex;flex-direction:column;gap:16px;">
-      ${proposals.map((p, idx) => renderProposalCard(p, idx)).join('')}
+      ${proposals.map((p, idx) => renderProposalCard(p, idx, kpiIndex)).join('')}
     </div>
     <div class="proposals-pick-status mono" style="font-size:12px;min-height:16px;margin-top:12px;text-align:center;"></div>
   `;
