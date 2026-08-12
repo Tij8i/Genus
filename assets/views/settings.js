@@ -664,20 +664,35 @@ function renderOpRow(letter, name, sub, iconStyle, status, hydrateId) {
   `;
 }
 
-// Live-probe hydrator for the Operating stack rows. Fetches /api/wiring-status
-// and updates every element with id="wiring-probe-<name>" to reflect real
-// health. Silent on the edge deploy (Pages returns probes_available:false).
-async function hydrateWiringStatus() {
-  let json;
-  try {
-    const resp = await fetch('/api/wiring-status', { credentials: 'include' });
-    json = await resp.json();
-  } catch (e) {
-    console.warn('[wiring] probe fetch failed:', e);
-    return;
-  }
-  const probes = (json && json.probes) || {};
-  const edge = json && json.probes_available === false;
+// Live-probe hydrator for the Operating stack rows. Reads from the shared
+// wiring monitor (assets/wiring-monitor.js) which polls /api/wiring-status
+// every 30s. On tab open we (a) subscribe to future updates and (b) trigger
+// an immediate refresh so the operator doesn't wait up to 30s for the next
+// tick. Silent on the edge deploy (Pages returns probes_available:false).
+function hydrateWiringStatus() {
+  // Apply current snapshot if the monitor has already fetched at least once.
+  applyWiringSnapshot(window.__genusWiringState);
+
+  // Subscribe (idempotent — replace prior listener so we don't leak on tab flips).
+  window.removeEventListener('wiring-updated', wiringUpdateHandler);
+  window.addEventListener('wiring-updated', wiringUpdateHandler);
+
+  // Kick a fresh probe. If the monitor module isn't loaded yet (unlikely
+  // outside of unit tests), fall back to a direct fetch.
+  import('../wiring-monitor.js')
+    .then(m => m.refreshWiringNow())
+    .catch(() => fetch('/api/wiring-status', { credentials: 'include' })
+      .then(r => r.json()).then(applyWiringSnapshot).catch(() => {}));
+}
+
+function wiringUpdateHandler(ev) {
+  applyWiringSnapshot(ev.detail && ev.detail.json);
+}
+
+function applyWiringSnapshot(json) {
+  if (!json || !json.probes) return;
+  const probes = json.probes;
+  const edge = json.probes_available === false;
   for (const [name, probe] of Object.entries(probes)) {
     const row = document.getElementById(`wiring-probe-${name}`);
     if (!row) continue;
