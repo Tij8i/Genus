@@ -391,6 +391,13 @@ async function boot() {
     .then(m => m.checkPaperclipOnboarding())
     .catch(() => { /* module load failed — skip */ });
 
+  // Start the wiring monitor: polls /api/wiring-status every 30s, shows a
+  // sticky top banner if Paperclip/adapter/meeting-server is down or degraded,
+  // and dispatches 'wiring-updated' so Settings → Wiring reads from one source.
+  import('./wiring-monitor.js')
+    .then(m => m.startWiringMonitor())
+    .catch(() => { /* module load failed — skip */ });
+
   // Multi-BU bootstrap: load registry, resolve current BU from URL/localStorage/default,
   // persist + filter sidebar nav before any view renders. (Session #18 Initiative #2)
   try {
