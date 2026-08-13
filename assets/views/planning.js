@@ -316,8 +316,11 @@ function renderActivePlanCard(activePlan, planInits) {
   const completionPct = total > 0 ? Math.round((done / total) * 100) : 0;
   const timeProg = cycleTimeProgress(activePlan);
   // Kill-Draft-State: plan can be active + not-yet-finalized (Stewart is
-  // still populating checkpoints + tasks in the background). Surface it.
-  const populating = !activePlan.finalized_at;
+  // still populating checkpoints + tasks in the background). Only fire if
+  // there's an actual finalize task attached — legacy plans (predate
+  // kill-draft-state on 2026-08-12) never had finalize_task_id set and
+  // shouldn't show the "populating" strip forever.
+  const populating = !activePlan.finalized_at && !!activePlan.finalize_task_id;
   const populatingSince = populating && activePlan.created_at ? agoFromISO(activePlan.created_at) : '';
   return `
     <div class="card">
@@ -573,7 +576,7 @@ function renderQueuedPlansColumn(plans, activePlan) {
   const items = plans.map((p, i) => {
     const goalCount = (p.goal_ids || []).length;
     const initCount = (p.initiative_ids || []).length;
-    const populating = !p.finalized_at;
+    const populating = !p.finalized_at && !!p.finalize_task_id;
     const pos = plans.length > 1 ? ` · #${i + 1}` : '';
     const afterLine = activePlan
       ? `after "${escapeHtml((activePlan.title || activePlan.id).slice(0, 28))}"`
