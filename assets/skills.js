@@ -116,10 +116,18 @@ const CONTEXT_RENDERERS = {
     return memos.map(m => `- [${m.level || 'misc'}] ${(m.body || '').slice(0, 220)}`).join('\n');
   },
   open_tasks(ctx) {
+    // True orphans only: no advances_initiative AND no advances_plan AND
+    // not in a terminal status. Every well-formed task lives under an
+    // initiative, so this list should normally be empty — anything here
+    // is a legacy artifact or a bug worth flagging.
     const TERMINAL = new Set(['done', 'closed', 'completed', 'cancelled', 'rejected']);
-    const open = (ctx?.tasks || []).filter(t => !TERMINAL.has((t.status || '').toLowerCase()) && !t.advances_plan);
-    if (!open.length) return '(none)';
-    return open.slice(0, 25).map(t => `- \`${t.id}\` · ${t.title || '(untitled)'}${t.advances_initiative ? ` [linked to ${t.advances_initiative}]` : ''}`).join('\n') + (open.length > 25 ? `\n(+ ${open.length - 25} more)` : '');
+    const orphans = (ctx?.tasks || []).filter(t =>
+      !TERMINAL.has((t.status || '').toLowerCase()) &&
+      !t.advances_initiative &&
+      !t.advances_plan
+    );
+    if (!orphans.length) return '(none — every open task has an initiative, as it should)';
+    return orphans.slice(0, 25).map(t => `- \`${t.id}\` · ${t.title || '(untitled)'}`).join('\n') + (orphans.length > 25 ? `\n(+ ${orphans.length - 25} more)` : '');
   },
 };
 

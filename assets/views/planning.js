@@ -539,16 +539,15 @@ function renderTimelineRow(init, ctx, pct, today) {
 
 function renderBacklogSubTab(ctx) {
   // 3-column model (2026-08-13 reshape per operator):
-  //   1. Inbox         — memos not yet processed + tasks with no initiative
-  //   2. Initiatives   — every initiative, each with a state chip. Grooming
-  //                       moves items between backlog_state values.
-  //   3. Queued plans  — plans waiting to activate (as before).
-  const TERMINAL_TASK = new Set(['done', 'closed', 'completed', 'cancelled', 'rejected']);
+  //   1. Inbox         — raw unprocessed MEMOS. Every well-formed task lives
+  //                       under an initiative, so no "orphan tasks" column
+  //                       (dropped 2026-08-13 — the concept was noise).
+  //   2. Initiatives   — every initiative, each with a state chip. Tasks
+  //                       are bundled inside their parent initiative.
+  //   3. Queued plans  — drafts + queued (as before).
   const unprocessedMemos = (ctx.memos || [])
     .filter(m => (m.status || '').toLowerCase() === 'unprocessed')
     .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
-  const orphanTasks = (ctx.tasks || [])
-    .filter(t => !t.advances_initiative && !t.advances_plan && !TERMINAL_TASK.has((t.status || '').toLowerCase()));
 
   const initiatives = (ctx.initiatives || []).filter(i =>
     // Show everything EXCEPT already-completed/discarded initiatives (those
@@ -573,10 +572,10 @@ function renderBacklogSubTab(ctx) {
     <div class="card">
       <div class="backlog-header">
         <div class="backlog-tagline">
-          The pool the operator + Stewart work from. <strong>Inbox</strong> is raw
-          input (memos, orphan tasks). <strong>Initiatives</strong> are the
-          groomed workstreams — each holds its own tasks. <strong>Queued
-          plans</strong> are ready to auto-activate when the current plan closes.
+          The pool the operator + Stewart work from. <strong>Inbox</strong> holds raw
+          unprocessed memos. <strong>Initiatives</strong> are the groomed workstreams —
+          each holds its own tasks. <strong>Drafts &amp; queue</strong> shows plans that
+          are being finalised or waiting to auto-activate.
         </div>
       </div>
       <div class="backlog-action-strip">
@@ -584,7 +583,7 @@ function renderBacklogSubTab(ctx) {
         <button type="button" class="plan-cycle-btn plan-cycle-btn-primary" data-cycle-action="compose" title="Pick initiatives + add your angle. Stewart drafts a plan from what you gave. Draft appears in Queued with a 'draft' badge; open it via the Finalise button on the card to iterate live with the agent.">✨ Compose plan</button>
       </div>
       <div class="kanban">
-        ${renderInboxColumn(unprocessedMemos, orphanTasks)}
+        ${renderInboxColumn(unprocessedMemos)}
         ${renderInitiativesColumn(initiatives, ctx)}
         ${renderQueuedPlansColumn(queuedPlans, activePlan)}
       </div>
@@ -592,39 +591,26 @@ function renderBacklogSubTab(ctx) {
   `;
 }
 
-// Inbox column — memos not yet processed + tasks with no linked initiative.
-// Cards render with a MEMO or TASK badge so operator can tell them apart.
-function renderInboxColumn(memos, orphanTasks) {
-  const count = memos.length + orphanTasks.length;
-  const cards = [
-    ...memos.map(m => `
-      <div class="kanban-card kanban-card-memo" data-memo-id="${escapeHtml(m.id)}">
-        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
-          <span class="b-type b-type-memo">MEMO</span>
-          <span class="mono" style="font-size:10px;color:var(--text-faint);">${escapeHtml((m.created_at || '').slice(0, 10))}</span>
-        </div>
-        <div style="font-size:12.5px;line-height:1.45;color:var(--text);">${escapeHtml((m.body || '').slice(0, 220))}${(m.body || '').length > 220 ? '…' : ''}</div>
+// Inbox column — raw unprocessed memos only. Tasks always live under an
+// initiative (born there via Grooming or Compose); no orphan-task pane.
+function renderInboxColumn(memos) {
+  const cards = memos.map(m => `
+    <div class="kanban-card kanban-card-memo" data-memo-id="${escapeHtml(m.id)}">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+        <span class="b-type b-type-memo">MEMO</span>
+        <span class="mono" style="font-size:10px;color:var(--text-faint);">${escapeHtml((m.created_at || '').slice(0, 10))}</span>
       </div>
-    `),
-    ...orphanTasks.map(t => `
-      <div class="kanban-card kanban-card-orphan-task" data-task-id="${escapeHtml(t.id)}">
-        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
-          <span class="b-type b-type-task">TASK</span>
-          <span class="mono" style="font-size:10px;color:var(--text-faint);">${escapeHtml(t.status || 'proposed')}</span>
-        </div>
-        <div style="font-size:13px;font-weight:600;color:var(--text);">${escapeHtml(t.title || '(untitled)')}</div>
-        ${t.description ? `<div style="font-size:11.5px;color:var(--text-faint);margin-top:3px;line-height:1.4;">${escapeHtml(t.description.slice(0, 140))}${t.description.length > 140 ? '…' : ''}</div>` : ''}
-      </div>
-    `),
-  ].join('');
+      <div style="font-size:12.5px;line-height:1.45;color:var(--text);">${escapeHtml((m.body || '').slice(0, 220))}${(m.body || '').length > 220 ? '…' : ''}</div>
+    </div>
+  `).join('');
   return `
     <div class="kanban-col" data-state="inbox">
       <div class="kanban-col-h">
         <span>📥 Inbox</span>
-        <span class="kanban-count">${count}</span>
+        <span class="kanban-count">${memos.length}</span>
       </div>
       <div class="kanban-col-body">
-        ${count ? cards : '<div class="kanban-empty">Empty — memos from Inputs + tasks without a home appear here.</div>'}
+        ${memos.length ? cards : '<div class="kanban-empty">Empty — new memos from Inputs land here for grooming.</div>'}
       </div>
     </div>
   `;
