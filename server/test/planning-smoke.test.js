@@ -301,6 +301,28 @@ test('S5 — POST /api/update-initiative mark_checkpoint_done is gated by open t
   assert.equal(cp.status, 'done');
 });
 
+test('S5c — POST /api/update-plan activate on a draft auto-sets finalized_at + activates/queues', async () => {
+  await seedFreshBu();
+  // Seed a bare draft plan (no finalized_at).
+  const now = new Date().toISOString();
+  const plans = [{
+    id: 'plan-draft-01', bu: BU, title: 'Compose output', status: 'draft',
+    period_start: '2026-08-13', period_target_end: '2026-09-13',
+    goal_ids: [], initiative_ids: [],
+    created_at: now, activated_at: null, finalized_at: null, finalized_by: null,
+  }];
+  await writeJson(`bus/${BU}/plans.json`, plans);
+
+  const mod = await import('../api/update-plan.js');
+  const r = await invoke(mod, { bu: BU, plan_id: 'plan-draft-01', action: 'activate', actor: 'operator' });
+  assert.equal(r.status, 200);
+  const after = await readJson(`bus/${BU}/plans.json`);
+  const p = after.find(x => x.id === 'plan-draft-01');
+  assert.equal(p.status, 'active');   // no other active plan, so straight to active
+  assert.ok(p.finalized_at, 'finalized_at should be auto-set');
+  assert.equal(p.finalized_by, 'operator');
+});
+
 test('S5b — POST /api/update-plan discard releases child initiatives back to backlog', async () => {
   await seedFreshBu({ withActive: true });
   // Seed init-active-01 as promoted_to_plan_id → plan-active-01 (which is what

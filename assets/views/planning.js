@@ -802,10 +802,12 @@ function wireBacklogActions(scope, ctx, onChange) {
     btn.addEventListener('click', () => invokeSkill('compose_plan', ctx, { ...skillOpts(), sourceEl: btn }));
   });
 
-  // Draft plan Finalise buttons (stub — full flow ships in PR 2).
+  // Draft plan Finalise buttons — flips draft → queued (or active if none
+  // active). Also auto-sets finalized_at server-side.
   scope.querySelectorAll('button[data-action="finalise_draft"]').forEach(btn => {
     btn.addEventListener('click', async () => {
-      await showAlert('Finalise screen ships in the next PR. For now: the draft plan is written to substrate and you can open plans.json directly to inspect. Discard if unwanted.');
+      const planId = btn.dataset.planId;
+      await finalisePlanFlow(planId, btn, ctx, onChange);
     });
   });
 
@@ -1526,6 +1528,32 @@ async function onCompleteCycle(planId, btn, ctx, onChange) {
   }
 }
 
+// Shared finalise flow used by both the Pipeline card button + the plan
+// detail overlay button. POSTs update-plan action='activate' — the endpoint
+// auto-sets finalized_at if missing, then flips the plan to 'active' (or
+// 'queued' if an active plan already exists).
+async function finalisePlanFlow(planId, btn, ctx, onChange) {
+  const plan = (ctx.plans || []).find(p => p.id === planId);
+  if (!plan) return;
+  const activeNow = (ctx.plans || []).find(p => p.status === 'active');
+  const willBe = activeNow ? `queued behind "${activeNow.title || activeNow.id}"` : 'activated immediately (no other plan is active)';
+  if (!await showConfirm(`Finalise "${plan.title || planId}"?\n\nIt will be ${willBe}.`)) return;
+  const original = btn.textContent;
+  btn.disabled = true; btn.textContent = 'finalising…';
+  try {
+    const resp = await fetch('/api/update-plan', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bu: BU(), plan_id: planId, action: 'activate', actor: 'operator' }),
+    });
+    const json = await resp.json().catch(() => ({}));
+    if (!resp.ok || !json.ok) throw new Error(json.message || `HTTP ${resp.status}`);
+    if (onChange) onChange();
+  } catch (e) {
+    btn.disabled = false; btn.textContent = original;
+    await showAlert(`Finalise failed: ${e.message || 'unknown'}`);
+  }
+}
+
 async function onGroomBacklog(btn, ctx, onChange) {
   const bu = BU();
   // Resolve Strategy Stewart via agent_bindings — same pattern as
@@ -1726,11 +1754,16 @@ function renderPlanDetailOverlay(ctx, onChange) {
     if (e.key === 'Escape') { close(); document.removeEventListener('keydown', escClose); }
   });
 
-  // Finalise button (stub — real screen ships in PR 2).
+  // Finalise button — flips draft → queued (or active if none).
   const finaliseBtn = document.getElementById('plan-detail-finalise');
   if (finaliseBtn) {
     finaliseBtn.addEventListener('click', async () => {
-      await showAlert('Finalise screen ships in the next PR. For now: the draft plan is written to substrate; you can open plans.json to inspect.');
+      const planId = finaliseBtn.dataset.planId;
+      await finalisePlanFlow(planId, finaliseBtn, ctx, () => {
+        openPlanId = null;
+        host.innerHTML = '';
+        if (onChange) onChange();
+      });
     });
   }
 
