@@ -179,7 +179,6 @@ async function runAgentSession(manifest, ctx, opts) {
   const brief = renderPrompt(template, manifest, ctx, {
     bu, bu_label: opts.bu_label || bu, agent_id: agentId,
   });
-  const mod = await import('./meeting.js');
   const title = interpolate(manifest.meeting?.title_template || manifest.name, {
     bu, bu_label: opts.bu_label || bu, agent_id: agentId,
   });
@@ -189,15 +188,26 @@ async function runAgentSession(manifest, ctx, opts) {
   const greeting = interpolate(manifest.meeting?.greeting || 'Hi — what would you like to work on?', {
     bu, bu_label: opts.bu_label || bu, agent_id: agentId,
   });
-  const meeting = await mod.startMeeting({
+  // Open docked (not full-screen overlay) so the operator can minimise it
+  // and continue while navigating the rest of the dashboard. Uses a fresh
+  // tab id per (skill, bu) pair so multiple concurrent skill sessions each
+  // get their own dock tab (rather than resuming the previous one).
+  const mod = await import('./chat-dock.js');
+  mod.openChatDocked({
     bu,
     agent_id: agentId,
-    title,
-    purpose: manifest.meeting?.purpose || 'skill',
+    label: title,
+    kind: 'agent',
+    tab_id: `skill-${manifest.id}-${bu}`,
+    purpose: manifest.meeting?.purpose || `skill:${manifest.id}`,
     opening_prompt: greeting,
     skill_brief: brief,
+    // related_item lets us filter meetings by skill later (e.g.
+    // "show me all backlog_grooming sessions").
+    related_item: { kind: 'skill', id: manifest.id, name: manifest.name },
+    fresh: true,
   });
-  return { meeting };
+  return { ok: true, docked: true };
 }
 
 async function runAgentTask(manifest, ctx, opts) {

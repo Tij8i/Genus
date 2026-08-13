@@ -186,13 +186,14 @@ function mountInto(host, meeting, bu, tabId) {
 async function createMeetingForTab(t, bu) {
   // If the tab carries a caller-supplied prompt (from openChatDocked), use
   // that. Otherwise fall back to the archetype default.
-  if (t.opening_prompt || t.purpose) {
+  if (t.opening_prompt || t.purpose || t.skill_brief) {
     return await createMeeting({
       bu,
       agent_id: t.agent_id || (t.kind === 'genus' ? 'genus-agent' : null),
       title: t.label,
       purpose: t.purpose || (t.kind === 'genus' ? 'chat-dock' : 'steward-chat'),
       opening_prompt: t.opening_prompt || null,
+      skill_brief: t.skill_brief || null,
       related_item: t.related_item || null,
     });
   }
@@ -306,7 +307,7 @@ export function openStewardTab({ id, label, agent_id }) {
 export function openChatDocked({
   bu, agent_id, label,
   kind = 'agent',
-  purpose = null, opening_prompt = null, related_item = null,
+  purpose = null, opening_prompt = null, skill_brief = null, related_item = null,
   tab_id = null, fresh = false,
 } = {}) {
   loadState();
@@ -325,6 +326,7 @@ export function openChatDocked({
     if (fresh || !existing.meeting_id) {
       existing.purpose = purpose;
       existing.opening_prompt = opening_prompt;
+      existing.skill_brief = skill_brief;
       existing.related_item = related_item;
     }
   } else {
@@ -332,7 +334,7 @@ export function openChatDocked({
       id, label, kind, agent_id,
       minimised: false, unread: 0, meeting_id: null,
       fresh_requested: !!fresh,
-      purpose, opening_prompt, related_item,
+      purpose, opening_prompt, skill_brief, related_item,
     });
   }
   saveState();
