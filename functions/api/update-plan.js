@@ -192,6 +192,35 @@ export async function onRequestPost({ request, env }) {
     plan.discarded_by = actor;
     const note = (body.closing_notes || '').toString().trim() || `Discarded by ${actor} at ${now.slice(0, 10)}.`;
     plan.closing_notes = plan.closing_notes ? `${plan.closing_notes}\n\n— ${now.slice(0, 10)} (discard) —\n${note}` : note;
+    // Release child initiatives back to backlog.
+    if (Array.isArray(plan.initiative_ids) && plan.initiative_ids.length) {
+      const initsPath = `dashboard/public/data/bus/${bu}/initiatives.json`;
+      try {
+        const initsFile = await getFile(env.GITHUB_PAT, initsPath);
+        const initiatives = JSON.parse(initsFile.content);
+        if (Array.isArray(initiatives)) {
+          const releasedIds = [];
+          for (const iid of plan.initiative_ids) {
+            const init = initiatives.find(i => i.id === iid);
+            if (!init) continue;
+            if (init.promoted_to_plan_id !== planId) continue;
+            init.promoted_to_plan_id = null;
+            init.promoted_at = null;
+            init.backlog_state = 'ready';
+            init.previously_in_plan = init.previously_in_plan || [];
+            init.previously_in_plan.push({ plan_id: planId, discarded_at: now, discarded_by: actor });
+            releasedIds.push(iid);
+          }
+          if (releasedIds.length) {
+            const initsResp = await putFile(env.GITHUB_PAT, initsPath, JSON.stringify(initiatives, null, 2) + '\n', initsFile.sha,
+              `initiatives: release ${releasedIds.length} from discarded plan ${planId}`);
+            initsCommitSha = initsResp.commit.sha;
+          }
+        }
+      } catch (e) {
+        console.warn('[update-plan] discard: initiative release failed:', e?.message || e);
+      }
+    }
   } else if (action === 'edit_plan') {
     if (plan.status !== 'active') {
       return jsonResponse(409, { ok: false, message: `edit_plan only allowed on active plans; ${planId} is ${plan.status}` });
