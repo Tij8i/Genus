@@ -1399,8 +1399,36 @@ body {
   background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
   padding: 14px; min-height: 200px;
 }
-.kanban-tight .kanban-col { padding: 10px 12px; min-height: 140px; }
-.kanban-tight .kanban-col-body { gap: 6px; }
+.kanban-tight .kanban-col {
+  padding: 10px 12px;
+  min-height: 140px;
+  /* Each column scrolls independently instead of the whole page becoming
+     one long scroll behind the busiest column. */
+  max-height: calc(100vh - 220px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.kanban-tight .kanban-col-body {
+  gap: 6px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;   /* leave room for scrollbar so cards don't jitter */
+}
+/* Column header — always single line, even when the column is narrow. */
+.kanban-tight .kanban-col-h {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: .12em;
+  font-size: 10.5px;
+}
+.kanban-tight .kanban-col-h > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
 /* Compact card variant used by the Backlog view. */
 .kanban-card-tight {
   background: var(--surface2, #fbfbfa);
