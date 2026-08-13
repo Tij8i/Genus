@@ -243,10 +243,26 @@ async function runAgentSession(manifest, ctx, opts) {
   const greeting = interpolate(manifest.meeting?.greeting || 'Hi — what would you like to work on?', {
     bu, bu_label: opts.bu_label || bu, agent_id: agentId,
   });
-  // Open docked (not full-screen overlay) so the operator can minimise it
-  // and continue while navigating the rest of the dashboard. Uses a fresh
-  // tab id per (skill, bu) pair so multiple concurrent skill sessions each
-  // get their own dock tab (rather than resuming the previous one).
+  // Two mount modes:
+  //   1. opts.mountHost = HTMLElement → mount the chat surface inline
+  //      into that element (used by the plan detail overlay's Iterate flow).
+  //   2. no mountHost → open docked panel (default; groom, generic skill
+  //      sessions).
+  if (opts.mountHost instanceof HTMLElement) {
+    const meetingMod = await import('./meeting.js');
+    const meeting = await meetingMod.createMeeting({
+      bu,
+      agent_id: agentId,
+      title,
+      purpose: manifest.meeting?.purpose || `skill:${manifest.id}`,
+      opening_prompt: greeting,
+      skill_brief: brief,
+      related_item: { kind: 'skill', id: manifest.id, name: manifest.name, ...(opts.related_item || {}) },
+    });
+    if (!meeting) return { error: 'meeting_create_failed' };
+    meetingMod.mountChatSurface(opts.mountHost, meeting, { bu, mode: 'overlay' });
+    return { ok: true, inline: true, meeting };
+  }
   const mod = await import('./chat-dock.js');
   mod.openChatDocked({
     bu,
@@ -257,9 +273,7 @@ async function runAgentSession(manifest, ctx, opts) {
     purpose: manifest.meeting?.purpose || `skill:${manifest.id}`,
     opening_prompt: greeting,
     skill_brief: brief,
-    // related_item lets us filter meetings by skill later (e.g.
-    // "show me all backlog_grooming sessions").
-    related_item: { kind: 'skill', id: manifest.id, name: manifest.name },
+    related_item: { kind: 'skill', id: manifest.id, name: manifest.name, ...(opts.related_item || {}) },
     fresh: true,
   });
   return { ok: true, docked: true };

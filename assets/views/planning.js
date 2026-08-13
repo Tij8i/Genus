@@ -1781,6 +1781,10 @@ function renderPlanDetailOverlay(ctx, onChange) {
       <div class="overlay-section">
         ${actionsHtml}
       </div>
+      <div class="overlay-section" id="plan-detail-chat-section" style="display:none;">
+        <div class="card-section-label" style="margin-bottom:10px">💬 Chat with Stewart</div>
+        <div id="plan-detail-chat-host" style="height:420px;border:1px solid var(--border);border-radius:8px;overflow:hidden;display:flex;flex-direction:column;"></div>
+      </div>
     </div>
   `;
 
@@ -1791,23 +1795,31 @@ function renderPlanDetailOverlay(ctx, onChange) {
     if (e.key === 'Escape') { close(); document.removeEventListener('keydown', escClose); }
   });
 
-  // Iterate button — opens a live chat with Strategy Stewart scoped to
-  // THIS plan. Stewart edits goals/initiatives/tasks in-place; operator
-  // returns to this overlay + clicks Finalise when ready.
+  // Iterate button — mounts a live chat with Strategy Stewart INSIDE this
+  // overlay (scoped to this specific plan). Stewart edits substrate live;
+  // operator returns to click Finalise when ready.
   const iterateBtn = document.getElementById('plan-detail-iterate');
   if (iterateBtn) {
     iterateBtn.addEventListener('click', async () => {
       const planId = iterateBtn.dataset.planId;
+      const chatSection = document.getElementById('plan-detail-chat-section');
+      const chatHost = document.getElementById('plan-detail-chat-host');
+      if (!chatSection || !chatHost) return;
+      // Show the chat section; hide the Iterate button (one session at a time).
+      chatSection.style.display = '';
+      iterateBtn.style.display = 'none';
+      // Loading indicator until the meeting is created.
+      chatHost.innerHTML = '<div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--text-faint);font-size:12px;">Starting session with Stewart…</div>';
+      chatSection.scrollIntoView({ behavior: 'smooth', block: 'end' });
       await invokeSkill('iterate_plan', ctx, {
         bu: BU(),
         bu_label: buLabel(),
         plan_id: planId,
         related_id: planId,
         related_item: { kind: 'plan', id: planId, name: plan.title || planId },
+        mountHost: chatHost,   // inline mount (not docked)
         onChange,
       });
-      // Chat opens as a docked panel; the overlay stays open so operator
-      // can reference the plan while chatting.
     });
   }
 
