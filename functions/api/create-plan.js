@@ -1,5 +1,6 @@
 // POST /api/create-plan
-// Creates a new Plan as status='draft', optionally with inline goals + initiatives.
+// Creates a new Plan. Manual creation lands as 'active' (or 'queued' if
+// active plan already exists) — no draft state per operator ask 2026-08-13.
 //
 // Body: { bu, title, rationale?, period_start?, period_target_end?,
 //         goals?: [{title, description?}],
@@ -122,18 +123,25 @@ export async function onRequestPost({ request, env }) {
     newInitIds.push(iId);
   });
 
+  // Kill-Draft-State for manual plans too (2026-08-13). Manual create =
+  // operator provides everything inline; no need for a Stewart-finalize step.
+  const previousActive = plans.find(p => p.status === 'active');
+  const initialStatus = previousActive ? 'queued' : 'active';
   const plan = {
     id: planId, bu, title, rationale,
-    status: 'draft',
+    status: initialStatus,
     goal_ids: newGoalIds,
     initiative_ids: newInitIds,
     period_start,
     period_target_end,
-    activated_at: null,
+    activated_at: initialStatus === 'active' ? now : null,
+    queued_at: initialStatus === 'queued' ? now : null,
+    queued_after_plan_id: initialStatus === 'queued' ? previousActive.id : null,
     completed_at: null,
     closing_notes: null,
-    finalized_at: null,
-    finalized_by: null,
+    finalized_at: now,
+    finalized_by: 'operator',
+    finalize_task_id: null,
     created_by: ['operator'],
     created_at: now,
   };
@@ -141,16 +149,16 @@ export async function onRequestPost({ request, env }) {
 
   // Write substrate (sequential — shas chain)
   try {
-    const r1 = await putFile(env.GITHUB_PAT, plansPath, JSON.stringify(plans, null, 2) + '\n', plansFile.sha, `plans: draft ${planId} — ${title.slice(0, 50)}`);
+    const r1 = await putFile(env.GITHUB_PAT, plansPath, JSON.stringify(plans, null, 2) + '\n', plansFile.sha, `plans: ${initialStatus} ${planId} — ${title.slice(0, 50)}`);
     let r2Sha = null, r3Sha = null;
     if (newGoalIds.length) {
       const gf2 = await getFile(env.GITHUB_PAT, goalsPath);
-      const r2 = await putFile(env.GITHUB_PAT, goalsPath, JSON.stringify(goals, null, 2) + '\n', gf2.sha, `goals: +${newGoalIds.length} for draft ${planId}`);
+      const r2 = await putFile(env.GITHUB_PAT, goalsPath, JSON.stringify(goals, null, 2) + '\n', gf2.sha, `goals: +${newGoalIds.length} for ${initialStatus} ${planId}`);
       r2Sha = r2.commit.sha;
     }
     if (newInitIds.length) {
       const if2 = await getFile(env.GITHUB_PAT, initsPath);
-      const r3 = await putFile(env.GITHUB_PAT, initsPath, JSON.stringify(initiatives, null, 2) + '\n', if2.sha, `initiatives: +${newInitIds.length} for draft ${planId}`);
+      const r3 = await putFile(env.GITHUB_PAT, initsPath, JSON.stringify(initiatives, null, 2) + '\n', if2.sha, `initiatives: +${newInitIds.length} for ${initialStatus} ${planId}`);
       r3Sha = r3.commit.sha;
     }
     return jsonResponse(200, {
