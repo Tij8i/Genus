@@ -22,11 +22,15 @@ import { showAlert, showConfirm } from './dialog.js';
 const SKILLS_BASE = 'dashboard/public/data/skills';
 const INDEX_PATH = `${SKILLS_BASE}/_index.json`;
 
-// In-process caches. Skills change rarely; reload requires page refresh (or
-// window.__skillsRegistry.reload() from DevTools).
+// Cached during a page load, but flushed on the fetch call itself via a
+// timestamp query param — skills change fast during iteration, and stale
+// prompts in the client cache caused mid-session drift where the agent
+// still saw items the operator had just processed. Restart a chat session
+// after editing a SKILL.md and it re-fetches. window.__skillsRegistry.reload()
+// still exposed for explicit invalidation from DevTools.
 let indexCache = null;
 let manifestCache = new Map();   // id → manifest JSON
-let promptCache = new Map();     // id → SKILL.md text
+let promptCache = new Map();     // id → SKILL.md text (short-TTL, see loadPromptTemplate)
 
 // Registry of handlers for kind='deterministic' skills. Callers register
 // their handlers at boot with registerHandler(name, fn). The dispatcher
@@ -43,22 +47,24 @@ async function loadIndex() {
   return indexCache;
 }
 
+// No client-side caching during dev — we're actively iterating on SKILL.md
+// files, so cached prompts caused mid-session drift. If perf becomes an
+// issue later, re-enable with a short TTL. window.__skillsRegistry.reload()
+// stays exposed for explicit invalidation from DevTools.
 async function loadManifest(id) {
-  if (manifestCache.has(id)) return manifestCache.get(id);
   const path = `${SKILLS_BASE}/${id}/manifest.json`;
   const manifest = await fetchSubstrateJson(path, null);
   if (!manifest) throw new Error(`Skill '${id}' has no manifest at ${path}`);
-  manifestCache.set(id, manifest);
+  manifestCache.set(id, manifest);   // kept for DevTools introspection only
   return manifest;
 }
 
 async function loadPromptTemplate(id, manifest) {
-  if (promptCache.has(id)) return promptCache.get(id);
   const file = manifest.prompt_file || 'SKILL.md';
   const path = `${SKILLS_BASE}/${id}/${file}`;
   const result = await fetchSubstrate(path);
   if (!result?.content) throw new Error(`Skill '${id}' prompt not found at ${path}`);
-  promptCache.set(id, result.content);
+  promptCache.set(id, result.content); // kept for DevTools introspection only
   return result.content;
 }
 
