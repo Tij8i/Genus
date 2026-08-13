@@ -1388,9 +1388,65 @@ body {
 }
 
 .kanban { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+/* Tight backlog kanban: always 3 columns side-by-side (2026-08-13). */
+.kanban-tight { grid-template-columns: repeat(3, 1fr); gap: 10px; }
+@media (max-width: 900px) { .kanban-tight { grid-template-columns: 1fr; } }
+.backlog-card-tight { padding: 12px 14px; }
+.backlog-card-tight .backlog-action-strip {
+  padding: 4px 0 12px; margin-bottom: 12px;
+}
 .kanban-col {
   background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
   padding: 14px; min-height: 200px;
+}
+.kanban-tight .kanban-col { padding: 10px 12px; min-height: 140px; }
+.kanban-tight .kanban-col-body { gap: 6px; }
+/* Compact card variant used by the Backlog view. */
+.kanban-card-tight {
+  background: var(--surface2, #fbfbfa);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 9px;
+  cursor: pointer;
+  transition: border-color .1s;
+}
+.kanban-card-tight:hover { border-color: var(--text-faint); }
+/* Nested task/init bullets */
+.init-task-list, .plan-init-list {
+  margin-top: 4px;
+  border-top: 1px dashed var(--border);
+  padding-top: 4px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.init-task-line, .plan-init-line {
+  font-size: 11.5px; color: var(--text-dim); line-height: 1.35;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.init-task-more, .plan-init-more {
+  font-size: 10.5px; color: var(--text-faint); font-style: italic; padding-top: 2px;
+}
+.init-task-empty {
+  font-size: 10.5px; color: var(--text-faint); font-style: italic; margin-top: 4px;
+}
+.init-size-chip {
+  font-size: 9.5px; padding: 1px 5px; border-radius: 3px;
+  background: var(--surface); border: 1px solid var(--border); color: var(--text-faint);
+  text-transform: uppercase; letter-spacing: .04em;
+}
+.plan-state-line { font-size: 10.5px; font-weight: 600; margin-top: 3px; }
+.plan-badge-draft {
+  font-size: 9.5px; font-weight: 700; letter-spacing: .06em;
+  padding: 1px 5px; border-radius: 3px;
+  background: var(--amber-bg, rgba(255, 190, 60, 0.15));
+  color: var(--amber-fg, #b57500);
+  border: 1px solid var(--amber-fg, #b57500);
+}
+.plan-badge-queued {
+  font-size: 9.5px; font-weight: 700; letter-spacing: .06em;
+  padding: 1px 5px; border-radius: 3px;
+  background: rgba(14, 159, 110, 0.10);
+  color: var(--green-fg, #0e9f6e);
+  border: 1px solid var(--green-fg, #0e9f6e);
 }
 .kanban-col[data-state="untriaged"]        { border-top: 3px solid var(--accent); }
 .kanban-col[data-state="ready"]            { border-top: 3px solid var(--green); }
