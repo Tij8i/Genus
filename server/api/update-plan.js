@@ -162,10 +162,13 @@ export async function onRequestPost({ request, env }) {
     if (plan.status !== 'draft') {
       return jsonResponse(409, { ok: false, message: `Only drafts can be activated. Plan ${planId} is ${plan.status}.` });
     }
+    // 2026-08-13: auto-set finalized_at when the operator activates a draft.
+    // Was: required finalized_at to be pre-set (which forced a separate
+    // "finalise with Stewart" step). Now the click IS the finalise.
     if (!plan.finalized_at) {
-      return jsonResponse(409, { ok: false, message: `Plan ${planId} is not finalized yet. Finalize with Stewart first.` });
+      plan.finalized_at = now;
+      plan.finalized_by = plan.finalized_by || actor;
     }
-    // Feature (d): activate now if no active plan; otherwise queue.
     const previousActive = plans.find(p => p.status === 'active');
     if (!previousActive) {
       plan.status = 'active';
