@@ -1417,6 +1417,11 @@ body {
 .b-type { padding: 1px 6px; border-radius: 2px; font-weight: 600; }
 .b-type-goal { background: var(--accent); color: #fff; }
 .b-type-init { background: var(--surface); border: 1px solid var(--accent); color: var(--accent); }
+.b-type-memo { background: var(--surface); border: 1px solid var(--text-faint); color: var(--text-dim); font-family: 'JetBrains Mono', monospace; font-size: 9.5px; }
+.b-type-task { background: var(--surface); border: 1px solid var(--green-fg, #0e9f6e); color: var(--green-fg, #0e9f6e); font-family: 'JetBrains Mono', monospace; font-size: 9.5px; }
+.kanban-card-memo { border-left: 3px solid var(--text-faint); }
+.kanban-card-orphan-task { border-left: 3px solid var(--green-fg, #0e9f6e); }
+.kanban-card-initiative { border-left: 3px solid var(--accent); }
 .b-from-memo { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--text-faint); }
 .b-title { font-weight: 600; color: var(--text); font-size: 13px; line-height: 1.4; margin-bottom: 6px; }
 .b-desc { font-size: 12px; color: var(--text-dim); line-height: 1.55; margin-bottom: 8px; }
