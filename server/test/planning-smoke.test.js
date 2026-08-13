@@ -301,6 +301,28 @@ test('S5 — POST /api/update-initiative mark_checkpoint_done is gated by open t
   assert.equal(cp.status, 'done');
 });
 
+test('S5b — POST /api/update-plan discard releases child initiatives back to backlog', async () => {
+  await seedFreshBu({ withActive: true });
+  // Seed init-active-01 as promoted_to_plan_id → plan-active-01 (which is what
+  // the withActive fixture already does implicitly). Confirm it, then discard.
+  const initsBefore = await readJson(`bus/${BU}/initiatives.json`);
+  // Fixture doesn't set promoted_to_plan_id; do it now to make the test real.
+  initsBefore[0].promoted_to_plan_id = 'plan-active-01';
+  initsBefore[0].backlog_state = 'promoted_to_plan';
+  await writeJson(`bus/${BU}/initiatives.json`, initsBefore);
+
+  const mod = await import('../api/update-plan.js');
+  const r = await invoke(mod, { bu: BU, plan_id: 'plan-active-01', action: 'discard' });
+  assert.equal(r.status, 200);
+
+  const inits = await readJson(`bus/${BU}/initiatives.json`);
+  const released = inits.find(i => i.id === 'init-active-01');
+  assert.equal(released.promoted_to_plan_id, null);
+  assert.equal(released.backlog_state, 'ready');
+  assert.ok(Array.isArray(released.previously_in_plan) && released.previously_in_plan.length >= 1);
+  assert.equal(released.previously_in_plan[0].plan_id, 'plan-active-01');
+});
+
 test('S6 — POST /api/update-plan complete_cycle auto-promotes the queued plan', async () => {
   await seedFreshBu({ withActive: true, withQueued: true });
   const mod = await import('../api/update-plan.js');
