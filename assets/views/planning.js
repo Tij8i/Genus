@@ -550,9 +550,11 @@ function renderBacklogSubTab(ctx) {
     .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
 
   const initiatives = (ctx.initiatives || []).filter(i =>
-    // Show everything EXCEPT already-completed/discarded initiatives (those
-    // live in the retrospective + archive). Backlog is a work-in-flight view.
-    !['completed', 'abandoned', 'discarded'].includes((i.status || '').toLowerCase())
+    // Backlog Initiatives column = "stuff not yet in a plan". An initiative
+    // already tied to a draft/queued/active plan lives on the plan card in
+    // the Pipeline column (or in the Active tab), not here.
+    !['completed', 'abandoned', 'discarded'].includes((i.status || '').toLowerCase()) &&
+    !i.promoted_to_plan_id
   );
 
   // Merged column: drafts + queued. Drafts come first (they need operator
@@ -608,17 +610,24 @@ function renderInboxColumn(memos) {
 // (compact bullets). Task is the key work unit; grouping is just visual.
 function renderInitiativesColumn(initiatives, ctx) {
   const cards = initiatives.map(i => {
-    const state = i.backlog_state || (i.promoted_to_plan_id ? 'promoted_to_plan' : 'untriaged');
-    const stateLabel = ({ untriaged: 'untriaged', ready: 'ready', promoted_to_plan: 'in a plan' })[state] || state;
+    // Filter above already excluded promoted_to_plan initiatives, so only
+    // untriaged / ready are possible here.
+    const state = i.backlog_state === 'ready' ? 'ready' : 'untriaged';
+    const stateLabel = state;
     const linkedTasks = (ctx.tasks || []).filter(t => t.advances_initiative === i.id);
     const sizeChip = i.size_estimate ? `<span class="mono init-size-chip">${escapeHtml(i.size_estimate)}</span>` : '';
     const taskBullets = linkedTasks.slice(0, 6).map(t => {
       const st = (t.status || 'proposed').toLowerCase();
-      const dot = ({ done: '●', completed: '●', closed: '●', cancelled: '○', rejected: '○' })[st] || '◐';
-      const dotColor = ['done', 'completed', 'closed'].includes(st) ? 'var(--green-fg,#0e9f6e)'
-                    : ['cancelled', 'rejected'].includes(st) ? 'var(--text-faint)'
-                    : 'var(--amber-fg,#b57500)';
-      return `<div class="init-task-line"><span style="color:${dotColor};margin-right:6px;">${dot}</span>${escapeHtml(t.title || '(untitled task)')}</div>`;
+      // ○ empty  = not started (proposed / approved / awaiting_approval)
+      // ◐ half   = in progress
+      // ● full   = done / completed / closed
+      // ⨯ x      = cancelled / rejected
+      let dot, dotColor, titleStyle = '';
+      if (['done', 'completed', 'closed'].includes(st))       { dot = '●'; dotColor = 'var(--green-fg,#0e9f6e)'; }
+      else if (['cancelled', 'rejected'].includes(st))         { dot = '⨯'; dotColor = 'var(--text-faint)'; titleStyle = 'text-decoration:line-through;color:var(--text-faint);'; }
+      else if (['in_progress', 'executing', 'pushed'].includes(st)) { dot = '◐'; dotColor = 'var(--amber-fg,#b57500)'; }
+      else                                                     { dot = '○'; dotColor = 'var(--text-faint)'; }
+      return `<div class="init-task-line" title="${escapeHtml(st)}"><span style="color:${dotColor};margin-right:6px;">${dot}</span><span style="${titleStyle}">${escapeHtml(t.title || '(untitled task)')}</span></div>`;
     }).join('');
     const moreLine = linkedTasks.length > 6 ? `<div class="init-task-more">+ ${linkedTasks.length - 6} more</div>` : '';
     return `
