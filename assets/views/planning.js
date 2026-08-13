@@ -15,12 +15,17 @@ import { fetchSubstrateJson, substrateBase } from '../substrate-client.js';
 import { invokeSkill, registerHandler } from '../skills.js';
 
 // Register the 'openNewPlanOverlay' deterministic-skill handler so the
-// new_plan_manual skill can dispatch to the existing overlay function.
-// Registration happens on module load; the handler is a thin wrapper that
-// unpacks (ctx, opts) into (ctx, onChange).
+// legacy new_plan_manual skill can still dispatch to the existing overlay
+// (kept for back-compat during migration; will be removed once compose is
+// stable across all BUs).
 registerHandler('openNewPlanOverlay', (ctx, opts) => {
   openNewPlanOverlay(ctx, opts.onChange);
   return { ok: true, opened: 'new-plan-overlay' };
+});
+// Register 'openComposeOverlay' for the new compose_plan skill.
+registerHandler('openComposeOverlay', (ctx, opts) => {
+  openComposeOverlay(ctx, opts.onChange);
+  return { ok: true, opened: 'compose-overlay' };
 });
 
 // Legacy hardcode — planning was pinned to 'tuto' from the pre-multi-BU
@@ -551,9 +556,17 @@ function renderBacklogSubTab(ctx) {
     !['completed', 'abandoned', 'discarded'].includes((i.status || '').toLowerCase())
   );
 
+  // Merged column: drafts + queued. Drafts come first (they need operator
+  // action to move forward); queued come after (they're on autopilot until
+  // the active plan closes).
   const queuedPlans = (ctx.plans || [])
-    .filter(p => p.status === 'queued')
-    .sort((a, b) => (a.queued_at || a.created_at || '').localeCompare(b.queued_at || b.created_at || ''));
+    .filter(p => p.status === 'draft' || p.status === 'queued')
+    .sort((a, b) => {
+      // draft before queued; within each bucket by queued_at/created_at ASC
+      const pri = { draft: 0, queued: 1 }[a.status] - { draft: 0, queued: 1 }[b.status];
+      if (pri !== 0) return pri;
+      return (a.queued_at || a.created_at || '').localeCompare(b.queued_at || b.created_at || '');
+    });
   const activePlan = (ctx.plans || []).find(p => p.status === 'active');
 
   return `
@@ -568,8 +581,7 @@ function renderBacklogSubTab(ctx) {
       </div>
       <div class="backlog-action-strip">
         <button type="button" class="plan-cycle-btn" data-cycle-action="groom" title="Open a live grooming session with Stewart. Stewart helps you turn Inbox items into initiatives, or attach them to existing ones.">🧹 Groom (session)</button>
-        <button type="button" class="plan-cycle-btn" data-cycle-action="new-manual" title="Sketch your own plan — pick which initiatives it contains, its goal + rationale. Activates immediately (or queues behind current).">✏️ New plan (manual)</button>
-        <button type="button" class="plan-cycle-btn plan-cycle-btn-primary" data-cycle-action="propose" title="Ask the Strategy Stewart to synthesize 3 distinct plan proposals from the current backlog + memos + KPI state.">✨ Ask Stewart for 3 proposals</button>
+        <button type="button" class="plan-cycle-btn plan-cycle-btn-primary" data-cycle-action="compose" title="Pick initiatives + add your angle. Stewart drafts a plan from what you gave. Draft appears in Queued with a 'draft' badge; open it via the Finalise button on the card to iterate live with the agent.">✨ Compose plan</button>
       </div>
       <div class="kanban">
         ${renderInboxColumn(unprocessedMemos, orphanTasks)}
@@ -659,38 +671,54 @@ function renderInitiativesColumn(initiatives, ctx) {
   `;
 }
 
-// Queued plans as a Backlog column. Each card = one queued plan.
+// Merged queue column: drafts (needs operator action) + queued (autopilot).
 function renderQueuedPlansColumn(plans, activePlan) {
+  const draftCount = plans.filter(p => p.status === 'draft').length;
+  const queuedCount = plans.filter(p => p.status === 'queued').length;
   const items = plans.map((p, i) => {
-    const goalCount = (p.goal_ids || []).length;
+    const isDraft = p.status === 'draft';
     const initCount = (p.initiative_ids || []).length;
     const populating = !p.finalized_at && !!p.finalize_task_id;
-    const pos = plans.length > 1 ? ` · #${i + 1}` : '';
-    const afterLine = activePlan
-      ? `after "${escapeHtml((activePlan.title || activePlan.id).slice(0, 28))}"`
-      : `no active plan — will auto-activate`;
+    const badge = isDraft
+      ? '<span class="b-type" style="background:var(--amber-bg,rgba(255,190,60,.15));color:var(--amber-fg,#b57500);border:1px solid var(--amber-fg,#b57500);">DRAFT</span>'
+      : '<span class="b-type" style="background:rgba(14,159,110,.10);color:var(--green-fg,#0e9f6e);border:1px solid var(--green-fg,#0e9f6e);">QUEUED</span>';
+    const stateLine = isDraft
+      ? '<span style="color:var(--amber-fg,#b57500);font-weight:600;">Needs finalising</span>'
+      : (populating
+        ? '<span style="color:var(--amber-fg,#b57500);font-weight:600;">Stewart populating…</span>'
+        : (activePlan
+          ? `<span style="color:var(--green-fg,#0e9f6e);font-weight:600;">Coming up next</span>`
+          : `<span style="color:var(--green-fg,#0e9f6e);font-weight:600;">Ready to activate</span>`));
+    const primaryBtn = isDraft
+      ? `<button type="button" class="b-action" data-action="finalise_draft" data-plan-id="${escapeHtml(p.id)}" style="background:var(--accent);color:#fff;border-color:var(--accent);">Finalise…</button>`
+      : '';
     return `
-      <div class="kanban-card kanban-card-queued" data-queued-id="${escapeHtml(p.id)}">
-        <div style="font-weight:600;font-size:13.5px;color:var(--text);">${escapeHtml(p.title || 'Untitled')}</div>
-        <div class="mono" style="font-size:10.5px;color:var(--text-faint);margin-top:3px;">${goalCount} goal${goalCount === 1 ? '' : 's'} · ${initCount} init${initCount === 1 ? '' : 's'}${pos}</div>
-        <div style="font-size:11px;color:var(--text-faint);margin-top:4px;">${afterLine}</div>
-        <div style="margin-top:5px;font-size:11px;">
-          ${populating
-            ? '<span style="color:var(--amber-fg,#b57500);font-weight:600;">Stewart populating…</span>'
-            : '<span style="color:var(--green-fg,#0e9f6e);font-weight:600;">Ready to activate</span>'}
+      <div class="kanban-card ${isDraft ? 'kanban-card-draft' : 'kanban-card-queued'}" data-queued-id="${escapeHtml(p.id)}">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          ${badge}
+          ${activePlan && !isDraft ? `<span class="mono" style="font-size:10px;color:var(--text-faint);">after "${escapeHtml((activePlan.title || activePlan.id).slice(0, 22))}"</span>` : ''}
         </div>
+        <div style="font-weight:600;font-size:13.5px;color:var(--text);">${escapeHtml(p.title || 'Untitled')}</div>
+        <div class="mono" style="font-size:10.5px;color:var(--text-faint);margin-top:3px;">${initCount} init${initCount === 1 ? '' : 's'}</div>
+        <div style="margin-top:5px;font-size:11px;">${stateLine}</div>
         <div style="margin-top:6px;display:flex;gap:6px;">
-          <button type="button" class="b-action b-discard" data-action="cancel_queued" data-plan-id="${escapeHtml(p.id)}">Cancel</button>
+          ${primaryBtn}
+          <button type="button" class="b-action b-discard" data-action="cancel_queued" data-plan-id="${escapeHtml(p.id)}">${isDraft ? 'Discard' : 'Cancel'}</button>
         </div>
       </div>
     `;
   }).join('');
+  const header = draftCount && queuedCount ? `${draftCount} draft · ${queuedCount} queued`
+                : draftCount ? `${draftCount} draft${draftCount === 1 ? '' : 's'}`
+                : queuedCount ? `${queuedCount} queued`
+                : '';
   return `
     <div class="kanban-col" data-state="queued">
       <div class="kanban-col-h">
-        <span>📅 Queued</span>
+        <span>📅 Drafts &amp; queue</span>
         <span class="kanban-count">${plans.length}</span>
       </div>
+      ${header ? `<div style="font-size:10.5px;color:var(--text-faint);padding:2px 6px 6px 6px;">${header}</div>` : ''}
       <div class="kanban-col-body">
         ${plans.length ? items : '<div class="kanban-empty">—</div>'}
       </div>
@@ -765,24 +793,28 @@ function wireBacklogActions(scope, ctx, onChange) {
     });
   }
 
-  // Backlog action strip: 3 skill-invocable buttons.
+  // Backlog action strip: 2 skill-invocable buttons.
   // Each button maps to a skill in dashboard/public/data/skills/<id>/.
-  // The manifest.kind determines dispatch:
   //   backlog_grooming  → agent_session (opens a live meeting with Stewart)
-  //   new_plan_manual   → deterministic (opens existing overlay)
-  //   propose_3_plans   → agent_task    (async POST → Stewart runs headless)
+  //   compose_plan      → deterministic (opens the compose overlay; agent
+  //                         is invoked from within the overlay's Generate
+  //                         button, not directly from the strip)
   const skillOpts = () => ({ bu: BU(), bu_label: buLabel(), onChange });
   scope.querySelectorAll('button[data-cycle-action="groom"]').forEach(btn => {
     btn.addEventListener('click', () => invokeSkill('backlog_grooming', ctx, { ...skillOpts(), sourceEl: btn }));
   });
-  scope.querySelectorAll('button[data-cycle-action="new-manual"]').forEach(btn => {
-    btn.addEventListener('click', () => invokeSkill('new_plan_manual', ctx, { ...skillOpts(), sourceEl: btn }));
-  });
-  scope.querySelectorAll('button[data-cycle-action="propose"]').forEach(btn => {
-    btn.addEventListener('click', () => invokeSkill('propose_3_plans', ctx, { ...skillOpts(), sourceEl: btn }));
+  scope.querySelectorAll('button[data-cycle-action="compose"]').forEach(btn => {
+    btn.addEventListener('click', () => invokeSkill('compose_plan', ctx, { ...skillOpts(), sourceEl: btn }));
   });
 
-  // Queued plan Cancel buttons.
+  // Draft plan Finalise buttons (stub — full flow ships in PR 2).
+  scope.querySelectorAll('button[data-action="finalise_draft"]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await showAlert('Finalise screen ships in the next PR. For now: the draft plan is written to substrate and you can open plans.json directly to inspect. Discard if unwanted.');
+    });
+  });
+
+  // Queued/draft plan Cancel/Discard buttons.
   scope.querySelectorAll('button[data-action="cancel_queued"]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const planId = btn.dataset.planId;
@@ -1751,6 +1783,82 @@ function renderEditPlanOverlay(ctx, onChange) {
 // title + period + rationale + inline goals + inline initiatives. Saves as
 // status=draft. Drafts show in the Drafts list on the Planning view; agent
 // finalizes them (adds tasks/milestones/gateways) then operator activates.
+
+// ============ Compose plan overlay (2026-08-13) ============
+// The new "Compose plan" flow. Operator picks initiatives from the current
+// backlog + adds free-text notes. POST /api/compose-plan fires a task to
+// Strategy Stewart, who drafts a plan (title, goal, rationale, ordering)
+// as status='draft'. Draft lands in the Queued column with a "draft" badge.
+// Operator later opens it via the Finalise button on the card to iterate
+// live (that flow ships in a follow-up PR).
+function openComposeOverlay(ctx, onChange) {
+  const inits = (ctx.initiatives || []).filter(i =>
+    !['completed', 'abandoned', 'discarded'].includes((i.status || '').toLowerCase()) &&
+    !i.promoted_to_plan_id
+  );
+  const bodyHtml = `
+    <div style="display:flex;flex-direction:column;gap:16px;max-width:640px;">
+      <div>
+        <div style="font-size:11px;color:var(--text-faint);letter-spacing:.08em;text-transform:uppercase;font-weight:600;margin-bottom:6px;">Pick initiatives (${inits.length} available)</div>
+        <div style="border:1px solid var(--border);border-radius:6px;padding:8px 10px;max-height:260px;overflow-y:auto;background:var(--surface);">
+          ${inits.length ? inits.map(i => `
+            <label style="display:flex;gap:8px;padding:6px 4px;cursor:pointer;border-bottom:1px solid var(--border-faint,transparent);">
+              <input type="checkbox" data-role="compose-init" data-init-id="${escapeHtml(i.id)}" style="margin-top:2px;flex:none;">
+              <span style="font-size:13px;color:var(--text);">
+                <strong>${escapeHtml(i.title || i.id)}</strong>
+                ${i.active_hypothesis ? `<div style="font-size:11.5px;color:var(--text-faint);margin-top:2px;line-height:1.4;">${escapeHtml(i.active_hypothesis.slice(0, 160))}${i.active_hypothesis.length > 160 ? '…' : ''}</div>` : ''}
+              </span>
+            </label>
+          `).join('') : '<div style="font-size:12px;color:var(--text-faint);padding:8px 4px;">No open initiatives. Add some via Groom first, or write everything in the notes below and Stewart will propose initiatives inline.</div>'}
+        </div>
+      </div>
+      <div>
+        <label for="compose-notes" style="display:block;font-size:11px;color:var(--text-faint);letter-spacing:.08em;text-transform:uppercase;font-weight:600;margin-bottom:6px;">Your angle / notes (optional)</label>
+        <textarea id="compose-notes" placeholder="e.g. 'Focus on wholesale conversion this cycle', 'Push MRR toward 15k', 'Prioritize churn root-cause over acquisition'…" style="width:100%;min-height:120px;padding:10px 12px;border:1px solid var(--border);border-radius:6px;font-size:13.5px;background:var(--surface);color:var(--text);font-family:inherit;line-height:1.5;resize:vertical;box-sizing:border-box;"></textarea>
+      </div>
+      <div id="compose-status" class="mono" style="font-size:12px;color:var(--text-faint);min-height:16px;"></div>
+    </div>
+  `;
+  openOverlay({
+    title: 'Compose a plan',
+    subtitle: `${buLabel()} · Stewart will draft a plan from what you pick + your notes. Draft lands in Queued (~3-5 min). You'll iterate + finalise from there.`,
+    bodyHtml,
+    footerHtml: `
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button type="button" class="plan-cycle-btn" id="compose-cancel">Cancel</button>
+        <button type="button" class="plan-cycle-btn plan-cycle-btn-primary" id="compose-generate">Generate draft plan</button>
+      </div>
+    `,
+  });
+  document.getElementById('compose-cancel').addEventListener('click', () => closeOverlay());
+  document.getElementById('compose-generate').addEventListener('click', async () => {
+    const initIds = Array.from(document.querySelectorAll('[data-role="compose-init"]:checked')).map(el => el.dataset.initId);
+    const notes = (document.getElementById('compose-notes').value || '').trim();
+    if (!initIds.length && !notes) {
+      await showAlert('Pick at least one initiative or write some notes so Stewart has something to work from.');
+      return;
+    }
+    const btn = document.getElementById('compose-generate');
+    const status = document.getElementById('compose-status');
+    btn.disabled = true; btn.textContent = 'generating…';
+    status.textContent = 'Firing request to Strategy Stewart…';
+    try {
+      const resp = await fetch('/api/compose-plan', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bu: BU(), initiative_ids: initIds, operator_notes: notes }),
+      });
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok || !json.ok) throw new Error(json.message || `HTTP ${resp.status}`);
+      status.textContent = '✓ Task queued. Draft will appear in the Queued column within ~3-5 min.';
+      status.style.color = 'var(--green-fg, #0e9f6e)';
+      setTimeout(() => { closeOverlay(); if (onChange) onChange(); }, 1200);
+    } catch (e) {
+      btn.disabled = false; btn.textContent = 'Generate draft plan';
+      status.textContent = `✗ ${e.message || 'failed'}`;
+      status.style.color = 'var(--red)';
+    }
+  });
+}
 
 const NP_FIELD_STYLE = 'padding:10px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px;background:var(--surface);color:var(--text);';
 const NP_LABEL_STYLE = 'font-size:12px;font-weight:600;color:var(--text-faint);text-transform:uppercase;letter-spacing:.08em;';
