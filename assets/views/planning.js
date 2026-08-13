@@ -556,7 +556,7 @@ function renderBacklogSubTab(ctx) {
         </label>
       </div>
       <div class="backlog-action-strip">
-        <button type="button" class="plan-cycle-btn" data-cycle-action="groom" title="Ask Stewart to review the backlog: promote candidates, propose new items from memos, discard stale ones.">🧹 Groom backlog</button>
+        <button type="button" class="plan-cycle-btn" data-cycle-action="groom" title="Open a live grooming session with Stewart. Stewart asks what's on your mind, then helps you converge on initiatives, size them, and group loose tasks under them.">🧹 Groom (session)</button>
         <button type="button" class="plan-cycle-btn" data-cycle-action="new-manual" title="Sketch your own plan — goals, initiatives, rationale. Auto-queues (or activates) once created.">✏️ New plan (manual)</button>
         <button type="button" class="plan-cycle-btn plan-cycle-btn-primary" data-cycle-action="propose" title="Ask the Strategy Stewart to synthesize 3 distinct plan proposals from the current backlog + memos + KPI state.">✨ Ask Stewart for 3 proposals</button>
       </div>
@@ -1409,16 +1409,77 @@ async function onCompleteCycle(planId, btn, ctx, onChange) {
 }
 
 async function onGroomBacklog(btn, ctx, onChange) {
-  if (!await showConfirm(`Ask the Strategy Stewart of ${buLabel()} to groom the backlog?\n\nStewart will:\n • Review Untriaged items and promote sensible ones to Ready (or discard stale ones)\n • Propose new goals/initiatives implied by recent memos\n • NOT propose a plan yet — that's the next step\n\nTakes ~3-5 min.`)) return;
-  await runCycleAction(btn, async () => {
-    const resp = await fetch('/api/groom-backlog', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bu: BU() }),
-    });
-    const json = await resp.json().catch(() => ({}));
-    if (!resp.ok || !json.ok) throw new Error(json.message || `HTTP ${resp.status}`);
-    return json;
-  }, onChange);
+  const bu = BU();
+  // Resolve Strategy Stewart via agent_bindings — same pattern as
+  // openStewardTab in app.js.
+  let agentId = null;
+  try {
+    const raw = await fetchSubstrateJson('dashboard/public/data/system/agent_bindings.json', []);
+    const list = Array.isArray(raw) ? raw : (raw?.bindings || []);
+    const match = list.find(b => b.bu === bu && b.module_id === 'strategy');
+    agentId = match?.agent_id;
+  } catch (_) {}
+  if (!agentId) {
+    await showAlert(`No Strategy Stewart bound to ${buLabel()}. Install the strategy module first.`);
+    return;
+  }
+
+  // Build the opening prompt from current backlog + memos + KPIs. This is
+  // context the Stewart gets BEFORE saying its first line to the operator.
+  const goals = ctx.goals || [];
+  const inits = ctx.initiatives || [];
+  const kpis = (ctx.kpis || []).filter(k => k.priority === 'primary' || k.category === 'north_star');
+  const memos = (ctx.memos || []).slice(-15);
+  const untriaged = [...goals, ...inits].filter(x => (x.backlog_state || 'untriaged') === 'untriaged');
+  const ready = [...goals, ...inits].filter(x => x.backlog_state === 'ready');
+  const openTasks = (ctx.tasks || []).filter(t => !['done', 'closed', 'completed', 'cancelled', 'rejected'].includes((t.status || '').toLowerCase()));
+
+  const prompt = [
+    `You are ${agentId}, the Strategy Stewart of ${buLabel()}. The operator has opened a **backlog grooming session** with you.`,
+    ``,
+    `## Ground rules — read carefully`,
+    `- You are the ASSISTANT, not the driver. The operator is thinking out loud with you.`,
+    `- **Your first message: a single open question — "What's on your mind?" (or a variant). Nothing more.** Do NOT dump a summary or list. Wait for the operator's reply.`,
+    `- Do NOT propose plans, cycles, activation, or roadmaps in this session. That's a separate step.`,
+    `- Your goal is to converge on a list of **initiatives** worth adding to the backlog, mixing what the operator brings up with things you can see in the notes/tasks below.`,
+    ``,
+    `## What you should do as the session unfolds`,
+    `- Listen to what the operator says is on their mind.`,
+    `- Cross-reference with the backlog state + memos + open tasks (below). Where a loose task or memo naturally belongs to a broader initiative the operator is describing, propose grouping it in.`,
+    `- For each candidate initiative you and the operator agree on, provide a rough estimate: **size** (S / M / L / XL) + **difficulty** (easy / medium / hard).`,
+    `- Keep the tone collaborative. Ask before writing.`,
+    ``,
+    `## When the operator says "close the session" (or equivalent)`,
+    `- Write the agreed initiatives to \`dashboard/public/data/bus/${bu}/initiatives.json\`:`,
+    `  - Each new initiative: title, active_hypothesis, success_criterion, size_estimate ("S"/"M"/"L"/"XL"), difficulty_estimate ("easy"/"medium"/"hard"), backlog_state: "ready" if operator confirmed, "untriaged" if you're not sure.`,
+    `  - Reference existing task ids in a new field \`grouped_task_ids\` when the initiative absorbs specific loose tasks.`,
+    `- Write any new goals to \`dashboard/public/data/bus/${bu}/goals.json\` similarly.`,
+    `- Commit with message \`backlog: grooming session — <N> new initiatives, <M> tasks grouped\`.`,
+    ``,
+    `## Current backlog state`,
+    `- Untriaged items (${untriaged.length}): ${untriaged.slice(0, 6).map(x => `"${x.title}"`).join('; ') || '(none)'}`,
+    `- Ready items (${ready.length}): ${ready.slice(0, 6).map(x => `"${x.title}"`).join('; ') || '(none)'}`,
+    `- Open tasks not linked to a plan (${openTasks.length}): candidates for grouping`,
+    ``,
+    `## Primary KPIs — the outcomes any initiative should ultimately move`,
+    ...(kpis.length ? kpis.map(k => `- ${k.id} · "${k.name}" [${k.unit || '?'}]${k.target != null ? ` · target ${k.target}` : ''}`) : ['(none configured — flag this to the operator if it seems relevant)']),
+    ``,
+    `## Recent operator memos (last ${memos.length})`,
+    ...(memos.length ? memos.map(m => `- [${m.level || 'misc'}] ${(m.body || '').slice(0, 220)}`) : ['(none)']),
+    ``,
+    `**Now: greet the operator briefly and ask what's on their mind. One line.**`,
+  ].join('\n');
+
+  const mod = await import('../meeting.js');
+  await mod.startMeeting({
+    bu,
+    agent_id: agentId,
+    title: `Groom ${buLabel()} backlog`,
+    purpose: 'backlog_groom',
+    opening_prompt: prompt,
+  });
+  // startMeeting handles the overlay. When the operator closes it, they
+  // manually refresh (or onChange gets called by our normal poller).
 }
 
 async function onRequestProposals(planId, btn, ctx, onChange) {
