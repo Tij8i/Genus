@@ -61,7 +61,7 @@ function notifyMeetingChanged(bu, meeting_id) {
 // startMeeting when the caller manages its own surface (e.g. chat-dock
 // wants to render the panel itself and does not want the full overlay
 // to flash open). Returns the meeting, or null on failure (alert surfaced).
-export async function createMeeting({ bu, agent_id, title, purpose, opening_prompt, related_item }) {
+export async function createMeeting({ bu, agent_id, title, purpose, opening_prompt, skill_brief, related_item }) {
   const ok = await checkMeetingServer();
   if (!ok) {
     await showAlert('No meeting server found. On Docker, the container should expose /api/meetings/*; on macOS with the launchd install, run `launchctl kickstart -k gui/$(id -u)/com.tij8i.genus-meetings` and try again.', { subtitle: 'Meeting server', tone: 'danger' });
@@ -75,6 +75,7 @@ export async function createMeeting({ bu, agent_id, title, purpose, opening_prom
       purpose: purpose || 'general',
       opening_prompt: opening_prompt || null,
     };
+    if (skill_brief) body.skill_brief = skill_brief;
     if (related_item) body.related_item = related_item;
     const r = await fetch(meetingServerUrl('new'), {
       method: 'POST',

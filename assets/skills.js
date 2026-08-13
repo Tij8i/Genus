@@ -176,11 +176,17 @@ async function runAgentSession(manifest, ctx, opts) {
     return { error: 'no_agent' };
   }
   const template = await loadPromptTemplate(manifest.id, manifest);
-  const prompt = renderPrompt(template, manifest, ctx, {
+  const brief = renderPrompt(template, manifest, ctx, {
     bu, bu_label: opts.bu_label || bu, agent_id: agentId,
   });
   const mod = await import('./meeting.js');
   const title = interpolate(manifest.meeting?.title_template || manifest.name, {
+    bu, bu_label: opts.bu_label || bu, agent_id: agentId,
+  });
+  // The SKILL.md becomes `skill_brief` — invisible system context for the
+  // agent. The agent's visible first turn is `opening_prompt` — a short
+  // greeting drawn from manifest.meeting.greeting (fallback: generic prompt).
+  const greeting = interpolate(manifest.meeting?.greeting || 'Hi — what would you like to work on?', {
     bu, bu_label: opts.bu_label || bu, agent_id: agentId,
   });
   const meeting = await mod.startMeeting({
@@ -188,7 +194,8 @@ async function runAgentSession(manifest, ctx, opts) {
     agent_id: agentId,
     title,
     purpose: manifest.meeting?.purpose || 'skill',
-    opening_prompt: prompt,
+    opening_prompt: greeting,
+    skill_brief: brief,
   });
   return { meeting };
 }
