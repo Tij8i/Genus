@@ -61,6 +61,7 @@ function buLabel() {
 }
 
 let openInitiativeId = null;
+let openPlanId = null;
 let activeSubTab = 'active';
 let editPlanOpen = false;
 let cycleBusy = false;  // disables buttons while a plan-cycle mutation is in flight
@@ -118,9 +119,20 @@ export function renderPlanning(ctx, { onChange }) {
 
   // Wire clickable Initiative bars in the timeline (replaces the old row click)
   body.querySelectorAll('[data-init-id]').forEach(el => {
-    el.addEventListener('click', () => {
+    el.addEventListener('click', (e) => {
+      // Don't fire when the click landed on a button inside the card.
+      if (e.target.closest('button')) return;
       openInitiativeId = el.dataset.initId;
       renderInitiativeDetailOverlay(ctx, onChange);
+    });
+  });
+
+  // Wire clickable Plan cards in the Pipeline column (Backlog tab).
+  body.querySelectorAll('[data-queued-id]').forEach(el => {
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('button')) return;
+      openPlanId = el.dataset.queuedId;
+      renderPlanDetailOverlay(ctx, onChange);
     });
   });
 
@@ -134,6 +146,7 @@ export function renderPlanning(ctx, { onChange }) {
   if (activeSubTab === 'retrospective') wireRetrospectiveButtons(body, onChange);
 
   if (openInitiativeId) renderInitiativeDetailOverlay(ctx, onChange);
+  if (openPlanId) renderPlanDetailOverlay(ctx, onChange);
   if (editPlanOpen) renderEditPlanOverlay(ctx, onChange);
 }
 
@@ -1619,6 +1632,131 @@ async function runCycleAction(btn, fn, onChange) {
     btn.disabled = false;
     btn.textContent = `✗ ${e.message?.slice(0, 80) || 'failed'}`;
     setTimeout(() => { btn.textContent = original; }, 4000);
+  }
+}
+
+// Plan detail overlay — opens when the operator clicks a card in the
+// Pipeline (Drafts + Queued) column. Read-only for now: title, status,
+// period, rationale, per-initiative expansion with linked tasks + status
+// dots. Actions (finalise / activate / discard) mirror the card buttons.
+function renderPlanDetailOverlay(ctx, onChange) {
+  const plan = (ctx.plans || []).find(p => p.id === openPlanId);
+  if (!plan) { openPlanId = null; return; }
+  const host = document.getElementById('initiative-detail-host');
+  if (!host) return;
+
+  const isDraft = plan.status === 'draft';
+  const isQueued = plan.status === 'queued';
+  const activePlan = (ctx.plans || []).find(p => p.status === 'active');
+  const populating = !plan.finalized_at && !!plan.finalize_task_id;
+  const badgeCls = isDraft ? 'plan-badge-draft' : (isQueued ? 'plan-badge-queued' : '');
+  const badgeText = isDraft ? 'DRAFT' : (isQueued ? 'QUEUED' : plan.status.toUpperCase());
+  const stateLine = isDraft ? 'Needs finalising'
+                  : populating ? 'Stewart populating…'
+                  : (isQueued ? (activePlan ? 'Coming up next' : 'Ready to activate') : plan.status);
+
+  const planInits = (plan.initiative_ids || [])
+    .map(iid => (ctx.initiatives || []).find(i => i.id === iid))
+    .filter(Boolean);
+
+  const initBlocks = planInits.map(i => {
+    const linkedTasks = (ctx.tasks || []).filter(t => t.advances_initiative === i.id);
+    const taskLines = linkedTasks.map(t => {
+      const st = (t.status || 'proposed').toLowerCase();
+      let dot, color, titleStyle = '';
+      if (['done', 'completed', 'closed'].includes(st))            { dot = '●'; color = 'var(--green-fg,#0e9f6e)'; }
+      else if (['cancelled', 'rejected'].includes(st))              { dot = '⨯'; color = 'var(--text-faint)'; titleStyle = 'text-decoration:line-through;color:var(--text-faint);'; }
+      else if (['in_progress', 'executing', 'pushed'].includes(st)) { dot = '◐'; color = 'var(--amber-fg,#b57500)'; }
+      else                                                          { dot = '○'; color = 'var(--text-faint)'; }
+      return `<div class="init-task-line" title="${escapeHtml(st)}"><span style="color:${color};margin-right:6px;">${dot}</span><span style="${titleStyle}">${escapeHtml(t.title || '(untitled task)')}</span></div>`;
+    }).join('');
+    return `
+      <div style="border:1px solid var(--border);border-radius:6px;padding:10px 12px;background:var(--surface2,#fbfbfa);">
+        <div style="font-size:13.5px;font-weight:600;color:var(--text);">${escapeHtml(i.title || '(untitled)')}</div>
+        ${i.active_hypothesis ? `<div style="font-size:12px;color:var(--text-faint);margin-top:3px;line-height:1.5;">${escapeHtml(i.active_hypothesis)}</div>` : ''}
+        ${linkedTasks.length ? `<div class="init-task-list" style="margin-top:6px;">${taskLines}</div>` : '<div class="init-task-empty">no tasks yet</div>'}
+      </div>
+    `;
+  }).join('');
+
+  const actionsHtml = `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      ${isDraft ? `<button type="button" class="plan-cycle-btn plan-cycle-btn-primary" id="plan-detail-finalise" data-plan-id="${escapeHtml(plan.id)}">Finalise…</button>` : ''}
+      <button type="button" class="plan-cycle-btn" id="plan-detail-discard" data-plan-id="${escapeHtml(plan.id)}">${isDraft ? 'Discard' : 'Cancel'}</button>
+    </div>
+  `;
+
+  host.innerHTML = `
+    <div class="overlay-backdrop" id="overlay-backdrop"></div>
+    <div class="overlay-panel" role="dialog" aria-labelledby="overlay-title">
+      <div class="overlay-head">
+        <div>
+          <div class="mono" style="font-size:10.5px;color:var(--text-faint);letter-spacing:.1em">${escapeHtml(plan.id)}</div>
+          <h2 id="overlay-title" class="overlay-title">${escapeHtml(plan.title || 'Untitled plan')}</h2>
+          <div class="overlay-meta">
+            ${badgeCls ? `<span class="${badgeCls}">${badgeText}</span>` : ''}
+            <span class="mono" style="font-size:11px;color:var(--text-faint)">${escapeHtml(plan.period_start || '?')} → ${escapeHtml(plan.period_target_end || 'open')}</span>
+            <span style="font-size:11.5px;font-weight:600;color:var(--amber-fg,#b57500);">${escapeHtml(stateLine)}</span>
+          </div>
+        </div>
+        <button type="button" class="overlay-close" id="overlay-close" aria-label="Close">✕</button>
+      </div>
+      ${plan.rationale ? `
+        <div class="overlay-section">
+          <div class="card-section-label">Rationale</div>
+          <p class="overlay-prose">${escapeHtml(plan.rationale)}</p>
+        </div>
+      ` : ''}
+      <div class="overlay-section">
+        <div class="card-section-label" style="margin-bottom:10px">Initiatives · ${planInits.length}</div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          ${planInits.length ? initBlocks : '<div class="empty-state">No initiatives yet.</div>'}
+        </div>
+      </div>
+      <div class="overlay-section">
+        ${actionsHtml}
+      </div>
+    </div>
+  `;
+
+  const close = () => { openPlanId = null; host.innerHTML = ''; };
+  document.getElementById('overlay-backdrop').addEventListener('click', close);
+  document.getElementById('overlay-close').addEventListener('click', close);
+  document.addEventListener('keydown', function escClose(e) {
+    if (e.key === 'Escape') { close(); document.removeEventListener('keydown', escClose); }
+  });
+
+  // Finalise button (stub — real screen ships in PR 2).
+  const finaliseBtn = document.getElementById('plan-detail-finalise');
+  if (finaliseBtn) {
+    finaliseBtn.addEventListener('click', async () => {
+      await showAlert('Finalise screen ships in the next PR. For now: the draft plan is written to substrate; you can open plans.json to inspect.');
+    });
+  }
+
+  // Discard / Cancel button.
+  const discardBtn = document.getElementById('plan-detail-discard');
+  if (discardBtn) {
+    discardBtn.addEventListener('click', async () => {
+      const label = isDraft ? 'discard' : 'cancel';
+      if (!await showConfirm(`${label.charAt(0).toUpperCase() + label.slice(1)} plan "${plan.title}"?\n\nAll ${planInits.length} initiative(s) will be released back to the Backlog as 'ready'.`)) return;
+      discardBtn.disabled = true;
+      discardBtn.textContent = `${label}ing…`;
+      try {
+        const resp = await fetch('/api/update-plan', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bu: BU(), plan_id: plan.id, action: 'discard', actor: 'operator' }),
+        });
+        const json = await resp.json().catch(() => ({}));
+        if (!resp.ok || !json.ok) throw new Error(json.message || `HTTP ${resp.status}`);
+        close();
+        if (onChange) onChange();
+      } catch (e) {
+        discardBtn.disabled = false;
+        discardBtn.textContent = isDraft ? 'Discard' : 'Cancel';
+        await showAlert(`${label.charAt(0).toUpperCase() + label.slice(1)} failed: ${e.message || 'unknown'}`);
+      }
+    });
   }
 }
 
