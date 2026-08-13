@@ -361,7 +361,7 @@ function wireChatSurface(hostEl, meeting, { bu, isPanel }) {
     meeting.transcript.push(optimisticTurn);
     if (thread) {
       thread.insertAdjacentHTML('beforeend', renderChatTurn(optimisticTurn));
-      thread.insertAdjacentHTML('beforeend', '<div class="chat-thinking" data-role="thinking">thinking…</div>');
+      thread.insertAdjacentHTML('beforeend', '<div class="chat-thinking" data-role="thinking" aria-label="Agent is typing"><span class="chat-thinking-dot"></span><span class="chat-thinking-dot"></span><span class="chat-thinking-dot"></span></div>');
       scrollToBottom(thread);
     }
     // Also notify other mounted surfaces so they show the optimistic turn

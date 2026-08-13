@@ -3398,10 +3398,28 @@ body {
 }
 .chat-thinking {
   align-self: flex-start;
-  color: var(--text-faint);
-  font-size: 13px;
-  font-style: italic;
-  padding: 4px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 14px;
+  background: rgba(20, 22, 28, 0.05);
+  border-radius: 14px 14px 14px 4px;
+  min-height: 24px;
+  min-width: 44px;
+}
+.chat-thinking-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  opacity: 0.35;
+  animation: chat-thinking-bounce 1.2s infinite ease-in-out;
+}
+.chat-thinking-dot:nth-child(2) { animation-delay: 0.15s; }
+.chat-thinking-dot:nth-child(3) { animation-delay: 0.3s; }
+@keyframes chat-thinking-bounce {
+  0%, 60%, 100% { opacity: 0.35; transform: translateY(0); }
+  30%           { opacity: 1;    transform: translateY(-3px); }
 }
 .chat-error {
   color: var(--red, #c33);
@@ -3487,7 +3505,8 @@ body {
   line-height: 1.4;
 }
 .chat-mode-panel .chat-meta { font-size: 9.5px; padding: 0 4px; margin-top: 2px; }
-.chat-mode-panel .chat-thinking { font-size: 11.5px; padding: 2px 6px; }
+.chat-mode-panel .chat-thinking { padding: 8px 12px; min-height: 20px; }
+.chat-mode-panel .chat-thinking-dot { width: 5px; height: 5px; }
 .chat-mode-panel .chat-error { font-size: 11px; padding: 4px 8px; }
 .chat-mode-panel .chat-input-row {
   padding-top: 6px;
