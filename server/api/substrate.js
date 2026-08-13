@@ -24,7 +24,9 @@ import { getViewerIdentity } from './_identity.js';
 // Keep tight: this Function is exposed publicly, and any GET goes via the
 // dashboard's GITHUB_PAT secret. We don't want raw Orchestrator code leaking.
 const ALLOWED_PREFIXES = [
-  'dashboard/public/data/bus/',  // primary substrate (per-BU JSON + JSONL)
+  'dashboard/public/data/bus/',     // primary substrate (per-BU JSON + JSONL)
+  'dashboard/public/data/skills/',  // skill registry (manifest.json + SKILL.md)
+  'dashboard/public/data/system/',  // system config (agent_bindings, roles)
 ];
 
 // Extract the BU segment from a path like "dashboard/public/data/bus/<bu>/..."
