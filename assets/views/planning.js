@@ -834,9 +834,12 @@ function wireBacklogActions(scope, ctx, onChange) {
   });
 
   // Per-card backlog-item action buttons (Untriaged / Ready / Discarded).
+  // Skip any action that's already wired with a different endpoint above
+  // — otherwise the generic /api/update-backlog-item POST fires too and
+  // returns "item_type must be: goal, initiative" (undefined item_type).
+  const SKIP_GENERIC_ACTIONS = new Set(['cancel_queued', 'finalise_draft']);
   scope.querySelectorAll('button.b-action[data-action]').forEach(btn => {
-    // Skip queued cancel buttons — already handled above with a different endpoint.
-    if (btn.dataset.action === 'cancel_queued') return;
+    if (SKIP_GENERIC_ACTIONS.has(btn.dataset.action)) return;
     btn.addEventListener('click', async () => {
       const itemType = btn.dataset.itemType;
       const itemId = btn.dataset.itemId;
