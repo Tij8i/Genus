@@ -75,7 +75,9 @@ function renderPrompt(template, manifest, ctx, extras = {}) {
   const slots = { ...renderStandardSlots(ctx, extras), ...extras };
   for (const slotName of (manifest.context_slots || [])) {
     const renderer = CONTEXT_RENDERERS[slotName];
-    if (renderer) slots[slotName] = renderer(ctx);
+    // Renderers may need per-invocation params (e.g. plan_detail needs the
+    // plan_id from extras). Pass extras as second arg.
+    if (renderer) slots[slotName] = renderer(ctx, extras);
   }
   return template.replace(/\{(\w+)\}/g, (m, key) => (slots[key] ?? m));
 }
@@ -85,6 +87,7 @@ function renderStandardSlots(ctx, extras) {
     bu: extras.bu || '',
     bu_label: extras.bu_label || extras.bu || '',
     agent_id: extras.agent_id || '',
+    related_id: extras.related_id || '',
   };
 }
 
@@ -114,6 +117,42 @@ const CONTEXT_RENDERERS = {
     const memos = (ctx?.memos || []).slice(-15);
     if (!memos.length) return '(none)';
     return memos.map(m => `- [${m.level || 'misc'}] ${(m.body || '').slice(0, 220)}`).join('\n');
+  },
+  plan_detail(ctx, extras) {
+    // Renders one specific plan (id from extras.plan_id or extras.related_id)
+    // with its goals + initiatives + linked tasks. Used by the iterate_plan
+    // skill so the agent gets the full plan state without re-reading files.
+    const planId = extras?.plan_id || extras?.related_id;
+    if (!planId) return '(no plan_id in context — bug)';
+    const plan = (ctx?.plans || []).find(p => p.id === planId);
+    if (!plan) return `(plan ${planId} not found)`;
+    const goals = (plan.goal_ids || []).map(gid => (ctx?.goals || []).find(g => g.id === gid)).filter(Boolean);
+    const inits = (plan.initiative_ids || []).map(iid => (ctx?.initiatives || []).find(i => i.id === iid)).filter(Boolean);
+    const L = [];
+    L.push(`**${plan.title || '(untitled)'}** · id \`${plan.id}\` · status \`${plan.status}\``);
+    L.push(`period: ${plan.period_start || '?'} → ${plan.period_target_end || '?'}`);
+    if (plan.rationale) L.push(`\nrationale: ${plan.rationale}`);
+    L.push(`\n### Goals (${goals.length})`);
+    if (goals.length) {
+      goals.forEach(g => {
+        L.push(`- ${g.id} · "${g.title}"${g.kpi_id ? ` · KPI \`${g.kpi_id}\`` : ''}${g.target_value != null ? ` · target ${g.target_value}` : ''}${g.target_date ? ` by ${g.target_date}` : ''}`);
+      });
+    } else {
+      L.push('(none — plan has no explicit goals)');
+    }
+    L.push(`\n### Initiatives (${inits.length})`);
+    if (inits.length) {
+      inits.forEach(i => {
+        const tasks = (ctx?.tasks || []).filter(t => t.advances_initiative === i.id);
+        L.push(`- **${i.title}** \`${i.id}\``);
+        if (i.active_hypothesis) L.push(`    hypothesis: ${i.active_hypothesis}`);
+        if (i.success_criterion) L.push(`    success: ${i.success_criterion}`);
+        tasks.forEach(t => L.push(`    · ${t.status || 'proposed'} · ${t.title} \`${t.id}\``));
+      });
+    } else {
+      L.push('(none)');
+    }
+    return L.join('\n');
   },
   open_tasks(ctx) {
     // True orphans only: no advances_initiative AND no advances_plan AND
@@ -192,6 +231,8 @@ async function runAgentSession(manifest, ctx, opts) {
   const template = await loadPromptTemplate(manifest.id, manifest);
   const brief = renderPrompt(template, manifest, ctx, {
     bu, bu_label: opts.bu_label || bu, agent_id: agentId,
+    plan_id: opts.plan_id || opts.related_item?.id,
+    related_id: opts.related_id || opts.related_item?.id || opts.plan_id,
   });
   const title = interpolate(manifest.meeting?.title_template || manifest.name, {
     bu, bu_label: opts.bu_label || bu, agent_id: agentId,
