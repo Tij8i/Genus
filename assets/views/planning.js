@@ -533,19 +533,24 @@ function renderTimelineRow(init, ctx, pct, today) {
 // toggle hides the archive columns by default. See GEN-39 audit + GEN-50.
 
 function renderBacklogSubTab(ctx) {
-  const allItems = [
-    ...(ctx.goals || []).map(g => ({ ...g, _type: 'goal' })),
-    ...(ctx.initiatives || []).map(i => ({ ...i, _type: 'initiative' })),
-  ];
+  // 3-column model (2026-08-13 reshape per operator):
+  //   1. Inbox         — memos not yet processed + tasks with no initiative
+  //   2. Initiatives   — every initiative, each with a state chip. Grooming
+  //                       moves items between backlog_state values.
+  //   3. Queued plans  — plans waiting to activate (as before).
+  const TERMINAL_TASK = new Set(['done', 'closed', 'completed', 'cancelled', 'rejected']);
+  const unprocessedMemos = (ctx.memos || [])
+    .filter(m => (m.status || '').toLowerCase() === 'unprocessed')
+    .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+  const orphanTasks = (ctx.tasks || [])
+    .filter(t => !t.advances_initiative && !t.advances_plan && !TERMINAL_TASK.has((t.status || '').toLowerCase()));
 
-  const cols = {
-    untriaged: allItems.filter(x => (x.backlog_state || 'untriaged') === 'untriaged'),
-    ready: allItems.filter(x => x.backlog_state === 'ready'),
-    promoted_to_plan: allItems.filter(x => x.backlog_state === 'promoted_to_plan'),
-    discarded: allItems.filter(x => x.backlog_state === 'discarded'),
-  };
-  // Queued plans (2026-08-12 reshape): they live in Backlog now, not on
-  // Active. Cards show one per plan, ordered FIFO by queued_at.
+  const initiatives = (ctx.initiatives || []).filter(i =>
+    // Show everything EXCEPT already-completed/discarded initiatives (those
+    // live in the retrospective + archive). Backlog is a work-in-flight view.
+    !['completed', 'abandoned', 'discarded'].includes((i.status || '').toLowerCase())
+  );
+
   const queuedPlans = (ctx.plans || [])
     .filter(p => p.status === 'queued')
     .sort((a, b) => (a.queued_at || a.created_at || '').localeCompare(b.queued_at || b.created_at || ''));
@@ -555,27 +560,100 @@ function renderBacklogSubTab(ctx) {
     <div class="card">
       <div class="backlog-header">
         <div class="backlog-tagline">
-          Candidate pool + planning workspace. The typical flow is
-          <strong>Groom → Draft → Propose</strong>: Stewart enriches the pool,
-          you sketch what you want, Stewart offers 3 concrete alternatives.
-          Any button works standalone too.
+          The pool the operator + Stewart work from. <strong>Inbox</strong> is raw
+          input (memos, orphan tasks). <strong>Initiatives</strong> are the
+          groomed workstreams — each holds its own tasks. <strong>Queued
+          plans</strong> are ready to auto-activate when the current plan closes.
         </div>
-        <label class="backlog-archive-toggle">
-          <input type="checkbox" id="backlog-show-archive" ${showArchive ? 'checked' : ''}>
-          Show Promoted + Discarded
-        </label>
       </div>
       <div class="backlog-action-strip">
-        <button type="button" class="plan-cycle-btn" data-cycle-action="groom" title="Open a live grooming session with Stewart. Stewart asks what's on your mind, then helps you converge on initiatives, size them, and group loose tasks under them.">🧹 Groom (session)</button>
-        <button type="button" class="plan-cycle-btn" data-cycle-action="new-manual" title="Sketch your own plan — goals, initiatives, rationale. Auto-queues (or activates) once created.">✏️ New plan (manual)</button>
+        <button type="button" class="plan-cycle-btn" data-cycle-action="groom" title="Open a live grooming session with Stewart. Stewart helps you turn Inbox items into initiatives, or attach them to existing ones.">🧹 Groom (session)</button>
+        <button type="button" class="plan-cycle-btn" data-cycle-action="new-manual" title="Sketch your own plan — pick which initiatives it contains, its goal + rationale. Activates immediately (or queues behind current).">✏️ New plan (manual)</button>
         <button type="button" class="plan-cycle-btn plan-cycle-btn-primary" data-cycle-action="propose" title="Ask the Strategy Stewart to synthesize 3 distinct plan proposals from the current backlog + memos + KPI state.">✨ Ask Stewart for 3 proposals</button>
       </div>
       <div class="kanban">
-        ${renderBacklogColumn('Untriaged', '🆕', cols.untriaged, 'untriaged')}
-        ${renderBacklogColumn('Ready', '✓', cols.ready, 'ready')}
+        ${renderInboxColumn(unprocessedMemos, orphanTasks)}
+        ${renderInitiativesColumn(initiatives, ctx)}
         ${renderQueuedPlansColumn(queuedPlans, activePlan)}
-        ${showArchive ? renderBacklogColumn('Promoted', '➤', cols.promoted_to_plan, 'promoted_to_plan') : ''}
-        ${showArchive ? renderBacklogColumn('Discarded', '✗', cols.discarded, 'discarded') : ''}
+      </div>
+    </div>
+  `;
+}
+
+// Inbox column — memos not yet processed + tasks with no linked initiative.
+// Cards render with a MEMO or TASK badge so operator can tell them apart.
+function renderInboxColumn(memos, orphanTasks) {
+  const count = memos.length + orphanTasks.length;
+  const cards = [
+    ...memos.map(m => `
+      <div class="kanban-card kanban-card-memo" data-memo-id="${escapeHtml(m.id)}">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <span class="b-type b-type-memo">MEMO</span>
+          <span class="mono" style="font-size:10px;color:var(--text-faint);">${escapeHtml((m.created_at || '').slice(0, 10))}</span>
+        </div>
+        <div style="font-size:12.5px;line-height:1.45;color:var(--text);">${escapeHtml((m.body || '').slice(0, 220))}${(m.body || '').length > 220 ? '…' : ''}</div>
+      </div>
+    `),
+    ...orphanTasks.map(t => `
+      <div class="kanban-card kanban-card-orphan-task" data-task-id="${escapeHtml(t.id)}">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <span class="b-type b-type-task">TASK</span>
+          <span class="mono" style="font-size:10px;color:var(--text-faint);">${escapeHtml(t.status || 'proposed')}</span>
+        </div>
+        <div style="font-size:13px;font-weight:600;color:var(--text);">${escapeHtml(t.title || '(untitled)')}</div>
+        ${t.description ? `<div style="font-size:11.5px;color:var(--text-faint);margin-top:3px;line-height:1.4;">${escapeHtml(t.description.slice(0, 140))}${t.description.length > 140 ? '…' : ''}</div>` : ''}
+      </div>
+    `),
+  ].join('');
+  return `
+    <div class="kanban-col" data-state="inbox">
+      <div class="kanban-col-h">
+        <span>📥 Inbox</span>
+        <span class="kanban-count">${count}</span>
+      </div>
+      <div class="kanban-col-body">
+        ${count ? cards : '<div class="kanban-empty">Empty — memos from Inputs + tasks without a home appear here.</div>'}
+      </div>
+    </div>
+  `;
+}
+
+// Initiatives column — every open initiative, each with a state chip that
+// tells the operator what stage the initiative is at (untriaged / ready /
+// promoted to a plan / active in a plan).
+function renderInitiativesColumn(initiatives, ctx) {
+  const cards = initiatives.map(i => {
+    const state = i.backlog_state || (i.promoted_to_plan_id ? 'promoted_to_plan' : 'untriaged');
+    const stateLabel = ({
+      untriaged: 'untriaged',
+      ready: 'ready',
+      promoted_to_plan: 'in a plan',
+    })[state] || state;
+    const linkedTasks = (ctx.tasks || []).filter(t => t.advances_initiative === i.id);
+    const size = i.size_estimate ? `${i.size_estimate}` : '';
+    const diff = i.difficulty_estimate ? `${i.difficulty_estimate}` : '';
+    return `
+      <div class="kanban-card kanban-card-initiative" data-init-id="${escapeHtml(i.id)}">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <span class="b-type b-type-init">INIT</span>
+          <span class="init-state-chip init-state-chip-${initStateColor(state)}" style="font-size:10px;">${escapeHtml(stateLabel)}</span>
+          ${size ? `<span class="mono" style="font-size:10px;color:var(--text-faint);">${escapeHtml(size)}</span>` : ''}
+          ${diff ? `<span class="mono" style="font-size:10px;color:var(--text-faint);">${escapeHtml(diff)}</span>` : ''}
+        </div>
+        <div style="font-size:13px;font-weight:600;color:var(--text);">${escapeHtml(i.title || '(untitled)')}</div>
+        ${i.active_hypothesis ? `<div style="font-size:11.5px;color:var(--text-faint);margin-top:3px;line-height:1.4;">${escapeHtml(i.active_hypothesis.slice(0, 160))}${i.active_hypothesis.length > 160 ? '…' : ''}</div>` : ''}
+        ${linkedTasks.length ? `<div class="mono" style="font-size:10.5px;color:var(--text-faint);margin-top:5px;">${linkedTasks.length} task${linkedTasks.length === 1 ? '' : 's'}</div>` : ''}
+      </div>
+    `;
+  }).join('');
+  return `
+    <div class="kanban-col" data-state="initiatives">
+      <div class="kanban-col-h">
+        <span>🎯 Initiatives</span>
+        <span class="kanban-count">${initiatives.length}</span>
+      </div>
+      <div class="kanban-col-body">
+        ${initiatives.length ? cards : '<div class="kanban-empty">No open initiatives. Groom the Inbox to create some.</div>'}
       </div>
     </div>
   `;
