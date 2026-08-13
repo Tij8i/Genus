@@ -1686,9 +1686,41 @@ function renderPlanDetailOverlay(ctx, onChange) {
                   : populating ? 'Stewart populating…'
                   : (isQueued ? (activePlan ? 'Coming up next' : 'Ready to activate') : plan.status);
 
+  const planGoals = (plan.goal_ids || [])
+    .map(gid => (ctx.goals || []).find(g => g.id === gid))
+    .filter(Boolean);
   const planInits = (plan.initiative_ids || [])
     .map(iid => (ctx.initiatives || []).find(i => i.id === iid))
     .filter(Boolean);
+  const kpiById = {};
+  (ctx.kpis || []).forEach(k => { if (k?.id) kpiById[k.id] = k; });
+
+  const goalsBlock = planGoals.length ? `
+    <div class="overlay-section">
+      <div class="card-section-label" style="margin-bottom:10px">Goals · ${planGoals.length}</div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        ${planGoals.map(g => {
+          const k = g.kpi_id && kpiById[g.kpi_id];
+          const targetLine = g.kpi_id
+            ? `<div style="font-size:12px;color:var(--text);margin-top:3px;display:flex;flex-wrap:wrap;gap:8px;">
+                <span class="mono" style="color:var(--text-faint);">KPI</span>
+                <span class="mono" style="font-weight:600;">${escapeHtml(g.kpi_id)}</span>
+                ${k ? `<span style="color:var(--text-faint);">"${escapeHtml((k.name || '').slice(0, 40))}"</span>` : `<span style="color:var(--amber-fg,#b57500);font-weight:600;">(not in kpis.json)</span>`}
+                ${g.target_value != null ? `<span style="color:var(--text);">→ target ${escapeHtml(String(g.target_value))}${k && k.unit ? ` ${escapeHtml(k.unit)}` : ''}</span>` : ''}
+                ${g.target_date ? `<span style="color:var(--text-faint);">by ${escapeHtml(g.target_date)}</span>` : ''}
+               </div>`
+            : '';
+          return `
+            <div style="border:1px solid var(--border);border-radius:6px;padding:8px 10px;background:var(--surface2,#fbfbfa);">
+              <div style="font-size:13px;font-weight:600;color:var(--text);">${escapeHtml(g.title || '(untitled goal)')}</div>
+              ${g.description ? `<div style="font-size:12px;color:var(--text-faint);margin-top:2px;line-height:1.4;">${escapeHtml(g.description)}</div>` : ''}
+              ${targetLine}
+            </div>
+          `;
+        }).join('')}
+      </div>
+    </div>
+  ` : '';
 
   const initBlocks = planInits.map(i => {
     const linkedTasks = (ctx.tasks || []).filter(t => t.advances_initiative === i.id);
@@ -1713,6 +1745,7 @@ function renderPlanDetailOverlay(ctx, onChange) {
   const actionsHtml = `
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
       ${isDraft ? `<button type="button" class="plan-cycle-btn plan-cycle-btn-primary" id="plan-detail-finalise" data-plan-id="${escapeHtml(plan.id)}">Finalise…</button>` : ''}
+      ${isDraft ? `<button type="button" class="plan-cycle-btn" id="plan-detail-iterate" data-plan-id="${escapeHtml(plan.id)}" title="Open a live chat with Stewart. Ask for edits (swap initiatives, change goals, tweak tasks). Stewart writes changes directly.">💬 Iterate with agent</button>` : ''}
       <button type="button" class="plan-cycle-btn" id="plan-detail-discard" data-plan-id="${escapeHtml(plan.id)}">${isDraft ? 'Discard' : 'Cancel'}</button>
     </div>
   `;
@@ -1738,6 +1771,7 @@ function renderPlanDetailOverlay(ctx, onChange) {
           <p class="overlay-prose">${escapeHtml(plan.rationale)}</p>
         </div>
       ` : ''}
+      ${goalsBlock}
       <div class="overlay-section">
         <div class="card-section-label" style="margin-bottom:10px">Initiatives · ${planInits.length}</div>
         <div style="display:flex;flex-direction:column;gap:10px;">
@@ -1756,6 +1790,26 @@ function renderPlanDetailOverlay(ctx, onChange) {
   document.addEventListener('keydown', function escClose(e) {
     if (e.key === 'Escape') { close(); document.removeEventListener('keydown', escClose); }
   });
+
+  // Iterate button — opens a live chat with Strategy Stewart scoped to
+  // THIS plan. Stewart edits goals/initiatives/tasks in-place; operator
+  // returns to this overlay + clicks Finalise when ready.
+  const iterateBtn = document.getElementById('plan-detail-iterate');
+  if (iterateBtn) {
+    iterateBtn.addEventListener('click', async () => {
+      const planId = iterateBtn.dataset.planId;
+      await invokeSkill('iterate_plan', ctx, {
+        bu: BU(),
+        bu_label: buLabel(),
+        plan_id: planId,
+        related_id: planId,
+        related_item: { kind: 'plan', id: planId, name: plan.title || planId },
+        onChange,
+      });
+      // Chat opens as a docked panel; the overlay stays open so operator
+      // can reference the plan while chatting.
+    });
+  }
 
   // Finalise button — flips draft → queued (or active if none).
   const finaliseBtn = document.getElementById('plan-detail-finalise');
