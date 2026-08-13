@@ -133,7 +133,13 @@ export async function listSkills() {
 //              For agent_session/agent_task, agent_id is resolved from
 //              agent_bindings if not provided.
 export async function invokeSkill(id, ctx, opts = {}) {
-  const manifest = await loadManifest(id);
+  let manifest;
+  try { manifest = await loadManifest(id); }
+  catch (e) {
+    console.error('[skills] invokeSkill: manifest load failed', id, e);
+    await showAlert(`Could not load skill "${id}": ${e.message || e}. Check that /api/substrate allows dashboard/public/data/skills/ and that the manifest file exists.`);
+    return { error: 'manifest_load_failed', detail: e.message };
+  }
 
   // Confirm dialog (if manifest asks). Skip if opts.skipConfirm.
   if (manifest.confirms && !opts.skipConfirm) {
@@ -145,13 +151,19 @@ export async function invokeSkill(id, ctx, opts = {}) {
     if (!await showConfirm(body)) return { cancelled: true };
   }
 
-  switch (manifest.kind) {
-    case 'agent_session':  return await runAgentSession(manifest, ctx, opts);
-    case 'agent_task':     return await runAgentTask(manifest, ctx, opts);
-    case 'deterministic':  return await runDeterministic(manifest, ctx, opts);
-    default:
-      await showAlert(`Unknown skill kind "${manifest.kind}" on skill "${id}".`);
-      return { error: 'unknown_kind' };
+  try {
+    switch (manifest.kind) {
+      case 'agent_session':  return await runAgentSession(manifest, ctx, opts);
+      case 'agent_task':     return await runAgentTask(manifest, ctx, opts);
+      case 'deterministic':  return await runDeterministic(manifest, ctx, opts);
+      default:
+        await showAlert(`Unknown skill kind "${manifest.kind}" on skill "${id}".`);
+        return { error: 'unknown_kind' };
+    }
+  } catch (e) {
+    console.error('[skills] invokeSkill dispatch failed', id, e);
+    await showAlert(`Skill "${manifest.name || id}" failed: ${e.message || e}`);
+    return { error: 'dispatch_failed', detail: e.message };
   }
 }
 
