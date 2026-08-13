@@ -569,85 +569,73 @@ function renderBacklogSubTab(ctx) {
   const activePlan = (ctx.plans || []).find(p => p.status === 'active');
 
   return `
-    <div class="card">
-      <div class="backlog-header">
-        <div class="backlog-tagline">
-          The pool the operator + Stewart work from. <strong>Inbox</strong> holds raw
-          unprocessed memos. <strong>Initiatives</strong> are the groomed workstreams —
-          each holds its own tasks. <strong>Drafts &amp; queue</strong> shows plans that
-          are being finalised or waiting to auto-activate.
-        </div>
-      </div>
+    <div class="card backlog-card-tight">
       <div class="backlog-action-strip">
-        <button type="button" class="plan-cycle-btn" data-cycle-action="groom" title="Open a live grooming session with Stewart. Stewart helps you turn Inbox items into initiatives, or attach them to existing ones.">🧹 Groom (session)</button>
-        <button type="button" class="plan-cycle-btn plan-cycle-btn-primary" data-cycle-action="compose" title="Pick initiatives + add your angle. Stewart drafts a plan from what you gave. Draft appears in Queued with a 'draft' badge; open it via the Finalise button on the card to iterate live with the agent.">✨ Compose plan</button>
+        <button type="button" class="plan-cycle-btn" data-cycle-action="groom" title="Open a live grooming session with Stewart. Turn Inbox memos into initiatives, or attach them to existing ones.">🧹 Groom (session)</button>
+        <button type="button" class="plan-cycle-btn plan-cycle-btn-primary" data-cycle-action="compose" title="Pick initiatives + add your angle. Stewart drafts a plan. Draft appears with a 'draft' badge; open it via the Finalise button to iterate live.">✨ Compose plan</button>
       </div>
-      <div class="kanban">
+      <div class="kanban kanban-tight">
         ${renderInboxColumn(unprocessedMemos)}
         ${renderInitiativesColumn(initiatives, ctx)}
-        ${renderQueuedPlansColumn(queuedPlans, activePlan)}
+        ${renderQueuedPlansColumn(queuedPlans, activePlan, ctx)}
       </div>
     </div>
   `;
 }
 
-// Inbox column — raw unprocessed memos only. Tasks always live under an
-// initiative (born there via Grooming or Compose); no orphan-task pane.
+// Inbox column — raw unprocessed memos only.
 function renderInboxColumn(memos) {
   const cards = memos.map(m => `
-    <div class="kanban-card kanban-card-memo" data-memo-id="${escapeHtml(m.id)}">
-      <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
-        <span class="b-type b-type-memo">MEMO</span>
-        <span class="mono" style="font-size:10px;color:var(--text-faint);">${escapeHtml((m.created_at || '').slice(0, 10))}</span>
-      </div>
-      <div style="font-size:12.5px;line-height:1.45;color:var(--text);">${escapeHtml((m.body || '').slice(0, 220))}${(m.body || '').length > 220 ? '…' : ''}</div>
+    <div class="kanban-card-tight kanban-card-memo" data-memo-id="${escapeHtml(m.id)}">
+      <div class="mono" style="font-size:10px;color:var(--text-faint);">${escapeHtml((m.created_at || '').slice(0, 10))}</div>
+      <div style="font-size:12px;line-height:1.4;color:var(--text);margin-top:2px;">${escapeHtml((m.body || '').slice(0, 140))}${(m.body || '').length > 140 ? '…' : ''}</div>
     </div>
   `).join('');
   return `
     <div class="kanban-col" data-state="inbox">
       <div class="kanban-col-h">
-        <span>📥 Inbox</span>
+        <span>📝 Memos to sort</span>
         <span class="kanban-count">${memos.length}</span>
       </div>
       <div class="kanban-col-body">
-        ${memos.length ? cards : '<div class="kanban-empty">Empty — new memos from Inputs land here for grooming.</div>'}
+        ${memos.length ? cards : '<div class="kanban-empty">Nothing to sort.</div>'}
       </div>
     </div>
   `;
 }
 
-// Initiatives column — every open initiative, each with a state chip that
-// tells the operator what stage the initiative is at (untriaged / ready /
-// promoted to a plan / active in a plan).
+// Initiatives column — each initiative card renders its own tasks inline
+// (compact bullets). Task is the key work unit; grouping is just visual.
 function renderInitiativesColumn(initiatives, ctx) {
   const cards = initiatives.map(i => {
     const state = i.backlog_state || (i.promoted_to_plan_id ? 'promoted_to_plan' : 'untriaged');
-    const stateLabel = ({
-      untriaged: 'untriaged',
-      ready: 'ready',
-      promoted_to_plan: 'in a plan',
-    })[state] || state;
+    const stateLabel = ({ untriaged: 'untriaged', ready: 'ready', promoted_to_plan: 'in a plan' })[state] || state;
     const linkedTasks = (ctx.tasks || []).filter(t => t.advances_initiative === i.id);
-    const size = i.size_estimate ? `${i.size_estimate}` : '';
-    const diff = i.difficulty_estimate ? `${i.difficulty_estimate}` : '';
+    const sizeChip = i.size_estimate ? `<span class="mono init-size-chip">${escapeHtml(i.size_estimate)}</span>` : '';
+    const taskBullets = linkedTasks.slice(0, 6).map(t => {
+      const st = (t.status || 'proposed').toLowerCase();
+      const dot = ({ done: '●', completed: '●', closed: '●', cancelled: '○', rejected: '○' })[st] || '◐';
+      const dotColor = ['done', 'completed', 'closed'].includes(st) ? 'var(--green-fg,#0e9f6e)'
+                    : ['cancelled', 'rejected'].includes(st) ? 'var(--text-faint)'
+                    : 'var(--amber-fg,#b57500)';
+      return `<div class="init-task-line"><span style="color:${dotColor};margin-right:6px;">${dot}</span>${escapeHtml(t.title || '(untitled task)')}</div>`;
+    }).join('');
+    const moreLine = linkedTasks.length > 6 ? `<div class="init-task-more">+ ${linkedTasks.length - 6} more</div>` : '';
     return `
-      <div class="kanban-card kanban-card-initiative" data-init-id="${escapeHtml(i.id)}">
-        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
-          <span class="b-type b-type-init">INIT</span>
-          <span class="init-state-chip init-state-chip-${initStateColor(state)}" style="font-size:10px;">${escapeHtml(stateLabel)}</span>
-          ${size ? `<span class="mono" style="font-size:10px;color:var(--text-faint);">${escapeHtml(size)}</span>` : ''}
-          ${diff ? `<span class="mono" style="font-size:10px;color:var(--text-faint);">${escapeHtml(diff)}</span>` : ''}
+      <div class="kanban-card-tight kanban-card-initiative" data-init-id="${escapeHtml(i.id)}">
+        <div style="display:flex;align-items:center;gap:5px;">
+          <span class="init-state-chip init-state-chip-${initStateColor(state)}" style="font-size:9.5px;padding:1px 5px;">${escapeHtml(stateLabel)}</span>
+          ${sizeChip}
         </div>
-        <div style="font-size:13px;font-weight:600;color:var(--text);">${escapeHtml(i.title || '(untitled)')}</div>
-        ${i.active_hypothesis ? `<div style="font-size:11.5px;color:var(--text-faint);margin-top:3px;line-height:1.4;">${escapeHtml(i.active_hypothesis.slice(0, 160))}${i.active_hypothesis.length > 160 ? '…' : ''}</div>` : ''}
-        ${linkedTasks.length ? `<div class="mono" style="font-size:10.5px;color:var(--text-faint);margin-top:5px;">${linkedTasks.length} task${linkedTasks.length === 1 ? '' : 's'}</div>` : ''}
+        <div style="font-size:12.5px;font-weight:600;color:var(--text);margin-top:3px;">${escapeHtml(i.title || '(untitled)')}</div>
+        ${linkedTasks.length ? `<div class="init-task-list">${taskBullets}${moreLine}</div>` : '<div class="init-task-empty">no tasks yet</div>'}
       </div>
     `;
   }).join('');
   return `
     <div class="kanban-col" data-state="initiatives">
       <div class="kanban-col-h">
-        <span>🎯 Initiatives</span>
+        <span>🎯 Initiatives &amp; tasks</span>
         <span class="kanban-count">${initiatives.length}</span>
       </div>
       <div class="kanban-col-body">
@@ -657,56 +645,55 @@ function renderInitiativesColumn(initiatives, ctx) {
   `;
 }
 
-// Merged queue column: drafts (needs operator action) + queued (autopilot).
-function renderQueuedPlansColumn(plans, activePlan) {
-  const draftCount = plans.filter(p => p.status === 'draft').length;
-  const queuedCount = plans.filter(p => p.status === 'queued').length;
-  const items = plans.map((p, i) => {
+// Drafts + queue column: each plan card shows its child initiatives inline
+// (title + task count). No individual tasks at this level — click through
+// to the plan detail to drill down.
+function renderQueuedPlansColumn(plans, activePlan, ctx) {
+  const items = plans.map((p) => {
     const isDraft = p.status === 'draft';
-    const initCount = (p.initiative_ids || []).length;
     const populating = !p.finalized_at && !!p.finalize_task_id;
-    const badge = isDraft
-      ? '<span class="b-type" style="background:var(--amber-bg,rgba(255,190,60,.15));color:var(--amber-fg,#b57500);border:1px solid var(--amber-fg,#b57500);">DRAFT</span>'
-      : '<span class="b-type" style="background:rgba(14,159,110,.10);color:var(--green-fg,#0e9f6e);border:1px solid var(--green-fg,#0e9f6e);">QUEUED</span>';
-    const stateLine = isDraft
-      ? '<span style="color:var(--amber-fg,#b57500);font-weight:600;">Needs finalising</span>'
-      : (populating
-        ? '<span style="color:var(--amber-fg,#b57500);font-weight:600;">Stewart populating…</span>'
-        : (activePlan
-          ? `<span style="color:var(--green-fg,#0e9f6e);font-weight:600;">Coming up next</span>`
-          : `<span style="color:var(--green-fg,#0e9f6e);font-weight:600;">Ready to activate</span>`));
+    const badgeCls = isDraft ? 'plan-badge-draft' : 'plan-badge-queued';
+    const badgeText = isDraft ? 'DRAFT' : 'QUEUED';
+    const state = isDraft ? 'Needs finalising'
+                : populating ? 'Stewart populating…'
+                : activePlan ? 'Coming up next' : 'Ready to activate';
+    const stateColor = isDraft ? 'var(--amber-fg,#b57500)'
+                    : populating ? 'var(--amber-fg,#b57500)'
+                    : 'var(--green-fg,#0e9f6e)';
+    const planInits = (p.initiative_ids || [])
+      .map(iid => (ctx.initiatives || []).find(i => i.id === iid))
+      .filter(Boolean);
+    const initBullets = planInits.slice(0, 6).map(i => {
+      const taskCount = (ctx.tasks || []).filter(t => t.advances_initiative === i.id).length;
+      return `<div class="plan-init-line"><span style="color:var(--accent);margin-right:6px;">◇</span>${escapeHtml(i.title || '(untitled)')}${taskCount ? ` <span class="mono" style="color:var(--text-faint);">(${taskCount})</span>` : ''}</div>`;
+    }).join('');
+    const moreLine = planInits.length > 6 ? `<div class="plan-init-more">+ ${planInits.length - 6} more</div>` : '';
     const primaryBtn = isDraft
       ? `<button type="button" class="b-action" data-action="finalise_draft" data-plan-id="${escapeHtml(p.id)}" style="background:var(--accent);color:#fff;border-color:var(--accent);">Finalise…</button>`
       : '';
     return `
-      <div class="kanban-card ${isDraft ? 'kanban-card-draft' : 'kanban-card-queued'}" data-queued-id="${escapeHtml(p.id)}">
-        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
-          ${badge}
-          ${activePlan && !isDraft ? `<span class="mono" style="font-size:10px;color:var(--text-faint);">after "${escapeHtml((activePlan.title || activePlan.id).slice(0, 22))}"</span>` : ''}
+      <div class="kanban-card-tight ${isDraft ? 'kanban-card-draft' : 'kanban-card-queued'}" data-queued-id="${escapeHtml(p.id)}">
+        <div style="display:flex;align-items:center;gap:5px;">
+          <span class="${badgeCls}">${badgeText}</span>
         </div>
-        <div style="font-weight:600;font-size:13.5px;color:var(--text);">${escapeHtml(p.title || 'Untitled')}</div>
-        <div class="mono" style="font-size:10.5px;color:var(--text-faint);margin-top:3px;">${initCount} init${initCount === 1 ? '' : 's'}</div>
-        <div style="margin-top:5px;font-size:11px;">${stateLine}</div>
-        <div style="margin-top:6px;display:flex;gap:6px;">
+        <div style="font-size:12.5px;font-weight:600;color:var(--text);margin-top:3px;">${escapeHtml(p.title || 'Untitled')}</div>
+        <div class="plan-state-line" style="color:${stateColor};">${state}</div>
+        ${planInits.length ? `<div class="plan-init-list">${initBullets}${moreLine}</div>` : '<div class="init-task-empty">no initiatives yet</div>'}
+        <div style="margin-top:5px;display:flex;gap:5px;">
           ${primaryBtn}
           <button type="button" class="b-action b-discard" data-action="cancel_queued" data-plan-id="${escapeHtml(p.id)}">${isDraft ? 'Discard' : 'Cancel'}</button>
         </div>
       </div>
     `;
   }).join('');
-  const header = draftCount && queuedCount ? `${draftCount} draft · ${queuedCount} queued`
-                : draftCount ? `${draftCount} draft${draftCount === 1 ? '' : 's'}`
-                : queuedCount ? `${queuedCount} queued`
-                : '';
   return `
     <div class="kanban-col" data-state="queued">
       <div class="kanban-col-h">
-        <span>📅 Drafts &amp; queue</span>
+        <span>📋 Plans in the pipeline</span>
         <span class="kanban-count">${plans.length}</span>
       </div>
-      ${header ? `<div style="font-size:10.5px;color:var(--text-faint);padding:2px 6px 6px 6px;">${header}</div>` : ''}
       <div class="kanban-col-body">
-        ${plans.length ? items : '<div class="kanban-empty">—</div>'}
+        ${plans.length ? items : '<div class="kanban-empty">No drafts or queued plans.</div>'}
       </div>
     </div>
   `;
