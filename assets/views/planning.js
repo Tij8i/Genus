@@ -12,6 +12,16 @@ import { escapeHtml, ago, dateLabel, isoDay, cycleTimeProgress } from '../utils.
 import { showAlert, showConfirm, showPrompt } from '../dialog.js';
 import { openOverlay, closeOverlay } from '../overlay.js';
 import { fetchSubstrateJson, substrateBase } from '../substrate-client.js';
+import { invokeSkill, registerHandler } from '../skills.js';
+
+// Register the 'openNewPlanOverlay' deterministic-skill handler so the
+// new_plan_manual skill can dispatch to the existing overlay function.
+// Registration happens on module load; the handler is a thin wrapper that
+// unpacks (ctx, opts) into (ctx, onChange).
+registerHandler('openNewPlanOverlay', (ctx, opts) => {
+  openNewPlanOverlay(ctx, opts.onChange);
+  return { ok: true, opened: 'new-plan-overlay' };
+});
 
 // Legacy hardcode — planning was pinned to 'tuto' from the pre-multi-BU
 // era. Now resolves the current BU dynamically. Function shape so nothing
@@ -677,18 +687,21 @@ function wireBacklogActions(scope, ctx, onChange) {
     });
   }
 
-  // Backlog action strip: 3 buttons that seed a new plan cycle.
-  //   groom      → Stewart enriches the backlog (new POST /api/groom-backlog)
-  //   new-manual → open the existing manual-plan overlay
-  //   propose    → Stewart drafts 3 alternative plans (existing endpoint)
-  scope.querySelectorAll('button[data-cycle-action="propose"]').forEach(btn => {
-    btn.addEventListener('click', () => onRequestProposals(null, btn, ctx, onChange));
+  // Backlog action strip: 3 skill-invocable buttons.
+  // Each button maps to a skill in dashboard/public/data/skills/<id>/.
+  // The manifest.kind determines dispatch:
+  //   backlog_grooming  → agent_session (opens a live meeting with Stewart)
+  //   new_plan_manual   → deterministic (opens existing overlay)
+  //   propose_3_plans   → agent_task    (async POST → Stewart runs headless)
+  const skillOpts = () => ({ bu: BU(), bu_label: buLabel(), onChange });
+  scope.querySelectorAll('button[data-cycle-action="groom"]').forEach(btn => {
+    btn.addEventListener('click', () => invokeSkill('backlog_grooming', ctx, { ...skillOpts(), sourceEl: btn }));
   });
   scope.querySelectorAll('button[data-cycle-action="new-manual"]').forEach(btn => {
-    btn.addEventListener('click', () => openNewPlanOverlay(ctx, onChange));
+    btn.addEventListener('click', () => invokeSkill('new_plan_manual', ctx, { ...skillOpts(), sourceEl: btn }));
   });
-  scope.querySelectorAll('button[data-cycle-action="groom"]').forEach(btn => {
-    btn.addEventListener('click', () => onGroomBacklog(btn, ctx, onChange));
+  scope.querySelectorAll('button[data-cycle-action="propose"]').forEach(btn => {
+    btn.addEventListener('click', () => invokeSkill('propose_3_plans', ctx, { ...skillOpts(), sourceEl: btn }));
   });
 
   // Queued plan Cancel buttons.
