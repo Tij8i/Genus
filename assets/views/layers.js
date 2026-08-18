@@ -923,6 +923,9 @@ async function openAddAgentFromLayers(bu, area_id, ctx) {
 // ============ Genus Agent meeting (real chat via local meeting server) ============
 
 async function startGenusAgentMeeting(bu, mode = 'areas') {
+  // Post-split (2026-08-18) — business-modelling ownership moved from the
+  // per-BU genus-agent to per-BU Venture Director. This function name
+  // stays (chat-dock references) but the agent_id routes to the Director.
   const title = mode === 'add-area'
     ? `Business modelling — add an area to ${bu}`
     : `Business modelling — ${bu}`;
@@ -931,10 +934,10 @@ async function startGenusAgentMeeting(bu, mode = 'areas') {
     : `The operator opened a meeting to review the business model for ${bu}. Read the current business_areas.json and your genus_agent_state. Lead with the current state (wired or suggestion) and ask what they want to refine.`;
   openChatDocked({
     bu,
-    agent_id: 'genus-agent',
-    label: 'Genus',
-    kind: 'genus',
-    tab_id: 'genus',            // reuse the pinned Genus tab
+    agent_id: `director-of-${bu}`,
+    label: 'Director',
+    kind: 'director',
+    tab_id: `director-${bu}`,   // per-Director pinned tab (was shared 'genus')
     purpose: 'business-modelling',
     opening_prompt: opening,
     fresh: true,                // business-modelling is a new working thread
