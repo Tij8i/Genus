@@ -1100,9 +1100,18 @@ async function startMeeting(payload, ctx, onChange, btn) {
   }
 
   try {
+    // Default agent = the Venture Director for the current BU. Mirrors the
+    // chat-dock.js `directorAgentIdFor(bu)` pattern (PR #90). Was hardcoded
+    // to 'tuto-stewart' pre-fix, which meant Sensible Flow / Equiply / etc.
+    // task discussions all landed on the Tuto Stewart — wrong context every
+    // time except on the Tuto BU. Callers can still override via payload
+    // (the ...payload spread wins on collision, preserving existing agent-
+    // request flows that carry their own agent_id).
+    const bu = BU();
+    const defaultAgentId = `director-of-${bu || 'sensibleflow'}`;
     const r = await fetch(`${MEETING_SERVER}/meeting/new`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bu: BU(), agent_id: 'tuto-stewart', ...payload }),
+      body: JSON.stringify({ bu, agent_id: defaultAgentId, ...payload }),
     });
     const j = await r.json();
     if (!r.ok || !j.ok) throw new Error(j.message || `HTTP ${r.status}`);
