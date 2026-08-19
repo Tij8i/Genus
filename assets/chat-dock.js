@@ -14,6 +14,14 @@ import { createMeeting, resumeMeeting, findRecentActiveMeeting, openMeetingChat,
 import { escapeHtml, currentBu } from './views/workflows/_shared.js';
 
 const STORE_KEY = 'genus.chat-dock.state';
+// Bump when a state migration is needed. loadState nullifies stale
+// meeting_ids on Director tabs when the stored version is behind this.
+// v2 (2026-08-19): PR #90 rewired the pinned tab from genus-agent →
+//   director-of-<bu>. Pre-existing meeting_ids point at the OLD agent
+//   (typically genus-agent OR — after park-with-redirect banners —
+//   product-stewart-of-genus whose "I've been parked" opening leaks
+//   into the Director tab). Force fresh meeting to re-route correctly.
+const STATE_SCHEMA_VERSION = 2;
 
 // Per-BU Director nicknames — operator-set daily-use handles. Missing
 // entries fall back to "Director of <bu>". Update when a new nickname
@@ -77,6 +85,23 @@ function loadState() {
   if (directorTab && directorTab.label === 'Genus') {
     directorTab.label = directorLabelFor(currentBu());
   }
+  // Schema-version migration. If the stored state is behind
+  // STATE_SCHEMA_VERSION, run the necessary cleanup and stamp the new
+  // version so it only runs once per operator.
+  const storedVersion = Number(dockState.schema_version || 0);
+  if (storedVersion < 2) {
+    // v2: PR #90 changed the pinned tab from genus-agent →
+    // director-of-<bu>. Any persisted meeting_id points at the OLD
+    // agent and would silently resume the wrong conversation. Null
+    // them out so the next open forces a fresh meeting on the correct
+    // Director. Also clear steward-tab meeting_ids defensively — same
+    // risk if a steward was renamed/reframed.
+    dockState.tabs.forEach(t => {
+      if (t.meeting_id) t.meeting_id = null;
+    });
+  }
+  dockState.schema_version = STATE_SCHEMA_VERSION;
+  saveState();
 }
 
 function saveState() {
