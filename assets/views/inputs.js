@@ -35,7 +35,17 @@ const failedDecisions = new Map(); // task_id → {decision, message, at}
 
 // Meeting server liveness — set by probeMeetingServerBanner. Used to gate
 // the chat input + Send button + new-meeting button (offline server = no chat).
-let meetingServerUp = false;
+// Optimistic default: assume UP until proven down. Previous default of `false`
+// caused a false-positive "Local meeting server offline" whenever the operator
+// opened a task chat from any sub-tab other than "meetings" (the only place
+// that previously triggered a probe). Fires a module-load probe so real state
+// arrives within the first paint for anything else.
+let meetingServerUp = true;
+// Fire an immediate one-shot probe on module load so meetingServerUp reflects
+// reality regardless of which sub-tab the operator opens first. The probe
+// itself is memoized in meeting-endpoint.js (successful results reused across
+// modules) so this is cheap even if inputs.js is imported multiple times.
+meetingServerHealth().then(r => { meetingServerUp = !!r.ok; }).catch(() => {});
 
 // In-flight /meeting/new POSTs keyed by from_request_id. Prevents a flurry of
 // clicks on the same Start-meeting → button from spawning duplicate meetings
