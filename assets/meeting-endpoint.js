@@ -42,7 +42,11 @@ async function resolveEndpoint() {
 }
 
 export async function meetingServerHealth() {
-  if (resolved) return resolved;
+  // Only reuse SUCCESSFUL probes. Failures aren't cached — the server may
+  // have been mid-restart (`launchctl kickstart -k`) when the probe fired,
+  // and we don't want to lock the UI into "offline" until page reload.
+  // Every follow-up call re-probes when the last result was ok:false.
+  if (resolved && resolved.ok) return resolved;
   if (probeInFlight) return probeInFlight;
   probeInFlight = resolveEndpoint().then(r => { resolved = r; probeInFlight = null; return r; });
   return probeInFlight;
