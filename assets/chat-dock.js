@@ -15,7 +15,38 @@ import { escapeHtml, currentBu } from './views/workflows/_shared.js';
 
 const STORE_KEY = 'genus.chat-dock.state';
 
-let dockState = { tabs: [{ id: 'genus', label: 'Genus', kind: 'genus', minimised: true, unread: 0, meeting_id: null }] };
+// Per-BU Director nicknames — operator-set daily-use handles. Missing
+// entries fall back to "Director of <bu>". Update when a new nickname
+// is confirmed with operator (also update the Director's IDENTITY.md
+// under docs/agents/directors/director_of_<bu>/ in Orchestrator).
+// Source: operator direction 2026-08-19.
+const DIRECTOR_NICKNAMES = {
+  equiply:      'Elon',
+  sensibleflow: 'Flow',
+  // medivara / tuto / synthetic / dev: no nickname yet, fall back to formal
+};
+
+// BU display names for the fallback label. Kept minimal; can source from
+// registry later if this grows.
+const BU_LABELS = {
+  sensibleflow: 'Sensible Flow',
+  equiply:      'Equiply',
+  medivara:     'Medivara',
+  tuto:         'Tuto',
+  synthetic:    'Acme Roastery',
+  dev:          'Dev',
+};
+
+function directorLabelFor(bu) {
+  if (DIRECTOR_NICKNAMES[bu]) return DIRECTOR_NICKNAMES[bu];
+  const disp = BU_LABELS[bu] || bu;
+  return `Director of ${disp}`;
+}
+function directorAgentIdFor(bu) {
+  return `director-of-${bu || 'genus'}`;
+}
+
+let dockState = { tabs: [{ id: 'genus', label: 'Director', kind: 'genus', minimised: true, unread: 0, meeting_id: null }] };
 
 // Per-tab live-meeting objects (kept in memory only — meeting_id + bu round-trip
 // to localStorage; the meeting body is refetched via resumeMeeting on reopen).
@@ -31,12 +62,21 @@ function loadState() {
       if (parsed?.tabs?.length > 0) dockState = parsed;
     }
   } catch (_) {}
-  // Always keep exactly one genus tab, pinned leftmost
+  // Always keep exactly one director tab, pinned leftmost. Kind stays
+  // 'genus' for backwards-compat with existing localStorage state; label
+  // is recomputed each render from current BU via refreshDirectorTabLabel.
   if (!dockState.tabs.find(t => t.kind === 'genus')) {
-    dockState.tabs.unshift({ id: 'genus', label: 'Genus', kind: 'genus', minimised: true, unread: 0, meeting_id: null });
+    dockState.tabs.unshift({ id: 'genus', label: 'Director', kind: 'genus', minimised: true, unread: 0, meeting_id: null });
   }
   // Migrate: ensure every tab has meeting_id field
   dockState.tabs.forEach(t => { if (!('meeting_id' in t)) t.meeting_id = null; });
+  // Migration 2026-08-19: rewrite stale 'Genus' label on the pinned tab
+  // so operators who had localStorage from before this change see the
+  // director label per current BU next render.
+  const directorTab = dockState.tabs.find(t => t.kind === 'genus');
+  if (directorTab && directorTab.label === 'Genus') {
+    directorTab.label = directorLabelFor(currentBu());
+  }
 }
 
 function saveState() {
@@ -66,6 +106,10 @@ function renderDock() {
   // Tear down any live chat surfaces before wiping innerHTML — otherwise
   // their poll timers keep running against orphaned DOM (leaks + noise).
   unmountAll();
+  // Refresh the pinned director tab label from currentBu() every render
+  // so switching BUs re-labels the tab from "Elon" → "Flow" → etc.
+  const directorTab = dockState.tabs.find(t => t.kind === 'genus');
+  if (directorTab) directorTab.label = directorLabelFor(currentBu());
   host.innerHTML = dockState.tabs.map(t => t.minimised ? renderTab(t) : renderPanel(t)).join('');
 
   dockState.tabs.forEach(t => {
@@ -184,12 +228,19 @@ function mountInto(host, meeting, bu, tabId) {
 }
 
 async function createMeetingForTab(t, bu) {
+  // Post-split (2026-08-19) — the "Genus tab" now routes to per-BU
+  // Venture Director (director-of-<bu>), not the deprecated genus-agent.
+  // Tab label uses operator-set nickname if available (DIRECTOR_NICKNAMES
+  // above), else falls back to "Director of <BU display name>".
+  const directorLabel = directorLabelFor(bu);
+  const directorAgentId = directorAgentIdFor(bu);
+
   // If the tab carries a caller-supplied prompt (from openChatDocked), use
   // that. Otherwise fall back to the archetype default.
   if (t.opening_prompt || t.purpose || t.skill_brief) {
     return await createMeeting({
       bu,
-      agent_id: t.agent_id || (t.kind === 'genus' ? 'genus-agent' : null),
+      agent_id: t.agent_id || (t.kind === 'genus' ? directorAgentId : null),
       title: t.label,
       purpose: t.purpose || (t.kind === 'genus' ? 'chat-dock' : 'steward-chat'),
       opening_prompt: t.opening_prompt || null,
@@ -200,10 +251,10 @@ async function createMeetingForTab(t, bu) {
   if (t.kind === 'genus') {
     return await createMeeting({
       bu,
-      agent_id: 'genus-agent',
-      title: 'Genus',
+      agent_id: directorAgentId,
+      title: directorLabel,
       purpose: 'chat-dock',
-      opening_prompt: 'The operator opened the Genus chat. Greet briefly, ask what they want to work on. Chat context is the whole venture.',
+      opening_prompt: `The operator opened chat with ${directorLabel}. Greet briefly (use your own voice/nickname), ask what they want to work on. Chat context is the whole ${BU_LABELS[bu] || bu} venture.`,
     });
   }
   if (t.kind === 'steward') {
