@@ -35,7 +35,17 @@ const failedDecisions = new Map(); // task_id → {decision, message, at}
 
 // Meeting server liveness — set by probeMeetingServerBanner. Used to gate
 // the chat input + Send button + new-meeting button (offline server = no chat).
-let meetingServerUp = false;
+// Optimistic default: assume UP until proven down. Previous default of `false`
+// caused a false-positive "Local meeting server offline" whenever the operator
+// opened a task chat from any sub-tab other than "meetings" (the only place
+// that previously triggered a probe). Fires a module-load probe so real state
+// arrives within the first paint for anything else.
+let meetingServerUp = true;
+// Fire an immediate one-shot probe on module load so meetingServerUp reflects
+// reality regardless of which sub-tab the operator opens first. The probe
+// itself is memoized in meeting-endpoint.js (successful results reused across
+// modules) so this is cheap even if inputs.js is imported multiple times.
+meetingServerHealth().then(r => { meetingServerUp = !!r.ok; }).catch(() => {});
 
 // In-flight /meeting/new POSTs keyed by from_request_id. Prevents a flurry of
 // clicks on the same Start-meeting → button from spawning duplicate meetings
@@ -1090,9 +1100,18 @@ async function startMeeting(payload, ctx, onChange, btn) {
   }
 
   try {
+    // Default agent = the Venture Director for the current BU. Mirrors the
+    // chat-dock.js `directorAgentIdFor(bu)` pattern (PR #90). Was hardcoded
+    // to 'tuto-stewart' pre-fix, which meant Sensible Flow / Equiply / etc.
+    // task discussions all landed on the Tuto Stewart — wrong context every
+    // time except on the Tuto BU. Callers can still override via payload
+    // (the ...payload spread wins on collision, preserving existing agent-
+    // request flows that carry their own agent_id).
+    const bu = BU();
+    const defaultAgentId = `director-of-${bu || 'sensibleflow'}`;
     const r = await fetch(`${MEETING_SERVER}/meeting/new`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bu: BU(), agent_id: 'tuto-stewart', ...payload }),
+      body: JSON.stringify({ bu, agent_id: defaultAgentId, ...payload }),
     });
     const j = await r.json();
     if (!r.ok || !j.ok) throw new Error(j.message || `HTTP ${r.status}`);
