@@ -1398,12 +1398,22 @@ function wireProcessMemosButton() {
     status.textContent = 'Agent is reading unprocessed memos — this can take up to a minute per memo.';
     status.style.color = '#5b6270';
     try {
-      const r = await fetch('/api/process-memos', {
-        method: 'POST', credentials: 'include',
+      // Hit the local meeting server directly — the Cloudflare Pages
+      // deployment has no Function handler for /api/process-memos (the
+      // Node server-side version at server/api/process-memos.js relies
+      // on the local Claude CLI via runAgentTurn, which is not portable
+      // to CF Workers). The Python port lives in dashboard/scripts/
+      // genus_meeting_server.py and calls the Anthropic API directly
+      // with the operator's keychain OAuth token — same shape as chat.
+      // Requires the meeting server to be running locally on port 8765.
+      const r = await fetch(`${MEETING_SERVER}/api/process-memos`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ bu }),
       });
-      const j = await r.json();
+      let j;
+      try { j = await r.json(); }
+      catch { throw new Error(`Local meeting server at ${MEETING_SERVER} returned a non-JSON response (HTTP ${r.status}). Is the server running? \`launchctl list | grep genus-meetings\``); }
       if (!r.ok || !j.ok) throw new Error(j.message || `HTTP ${r.status}`);
       const filed = j.tasks_filed?.length || 0;
       const skipped = j.skipped?.length || 0;
