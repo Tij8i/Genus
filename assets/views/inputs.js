@@ -450,10 +450,10 @@ function renderSuggestionsSubTab(tasks, ctx) {
   return `
     <div class="card">
       <div class="card-header-row">
-        <div class="card-header-left"><span class="card-title">Suggestions</span></div>
+        <div class="card-header-left"><span class="card-title">Suggestions (executable tasks)</span></div>
         <span class="card-sub" style="margin-top:0">${pending.length} awaiting your review</span>
       </div>
-      <p class="card-sub">From your agents. Accept, talk it through, or dismiss.</p>
+      <p class="card-sub"><strong>Accepting = execute now.</strong> Each card is a task ready to run. If you want to shape or defer it, use <em>Discuss</em>, <em>Dismiss</em>, or file it as a memo instead (memos route through planning first — see the Memos tab).</p>
       ${banner}
       <div class="suggestion-list" style="margin-top:14px">
         ${pending.length === 0
@@ -503,7 +503,7 @@ function renderSuggestionCardLegacy(t) {
       ${t.description ? `<div class="suggestion-detail">${escapeHtml((t.description || '').slice(0, 320))}${(t.description || '').length > 320 ? '…' : ''}</div>` : ''}
       <div class="suggestion-meta mono">${escapeHtml(meta.join(' · ') || 'task')}</div>
       <div class="suggestion-actions">
-        <button type="button" class="sugg-accept" data-task-id="${escapeHtml(t.id)}">Accept</button>
+        <button type="button" class="sugg-accept" data-task-id="${escapeHtml(t.id)}" title="Approve and execute now — this runs the task">Approve &amp; execute</button>
         <button type="button" class="sugg-discuss" data-task-id="${escapeHtml(t.id)}">Discuss</button>
         <button type="button" class="sugg-dismiss" data-task-id="${escapeHtml(t.id)}">Dismiss</button>
         <span class="sugg-status mono"></span>
@@ -538,7 +538,7 @@ function renderSuggestionCardV1(t, oa, ctx) {
         ${blocks.map(b => renderActorBlock(b)).join('')}
       </div>
       <div class="suggestion-actions">
-        <button type="button" class="sugg-accept" data-task-id="${escapeHtml(t.id)}">Accept</button>
+        <button type="button" class="sugg-accept" data-task-id="${escapeHtml(t.id)}" title="Approve and execute now — this runs the task">Approve &amp; execute</button>
         <button type="button" class="sugg-discuss" data-task-id="${escapeHtml(t.id)}">Discuss</button>
         <button type="button" class="sugg-dismiss" data-task-id="${escapeHtml(t.id)}">Dismiss</button>
         <span class="sugg-status mono"></span>
@@ -1351,7 +1351,7 @@ function renderMemosSubTab(memos) {
           <button type="button" class="add-btn" id="new-memo-btn" title="Compose a new memo">+</button>
         </div>
       </div>
-      <p class="card-sub">What you tell the agents. Click "Process" to have the agent read every unprocessed memo now and file suggestions where warranted. Autonomous processing also fires on a schedule in the background.</p>
+      <p class="card-sub">Planning input — raw notes you dump for later shaping. Memos do NOT execute. Clicking "Process" has the agent read unprocessed memos and file suggestions where warranted (which THEN require your approval to execute — see Suggestions tab). Autonomous processing also fires on a schedule.</p>
 
       <div id="process-memos-status" style="font-size:12px;color:#5b6270;margin-top:6px;"></div>
 

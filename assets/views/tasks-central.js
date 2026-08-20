@@ -124,10 +124,16 @@ function openTaskDetail(bu, taskId, allTasks) {
   // when the task isn't already done. Fresh-install operators use this to
   // close the task→execute→done loop without Paperclip.
   const canRun = t.status !== 'done' && t.status !== 'cancelled';
-  const outcomeBlock = (t.execution?.outcome_artifact) ? `
+  const artifact = t.execution?.outcome_artifact;
+  const artifactUrl = artifact?.url || null;
+  const artifactLabel = artifact?.label || artifact?.memo_id || '(none)';
+  const artifactLine = artifactUrl
+    ? `artifact: <a href="${escapeHtml(artifactUrl)}" target="_blank" rel="noopener" style="color:#3468d6;text-decoration:underline;">${escapeHtml(artifactLabel)}</a>`
+    : `artifact: ${escapeHtml(artifactLabel)}`;
+  const outcomeBlock = artifact ? `
     <div style="font:600 10px 'JetBrains Mono',ui-monospace,Menlo,monospace;letter-spacing:.14em;color:#aab0bb;text-transform:uppercase;margin:14px 0 6px 0;">Execution outcome</div>
-    <div style="font-size:12px;color:#5b6270;line-height:1.55;">${escapeHtml((t.execution.outcome_summary || '').slice(0, 500))}${(t.execution.outcome_summary || '').length > 500 ? '…' : ''}</div>
-    <div style="font:500 11px 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#9aa1ae;margin-top:6px;">artifact: ${escapeHtml(t.execution.outcome_artifact.memo_id || '(none)')}</div>
+    <div style="font-size:12px;color:#5b6270;line-height:1.55;">${escapeHtml((t.execution.outcome_summary || t.execution.outcome || '').slice(0, 500))}${(t.execution.outcome_summary || t.execution.outcome || '').length > 500 ? '…' : ''}</div>
+    <div style="font:500 11px 'JetBrains Mono',ui-monospace,Menlo,monospace;color:#9aa1ae;margin-top:6px;">${artifactLine}</div>
   ` : '';
 
   const footer = `<div style="display:flex;gap:8px;justify-content:flex-end;align-items:center;flex-wrap:wrap;">
