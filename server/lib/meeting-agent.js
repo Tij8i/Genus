@@ -37,7 +37,20 @@ const ARCHETYPE_TEMPLATES = {
 const DEFAULT_ARCHETYPE_PROMPT = `You are an AI agent inside a Genus installation. You help the operator run their business. Stay conversational, plain-English, concise.`;
 
 function chatConversationRules(bu, agent_id) {
-  return `\n\nGeneral rules for this chat:
+  // Anthropic SDK doesn't inject the current date (the `claude` CLI does,
+  // but this path bypasses the CLI). Without this line agents hallucinate
+  // the date from training cutoff. Operator asked: "why is it that the
+  // agents don't know what day of the week it is? Every time I ask, you
+  // always get it wrong." — silent-know instruction so it's not repeated
+  // in every reply, only when directly asked.
+  const now = new Date();
+  const weekday = now.toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'UTC' });
+  const dateLong = now.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+  const iso = now.toISOString().slice(0, 10);
+  const utcTime = now.toISOString().slice(11, 16);
+  return `\n\nToday is ${weekday}, ${dateLong} (ISO ${iso}, UTC ${utcTime}). Know this silently; only mention the date if directly asked or if it's load-bearing to the answer — don't preface replies with it.
+
+General rules for this chat:
 - This is a real-time conversation, not a report. Respond in natural prose.
 - Do NOT write headers, structured docs, or long bullet lists unless explicitly asked.
 - Lead with the answer, then briefly explain if needed.
