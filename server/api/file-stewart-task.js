@@ -71,7 +71,15 @@ export async function onRequestPost({ request, env }) {
   const path = `dashboard/public/data/bus/${bu}/tasks.json`;
   let current;
   try { current = await getFile(env.GITHUB_PAT, path); }
-  catch (e) { return jsonResponse(e.status || 500, { ok: false, message: e.message || String(e) }); }
+  catch (e) {
+    // Fresh BU: tasks.json may not exist yet. Treat 404 as empty array so
+    // first Stewart-filed task creates the file.
+    if (e.status === 404) {
+      current = { content: '[]', sha: null };
+    } else {
+      return jsonResponse(e.status || 500, { ok: false, message: e.message || String(e) });
+    }
+  }
 
   let tasks;
   try { tasks = JSON.parse(current.content); }

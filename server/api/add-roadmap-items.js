@@ -53,7 +53,15 @@ export async function onRequestPost({ request, env }) {
     file = await getFile(env.GITHUB_PAT, PATH);
     data = JSON.parse(file.content);
   } catch (e) {
-    return jsonResponse(e.status || 500, { ok: false, message: 'Could not read roadmap.json: ' + (e.message || String(e)) });
+    // Fresh BU or newly-installed Product module: roadmap.json doesn't exist
+    // yet. Treat 404 as empty seed so first-write creates the file. Non-404
+    // errors still surface.
+    if (e.status === 404) {
+      file = { content: '{"items":[],"versions":[]}', sha: null };
+      data = { items: [], versions: [] };
+    } else {
+      return jsonResponse(e.status || 500, { ok: false, message: 'Could not read roadmap.json: ' + (e.message || String(e)) });
+    }
   }
 
   data.items = Array.isArray(data.items) ? data.items : [];
