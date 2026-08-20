@@ -552,15 +552,22 @@ function renderTimelineRow(init, ctx, pct, today) {
 
 function renderBacklogSubTab(ctx) {
   // 3-column model (2026-08-13 reshape per operator):
-  //   1. Inbox         — raw unprocessed MEMOS. Every well-formed task lives
-  //                       under an initiative, so no "orphan tasks" column
-  //                       (dropped 2026-08-13 — the concept was noise).
+  //   1. Inbox         — PROCESSED memos awaiting sort into initiatives.
+  //                       Unprocessed memos live in the Memos sub-tab and must
+  //                       clear the Process step first (which either files a
+  //                       suggestion or marks them no_action). Only processed
+  //                       memos reach the planning surface — planning inputs
+  //                       have already had one round of agent triage.
+  //                       Unprocessed → processed swap: 2026-08-20 (operator
+  //                       flagged that raw memos in the planning column
+  //                       bypasses the Process gate the memo→task chain is
+  //                       designed around).
   //   2. Initiatives   — every initiative, each with a state chip. Tasks
   //                       are bundled inside their parent initiative.
   //   3. Queued plans  — drafts + queued (as before).
-  const unprocessedMemos = (ctx.memos || [])
-    .filter(m => (m.status || '').toLowerCase() === 'unprocessed')
-    .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+  const processedMemos = (ctx.memos || [])
+    .filter(m => (m.status || '').toLowerCase() === 'processed')
+    .sort((a, b) => (b.processed_at || b.created_at || '').localeCompare(a.processed_at || a.created_at || ''));
 
   const initiatives = (ctx.initiatives || []).filter(i =>
     // Backlog Initiatives column = "stuff not yet in a plan". An initiative
@@ -590,7 +597,7 @@ function renderBacklogSubTab(ctx) {
         <button type="button" class="plan-cycle-btn plan-cycle-btn-primary" data-cycle-action="compose" title="Pick initiatives + add your angle. Stewart drafts a plan. Draft appears with a 'draft' badge; open it via the Finalise button to iterate live.">✨ Compose plan</button>
       </div>
       <div class="kanban kanban-tight">
-        ${renderInboxColumn(unprocessedMemos)}
+        ${renderInboxColumn(processedMemos)}
         ${renderInitiativesColumn(initiatives, ctx)}
         ${renderQueuedPlansColumn(queuedPlans, activePlan, ctx)}
       </div>
@@ -598,22 +605,25 @@ function renderBacklogSubTab(ctx) {
   `;
 }
 
-// Inbox column — raw unprocessed memos only.
+// Inbox column — PROCESSED memos awaiting sort into initiatives. Unprocessed
+// memos never appear here; they live in the Memos sub-tab and must clear the
+// Process step first (which either files a suggestion via the agent or marks
+// them no_action). Two-gate flow: memo → Process → sortable planning input.
 function renderInboxColumn(memos) {
   const cards = memos.map(m => `
     <div class="kanban-card-tight kanban-card-memo" data-memo-id="${escapeHtml(m.id)}">
-      <div class="mono" style="font-size:10px;color:var(--text-faint);">${escapeHtml((m.created_at || '').slice(0, 10))}</div>
+      <div class="mono" style="font-size:10px;color:var(--text-faint);">${escapeHtml((m.processed_at || m.created_at || '').slice(0, 10))}</div>
       <div style="font-size:12px;line-height:1.4;color:var(--text);margin-top:2px;">${escapeHtml((m.body || '').slice(0, 140))}${(m.body || '').length > 140 ? '…' : ''}</div>
     </div>
   `).join('');
   return `
     <div class="kanban-col" data-state="inbox">
       <div class="kanban-col-h">
-        <span>📝 Memos to sort</span>
+        <span>📝 Processed memos to sort</span>
         <span class="kanban-count">${memos.length}</span>
       </div>
       <div class="kanban-col-body">
-        ${memos.length ? cards : '<div class="kanban-empty">Nothing to sort.</div>'}
+        ${memos.length ? cards : '<div class="kanban-empty">Nothing to sort. Unprocessed memos live in the Memos sub-tab — click Process there first.</div>'}
       </div>
     </div>
   `;
