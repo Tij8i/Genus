@@ -225,7 +225,10 @@ async function runAgentSession(manifest, ctx, opts) {
   if (!bu) throw new Error('invokeSkill: opts.bu required');
   const agentId = opts.agent_id || await resolveAgent(bu, manifest.agent?.module_id);
   if (!agentId) {
-    await showAlert(`No ${manifest.agent?.module_id || 'agent'} bound to ${opts.bu_label || bu}. Install the module first.`);
+    // resolveAgent already falls back to the Director when no module Stewart
+    // is installed. If we're still here, the BU has neither Stewart nor
+    // Director bound — the BU is not set up yet.
+    await showAlert(`No agent bound to ${opts.bu_label || bu}. This BU has no Director or ${manifest.agent?.module_id || 'module'} Stewart installed yet.`);
     return { error: 'no_agent' };
   }
   const template = await loadPromptTemplate(manifest.id, manifest);
@@ -323,8 +326,15 @@ async function resolveAgent(bu, moduleId) {
   try {
     const raw = await fetchSubstrateJson('dashboard/public/data/system/agent_bindings.json', []);
     const list = Array.isArray(raw) ? raw : (raw?.bindings || []);
+    // Preferred: exact module binding for this BU (Stewart installed).
     const match = list.find(b => b.bu === bu && b.module_id === moduleId);
-    return match?.agent_id || null;
+    if (match?.agent_id) return match.agent_id;
+    // Module-fallback: when no Stewart is installed for `moduleId` on this BU,
+    // the Director covers at basic fidelity (per Director archetype IDENTITY
+    // + Genus Agent v1.0 spec). Route the skill to the Director so planning /
+    // finance / product / etc. still work on a bare install.
+    const director = list.find(b => b.bu === bu && (b.archetype === 'Director' || b.module_id === 'core'));
+    return director?.agent_id || null;
   } catch {
     return null;
   }
