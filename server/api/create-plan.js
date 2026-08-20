@@ -47,12 +47,22 @@ export async function onRequestPost({ request, env }) {
   const goalsPath = `dashboard/public/data/bus/${bu}/goals.json`;
   const initsPath = `dashboard/public/data/bus/${bu}/initiatives.json`;
 
+  // Fresh BU: any of plans/goals/initiatives may not exist yet. Load each
+  // independently so a 404 on one doesn't fail the whole compose. Non-404
+  // errors surface as before.
+  const loadOrEmpty = async (path) => {
+    try { return await getFile(env.GITHUB_PAT, path); }
+    catch (e) {
+      if (e.status === 404) return { content: '[]', sha: null };
+      throw e;
+    }
+  };
   let plansFile, goalsFile, initsFile;
   try {
     [plansFile, goalsFile, initsFile] = await Promise.all([
-      getFile(env.GITHUB_PAT, plansPath),
-      getFile(env.GITHUB_PAT, goalsPath),
-      getFile(env.GITHUB_PAT, initsPath),
+      loadOrEmpty(plansPath),
+      loadOrEmpty(goalsPath),
+      loadOrEmpty(initsPath),
     ]);
   } catch (e) { return jsonResponse(e.status || 500, { ok: false, message: `Load failed: ${e.message || e}` }); }
 
@@ -156,12 +166,13 @@ export async function onRequestPost({ request, env }) {
     const r1 = await putFile(env.GITHUB_PAT, plansPath, JSON.stringify(plans, null, 2) + '\n', plansFile.sha, `plans: ${initialStatus} ${planId} — ${title.slice(0, 50)}`);
     let r2Sha = null, r3Sha = null;
     if (newGoalIds.length) {
-      const gf2 = await getFile(env.GITHUB_PAT, goalsPath);
+      // Re-fetch tolerant of 404 (goals.json may not exist yet on fresh BU).
+      const gf2 = await loadOrEmpty(goalsPath);
       const r2 = await putFile(env.GITHUB_PAT, goalsPath, JSON.stringify(goals, null, 2) + '\n', gf2.sha, `goals: +${newGoalIds.length} for ${initialStatus} ${planId}`);
       r2Sha = r2.commit.sha;
     }
     if (newInitIds.length) {
-      const if2 = await getFile(env.GITHUB_PAT, initsPath);
+      const if2 = await loadOrEmpty(initsPath);
       const r3 = await putFile(env.GITHUB_PAT, initsPath, JSON.stringify(initiatives, null, 2) + '\n', if2.sha, `initiatives: +${newInitIds.length} for ${initialStatus} ${planId}`);
       r3Sha = r3.commit.sha;
     }

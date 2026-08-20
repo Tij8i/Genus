@@ -48,7 +48,14 @@ export async function onRequestPost({ request, env }) {
   const tasksPath = `dashboard/public/data/bus/${bu}/tasks.json`;
   let tasksFile;
   try { tasksFile = await getFile(env.GITHUB_PAT, tasksPath); }
-  catch (e) { return jsonResponse(e.status || 500, { ok: false, message: e.message || String(e) }); }
+  catch (e) {
+    // Fresh BU: tasks.json may not exist yet. First plan compose creates it.
+    if (e.status === 404) {
+      tasksFile = { content: '[]', sha: null };
+    } else {
+      return jsonResponse(e.status || 500, { ok: false, message: e.message || String(e) });
+    }
+  }
   let tasks;
   try { tasks = JSON.parse(tasksFile.content); }
   catch (e) { return jsonResponse(500, { ok: false, message: `Parse tasks: ${e}` }); }

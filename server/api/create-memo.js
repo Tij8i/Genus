@@ -48,7 +48,15 @@ export async function onRequestPost({ request, env }) {
   const path = `dashboard/public/data/bus/${bu}/memos.jsonl`;
   let current;
   try { current = await getFile(env.GITHUB_PAT, path); }
-  catch (e) { return jsonResponse(e.status || 500, { ok: false, message: e.message || String(e) }); }
+  catch (e) {
+    // Fresh BU: memos.jsonl may not exist yet. Same pattern as
+    // import-meeting.js — 404 → empty, putFile with sha:null creates.
+    if (e.status === 404) {
+      current = { content: '', sha: null };
+    } else {
+      return jsonResponse(e.status || 500, { ok: false, message: e.message || String(e) });
+    }
+  }
 
   // Generate id: memo-YYYY-MM-DD-NNN
   const today = todayDate();

@@ -196,7 +196,18 @@ export function mountChatSurface(hostEl, meeting, { bu, mode = 'overlay' } = {})
   // re-renders here.
   const rerender = () => {
     if (!thread) return;
+    // Preserve the typing indicator across rerender. When a send optimistic
+    // insert triggers notifyMeetingChanged (line ~380), rerender wipes
+    // innerHTML and reloads renderChatTurns(transcript) — this drops the
+    // thinking dots that were inserted immediately after the optimistic
+    // operator turn. Result: operator sees no visual feedback for the ~180s
+    // Claude CLI reply window. Re-attach the dots after the rerender if the
+    // thread had them pre-wipe.
+    const hadThinking = !!thread.querySelector('[data-role="thinking"]');
     thread.innerHTML = renderChatTurns(shared.transcript || []);
+    if (hadThinking) {
+      thread.insertAdjacentHTML('beforeend', '<div class="chat-thinking" data-role="thinking" aria-label="Agent is typing"><span class="chat-thinking-dot"></span><span class="chat-thinking-dot"></span><span class="chat-thinking-dot"></span></div>');
+    }
     scrollToBottom(thread);
     // Refresh status + disabled state
     const statusEl = hostEl.querySelector('[data-role="status"]');
