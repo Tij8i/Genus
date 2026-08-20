@@ -173,6 +173,31 @@ const CONTEXT_RENDERERS = {
 // ------- Public API -------
 
 // Load the registry index. Callers rarely need this — invokeSkill handles it.
+// Compose the (title, greeting, skill_brief, agent_id, purpose) tuple for a
+// registered skill without dispatching it. Used by chat-dock to bind its
+// generic Director/Steward tabs to real skills instead of hardcoded openers
+// (SKILL_ARCHITECTURE.md). Skill files are the source of truth for the
+// framing; consumers just pass the extras (bu, bu_label, module_id, etc.).
+export async function buildSkillMeetingContext(id, extras = {}) {
+  const manifest = await loadManifest(id);
+  const bu = extras.bu;
+  const agentId = extras.agent_id || (manifest.agent?.module_id ? await resolveAgent(bu, manifest.agent.module_id) : null);
+  if (!agentId) throw new Error(`buildSkillMeetingContext: could not resolve agent for skill '${id}' on bu '${bu}'`);
+  const template = await loadPromptTemplate(id, manifest);
+  const renderExtras = { ...extras, bu, bu_label: extras.bu_label || bu, agent_id: agentId };
+  const brief = renderPrompt(template, manifest, extras.ctx || {}, renderExtras);
+  const title = interpolate(manifest.meeting?.title_template || manifest.name, renderExtras);
+  const greeting = interpolate(manifest.meeting?.greeting || 'Hi — what would you like to work on?', renderExtras);
+  return {
+    agent_id: agentId,
+    title,
+    purpose: manifest.meeting?.purpose || `skill:${id}`,
+    opening_prompt: greeting,
+    skill_brief: brief,
+    related_item: { kind: 'skill', id: manifest.id, name: manifest.name },
+  };
+}
+
 export async function listSkills() {
   const idx = await loadIndex();
   return idx.skills || [];

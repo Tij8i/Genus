@@ -12,6 +12,7 @@
 
 import { createMeeting, resumeMeeting, findRecentActiveMeeting, openMeetingChat, mountChatSurface } from './meeting.js';
 import { escapeHtml, currentBu } from './views/workflows/_shared.js';
+import { buildSkillMeetingContext } from './skills.js';
 
 const STORE_KEY = 'genus.chat-dock.state';
 // Bump when a state migration is needed. loadState nullifies stale
@@ -274,22 +275,24 @@ async function createMeetingForTab(t, bu) {
     });
   }
   if (t.kind === 'genus') {
-    return await createMeeting({
+    // Bind to the open_director_chat skill (SKILL_ARCHITECTURE.md — every
+    // chat-dock tab must resolve to a registered skill).
+    const skill = await buildSkillMeetingContext('open_director_chat', {
       bu,
+      bu_label: BU_LABELS[bu] || bu,
       agent_id: directorAgentId,
-      title: directorLabel,
-      purpose: 'chat-dock',
-      opening_prompt: `The operator opened chat with ${directorLabel}. Greet briefly (use your own voice/nickname), ask what they want to work on. Chat context is the whole ${BU_LABELS[bu] || bu} venture.`,
     });
+    return await createMeeting({ bu, ...skill, title: directorLabel });
   }
   if (t.kind === 'steward') {
-    return await createMeeting({
+    const skill = await buildSkillMeetingContext('open_steward_chat', {
       bu,
+      bu_label: BU_LABELS[bu] || bu,
       agent_id: t.agent_id,
-      title: t.label,
-      purpose: 'steward-chat',
-      opening_prompt: `Operator opened chat with you (${t.label}), scoped to your module.`,
+      agent_label: t.label,
+      module_label: t.module_label || t.label,
     });
+    return await createMeeting({ bu, ...skill, title: t.label });
   }
   return null;
 }
