@@ -13,11 +13,37 @@
 
 const TERM_HOST = 'http://127.0.0.1:3101';
 const SPAWN_URL = `${TERM_HOST}/terminal/spawn`;
+const SESSION_URL = (sid) => `${TERM_HOST}/terminal/session/${sid}`;
+const WS_URL = (sid) => `ws://127.0.0.1:3101/terminal/ws/${sid}`;
 const XTERM_JS = 'https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js';
 const XTERM_CSS = 'https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css';
 const XTERM_FIT_JS = 'https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js';
 
 const ORCHESTRATOR_CWD = '/Users/AlessioTixi/Documents/GitHub/Orchestrator';
+
+// Per-tab persisted session — survives page reloads. Keyed by tab.id.
+// Format: { [tabId]: session_id }
+const TERM_SESSION_STORE_KEY = 'genus.terminal.sessions';
+
+function loadTermSessions() {
+  try { return JSON.parse(localStorage.getItem(TERM_SESSION_STORE_KEY) || '{}'); }
+  catch { return {}; }
+}
+function saveTermSessionFor(tabId, sessionId) {
+  const s = loadTermSessions();
+  if (sessionId) s[tabId] = sessionId;
+  else delete s[tabId];
+  try { localStorage.setItem(TERM_SESSION_STORE_KEY, JSON.stringify(s)); } catch (_) {}
+}
+
+async function isSessionAlive(sessionId) {
+  try {
+    const r = await fetch(SESSION_URL(sessionId), { method: 'GET' });
+    if (!r.ok) return false;
+    const info = await r.json();
+    return !!info.alive && !info.attached;   // must be alive AND not already attached
+  } catch { return false; }
+}
 
 let xtermReady = null;
 function loadXterm() {
@@ -117,7 +143,7 @@ export async function mountTerminalSurface(hostEl, tab, { bu } = {}) {
   };
 
   const doMount = async () => {
-    hostEl.innerHTML = '<div style="padding:20px;color:#9aa1ae;font-size:12px;">Spawning claude session…</div>';
+    hostEl.innerHTML = '<div style="padding:20px;color:#9aa1ae;font-size:12px;">Connecting…</div>';
     let Terminal, FitAddon;
     try {
       ({ Terminal, FitAddon } = await loadXterm());
@@ -127,32 +153,45 @@ export async function mountTerminalSurface(hostEl, tab, { bu } = {}) {
     }
     if (disposed) return;
 
-    const cmd = commandForTab(tab, bu);
-    const command = `claude --name "${cmd.name.replace(/"/g, '\\"')}" "${cmd.trigger.replace(/"/g, '\\"')}"`;
-
-    // Spawn
-    let spawnResp;
-    try {
-      const resp = await fetch(SPAWN_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cwd: ORCHESTRATOR_CWD, command }),
-      });
-      if (!resp.ok) {
-        let body = {};
-        try { body = await resp.json(); } catch (_) { /* noop */ }
-        if ((body.error || '').toLowerCase().includes('claude') && (body.error || '').toLowerCase().includes('path')) {
-          // failure branch — claude not on PATH
-          renderBanner(hostEl, 'no-claude', 'claude not on PATH', doMount, body.tried);
-        } else {
-          renderBanner(hostEl, 'spawn-error', `spawn failed (HTTP ${resp.status}): ${body.error || 'unknown'}`, doMount);
+    // Session-persistence flow (2026-08-21):
+    //   1. Check localStorage for a stored session_id for this tab.
+    //   2. If stored, ping /terminal/session/<sid>: if alive & unattached, reuse.
+    //   3. If not stored or dead, spawn fresh + store the new session_id.
+    // This is what makes minimise/reload continue the same claude conversation
+    // instead of starting over.
+    let sessionId = null;
+    const stored = loadTermSessions()[tab.id];
+    if (stored && await isSessionAlive(stored)) {
+      sessionId = stored;
+      hostEl.innerHTML = '<div style="padding:20px;color:#9aa1ae;font-size:12px;">Resuming session…</div>';
+    } else {
+      if (stored) saveTermSessionFor(tab.id, null); // stale; clear
+      const cmd = commandForTab(tab, bu);
+      const command = `claude --name "${cmd.name.replace(/"/g, '\\"')}" "${cmd.trigger.replace(/"/g, '\\"')}"`;
+      let spawnResp;
+      try {
+        const resp = await fetch(SPAWN_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cwd: ORCHESTRATOR_CWD, command }),
+        });
+        if (!resp.ok) {
+          let body = {};
+          try { body = await resp.json(); } catch (_) { /* noop */ }
+          if ((body.error || '').toLowerCase().includes('claude') && (body.error || '').toLowerCase().includes('path')) {
+            renderBanner(hostEl, 'no-claude', 'claude not on PATH', doMount, body.tried);
+          } else {
+            renderBanner(hostEl, 'spawn-error', `spawn failed (HTTP ${resp.status}): ${body.error || 'unknown'}`, doMount);
+          }
+          return;
         }
+        spawnResp = await resp.json();
+        sessionId = spawnResp.session_id;
+        saveTermSessionFor(tab.id, sessionId);
+      } catch (err) {
+        renderBanner(hostEl, 'offline', 'meeting-server offline', doMount);
         return;
       }
-      spawnResp = await resp.json();
-    } catch (err) {
-      renderBanner(hostEl, 'offline', 'meeting-server offline', doMount);
-      return;
     }
     if (disposed) return;
 
@@ -193,9 +232,9 @@ export async function mountTerminalSurface(hostEl, tab, { bu } = {}) {
     }
     term.focus();
 
-    // WS
+    // WS (attach to sessionId — either fresh spawn or resumed)
     try {
-      ws = new WebSocket(spawnResp.ws_url);
+      ws = new WebSocket(WS_URL(sessionId));
     } catch (err) {
       renderBanner(hostEl, 'ws-error', `WebSocket open failed: ${err.message}`, doMount);
       return;
@@ -212,12 +251,14 @@ export async function mountTerminalSurface(hostEl, tab, { bu } = {}) {
     };
     ws.onclose = () => {
       if (disposed || !term) return;
-      try { term.write('\r\n\x1b[33m[session ended]\x1b[0m\r\n'); } catch (_) { /* noop */ }
+      // NOTE: WS close no longer means session is over — server keeps pty
+      // alive for 30 min grace. This just means our attachment ended (usually
+      // because we detached deliberately for cleanup). Only clear stored
+      // session if child actually exited (verified via /session probe next
+      // reattach). Don't show a "session ended" line — most closes are
+      // benign (tab unmount, minimise-then-re-render).
     };
-    ws.onerror = () => {
-      if (disposed) return;
-      // Fall through to close; onclose renders the ended line.
-    };
+    ws.onerror = () => { /* silent — onclose handles */ };
 
     term.onData((data) => {
       if (ws && ws.readyState === WebSocket.OPEN) ws.send(data);

@@ -143,14 +143,44 @@ function unmountAll() {
   tabUnmounts.clear();
 }
 
+// Terminal preservation across renders (2026-08-21):
+//   Each terminal's DOM lives in a persistent wrapper `<div id="term-preserve-<tabId>">`
+//   plus an off-screen holder `#term-offscreen-holder`. renderDock captures existing
+//   wrappers BEFORE the innerHTML wipe, then reattaches them to either the new
+//   panel body (expanded) or the off-screen holder (minimised). xterm + WS stay
+//   alive across tab↔panel transitions because their DOM node is preserved.
+function offscreenHolder() {
+  let h = document.getElementById('term-offscreen-holder');
+  if (!h) {
+    h = document.createElement('div');
+    h.id = 'term-offscreen-holder';
+    // Position off-screen but IN the layout tree — xterm needs to render + measure
+    h.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:340px;height:420px;visibility:hidden;pointer-events:none;';
+    document.body.appendChild(h);
+  }
+  return h;
+}
+
 function renderDock() {
   const host = document.getElementById('chat-dock-host');
   if (!host) return;
-  // Tear down any live chat surfaces before wiping innerHTML — otherwise
-  // their poll timers keep running against orphaned DOM (leaks + noise).
-  unmountAll();
-  // Refresh the pinned director tab label from currentBu() every render
-  // so switching BUs re-labels the tab from "Elon" → "Flow" → etc.
+  // Preserve existing terminal wrappers (survives innerHTML wipe by holding a
+  // live JS reference). Also close-only tabs that have vanished get their
+  // terminals torn down.
+  const currentIds = new Set(dockState.tabs.map(t => t.id));
+  const preservedTerms = {};
+  document.querySelectorAll('[id^="term-preserve-"]').forEach(el => {
+    const tid = el.id.slice('term-preserve-'.length);
+    if (currentIds.has(tid)) {
+      preservedTerms[tid] = el;
+    } else {
+      // tab was closed — actually tear down
+      const un = tabUnmounts.get(tid);
+      if (un) { try { un(); } catch (_) {} }
+      tabUnmounts.delete(tid);
+    }
+  });
+  // Refresh the pinned director tab label
   const directorTab = dockState.tabs.find(t => t.kind === 'genus');
   if (directorTab) directorTab.label = directorLabelFor(currentBu());
   host.innerHTML = dockState.tabs.map(t => t.minimised ? renderTab(t) : renderPanel(t)).join('');
@@ -158,16 +188,22 @@ function renderDock() {
   dockState.tabs.forEach(t => {
     if (t.minimised) {
       document.getElementById(`chat-tab-${t.id}`)?.addEventListener('click', () => setSize(t.id, 'panel'));
+      // Stash preserved terminal off-screen so pty/WS/xterm keep alive
+      if (preservedTerms[t.id]) offscreenHolder().appendChild(preservedTerms[t.id]);
     } else {
       document.getElementById(`chat-min-${t.id}`)?.addEventListener('click', (e) => { e.stopPropagation(); setSize(t.id, 'tab'); });
       document.getElementById(`chat-full-${t.id}`)?.addEventListener('click', (e) => { e.stopPropagation(); openFullPage(t); });
       document.getElementById(`chat-close-${t.id}`)?.addEventListener('click', (e) => { e.stopPropagation(); closeTab(t.id); });
-      // Click anywhere on the header (outside the buttons) minimises the panel —
-      // standard Gmail-style behaviour. stopPropagation on the buttons above
-      // prevents this from firing when they were the actual target.
       document.getElementById(`chat-header-${t.id}`)?.addEventListener('click', () => setSize(t.id, 'tab'));
-      // Kick off the chat surface for open panels
-      ensureChatMounted(t);
+      const body = document.getElementById(`chat-panel-body-${t.id}`);
+      if (preservedTerms[t.id] && body) {
+        // Re-attach existing terminal wrapper into new panel body
+        body.innerHTML = '';
+        body.appendChild(preservedTerms[t.id]);
+      } else {
+        // Fresh mount into a new persistent wrapper
+        ensureChatMounted(t);
+      }
     }
   });
 }
@@ -270,13 +306,16 @@ async function ensureChatMounted(t) {
 
 function mountInto(host, tab, bu, tabId) {
   host.innerHTML = '';
-  // Terminal-embed (2026-08-21): dock panels are real Claude Code CLI
-  // sessions now, not chat surfaces. Meeting persistence is bypassed —
-  // each open = fresh claude spawn. See docs/agents/mason/product_coach/
-  // terminal-embed contract amendment #2.
-  const unmountP = mountTerminalSurface(host, tab, { bu });
-  // mountTerminalSurface is async and returns Promise<unmount>; wrap
-  // for the sync unmount registry.
+  // Terminal-embed persistence (2026-08-21 amendment #3):
+  // The terminal's xterm+WS lives inside a persistent wrapper
+  // `<div id="term-preserve-<tabId>">` that survives renderDock cycles
+  // (see renderDock's preservedTerms logic). Sessions continue across
+  // tab↔panel transitions AND page reloads (session_id in localStorage).
+  const wrapper = document.createElement('div');
+  wrapper.id = `term-preserve-${tabId}`;
+  wrapper.style.cssText = 'flex:1;display:flex;min-height:0;';
+  host.appendChild(wrapper);
+  const unmountP = mountTerminalSurface(wrapper, tab, { bu });
   Promise.resolve(unmountP).then((fn) => {
     if (typeof fn === 'function') tabUnmounts.set(tabId, fn);
   });
@@ -349,16 +388,25 @@ function setSize(id, size) {
 function closeTab(id) {
   const idx = dockState.tabs.findIndex(t => t.id === id);
   if (idx < 0) return;
-  // Never close the Genus tab; just minimise it. Keep meeting_id so resume works.
+  // Never close the Genus tab; just minimise it. Terminal wrapper is preserved
+  // off-screen so pty/xterm/WS stay alive (amendment #3 persistence).
   if (dockState.tabs[idx].kind === 'genus') {
     dockState.tabs[idx].minimised = true;
   } else {
-    // For steward tabs: clear the in-memory meeting; leave the server-side
-    // meeting alive so a reopen with the same tab id could still resume it.
-    // Removing the tab also clears the tab record entirely.
+    // Steward tab X: tear down terminal + clear stored session so next open
+    // starts a fresh claude. (Genus tab persists across sessions; steward
+    // tabs are more ephemeral by nature.)
     tabMeetings.delete(id);
     const unmount = tabUnmounts.get(id);
     if (unmount) { try { unmount(); } catch (_) {} tabUnmounts.delete(id); }
+    // Clear stored terminal session_id for this tab
+    try {
+      const key = 'genus.terminal.sessions';
+      const s = JSON.parse(localStorage.getItem(key) || '{}');
+      if (s[id]) { delete s[id]; localStorage.setItem(key, JSON.stringify(s)); }
+    } catch (_) {}
+    // Remove preserved wrapper if present
+    document.getElementById(`term-preserve-${id}`)?.remove();
     dockState.tabs.splice(idx, 1);
   }
   saveState();
