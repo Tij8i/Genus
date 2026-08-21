@@ -10,7 +10,8 @@
 // - meeting_id is persisted per tab in localStorage so closing + reopening
 //   (or minimising + restoring) resumes the same conversation.
 
-import { createMeeting, resumeMeeting, findRecentActiveMeeting, openMeetingChat, mountChatSurface } from './meeting.js';
+import { createMeeting, resumeMeeting, findRecentActiveMeeting, openMeetingChat } from './meeting.js';
+import { mountTerminalSurface } from './terminal-mount.js';
 import { escapeHtml, currentBu } from './views/workflows/_shared.js';
 import { buildSkillMeetingContext } from './skills.js';
 
@@ -196,11 +197,15 @@ async function ensureChatMounted(t) {
     const host = document.getElementById(`chat-panel-body-${t.id}`);
     if (!host) return;
     const bu = currentBu();
+    // Terminal-embed (2026-08-21): dock panels are terminals — no meeting object needed.
+    // Mount the terminal directly and short-circuit the meeting resume/create logic below.
+    mountInto(host, t, bu, t.id);
+    return;
     let meeting = tabMeetings.get(t.id);
 
     // If we already have a live meeting in memory, mount straight away.
     if (meeting) {
-      mountInto(host, meeting, bu, t.id);
+      mountInto(host, t, bu, t.id);
       return;
     }
 
@@ -241,16 +246,24 @@ async function ensureChatMounted(t) {
     }
 
     tabMeetings.set(t.id, meeting);
-    mountInto(host, meeting, bu, t.id);
+    mountInto(host, t, bu, t.id);
   } finally {
     tabPending.delete(t.id);
   }
 }
 
-function mountInto(host, meeting, bu, tabId) {
+function mountInto(host, tab, bu, tabId) {
   host.innerHTML = '';
-  const unmount = mountChatSurface(host, meeting, { bu, mode: 'panel' });
-  tabUnmounts.set(tabId, unmount);
+  // Terminal-embed (2026-08-21): dock panels are real Claude Code CLI
+  // sessions now, not chat surfaces. Meeting persistence is bypassed —
+  // each open = fresh claude spawn. See docs/agents/mason/product_coach/
+  // terminal-embed contract amendment #2.
+  const unmountP = mountTerminalSurface(host, tab, { bu });
+  // mountTerminalSurface is async and returns Promise<unmount>; wrap
+  // for the sync unmount registry.
+  Promise.resolve(unmountP).then((fn) => {
+    if (typeof fn === 'function') tabUnmounts.set(tabId, fn);
+  });
 }
 
 async function createMeetingForTab(t, bu) {
