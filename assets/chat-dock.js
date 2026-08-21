@@ -12,6 +12,7 @@
 
 import { createMeeting, resumeMeeting, findRecentActiveMeeting, openMeetingChat } from './meeting.js';
 import { mountTerminalSurface } from './terminal-mount.js';
+import { openOverlay } from './overlay.js';
 import { escapeHtml, currentBu } from './views/workflows/_shared.js';
 import { buildSkillMeetingContext } from './skills.js';
 
@@ -120,6 +121,21 @@ export function mountChatDock() {
     document.body.appendChild(host);
   }
   renderDock();
+  // Pre-warm (2026-08-21): pinned Director tab starts visible on every venture
+  // load so the claude session spawns immediately — operator no longer waits
+  // for the ~5s spawn when they first click the chat. Note: auto-re-minimise
+  // would tear down the spawn (renderDock's unmountAll fires on every render
+  // and kills the xterm/WS), so we can't hide it silently. Operator can still
+  // manually minimise; the tradeoff is: pinned panel visible by default vs.
+  // pre-warm not working. Chose pre-warm because that's what the operator
+  // asked for. Future improvement: refactor render loop to preserve terminal
+  // state across tab↔panel transitions so minimising doesn't kill the spawn.
+  const pinned = dockState.tabs.find(t => t.kind === 'genus');
+  if (pinned && pinned.minimised) {
+    pinned.minimised = false;
+    saveState();
+    renderDock();
+  }
 }
 
 function unmountAll() {
@@ -351,22 +367,20 @@ function closeTab(id) {
 
 async function openFullPage(t) {
   const bu = currentBu();
-  let meeting = tabMeetings.get(t.id);
-  // If we don't have a live one in memory but a meeting_id is on the tab,
-  // resume it so the full page opens the same conversation.
-  if (!meeting && t.meeting_id) {
-    meeting = await resumeMeeting({ bu, meeting_id: t.meeting_id });
-    if (meeting) tabMeetings.set(t.id, meeting);
-  }
-  if (!meeting) {
-    meeting = await createMeetingForTab(t, bu);
-    if (meeting) {
-      tabMeetings.set(t.id, meeting);
-      t.meeting_id = meeting.id;
-      saveState();
-    }
-  }
-  if (meeting) openMeetingChat(meeting, { bu });
+  // Terminal-embed (2026-08-21): fullscreen mode is a terminal too — NOT the
+  // old chat overlay via openMeetingChat. Full-page opens a big overlay and
+  // mounts a fresh terminal surface into it (a separate spawn from the panel
+  // terminal — different pty size means the operator gets an appropriately-
+  // sized session; contract non-goal is session persistence so this is fine).
+  openOverlay({
+    title: t.label,
+    subtitle: `${t.kind === 'genus' ? 'director' : 'steward'} · ${bu} · terminal`,
+    iconHtml: '⌘',
+    iconTint: '#2f6bff',
+    bodyHtml: `<div id="term-overlay-host" style="height:100%;display:flex;background:#0b0d12;"></div>`,
+  });
+  const host = document.getElementById('term-overlay-host');
+  if (host) mountTerminalSurface(host, t, { bu });
 }
 
 // Public helper for spawning a Steward tab from a module page.
