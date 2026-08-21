@@ -15,6 +15,7 @@ const TERM_HOST = 'http://127.0.0.1:3101';
 const SPAWN_URL = `${TERM_HOST}/terminal/spawn`;
 const XTERM_JS = 'https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js';
 const XTERM_CSS = 'https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css';
+const XTERM_FIT_JS = 'https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js';
 
 const ORCHESTRATOR_CWD = '/Users/AlessioTixi/Documents/GitHub/Orchestrator';
 
@@ -29,11 +30,22 @@ function loadXterm() {
       link.dataset.xtermCss = '1';
       document.head.appendChild(link);
     }
-    if (window.Terminal) { resolve(window.Terminal); return; }
+    const done = () => {
+      if (!window.Terminal) return reject(new Error('xterm loaded but Terminal missing'));
+      // Also ensure fit addon
+      if (window.FitAddon) return resolve({ Terminal: window.Terminal, FitAddon: window.FitAddon.FitAddon });
+      const fitScript = document.createElement('script');
+      fitScript.src = XTERM_FIT_JS;
+      fitScript.async = true;
+      fitScript.onload = () => resolve({ Terminal: window.Terminal, FitAddon: (window.FitAddon && window.FitAddon.FitAddon) || null });
+      fitScript.onerror = () => resolve({ Terminal: window.Terminal, FitAddon: null }); // degrade gracefully — no fit but still usable
+      document.head.appendChild(fitScript);
+    };
+    if (window.Terminal) { done(); return; }
     const script = document.createElement('script');
     script.src = XTERM_JS;
     script.async = true;
-    script.onload = () => window.Terminal ? resolve(window.Terminal) : reject(new Error('xterm loaded but Terminal missing'));
+    script.onload = done;
     script.onerror = () => reject(new Error(`failed to load xterm from ${XTERM_JS}`));
     document.head.appendChild(script);
   });
@@ -91,19 +103,24 @@ export async function mountTerminalSurface(hostEl, tab, { bu } = {}) {
   let ws = null;
   let term = null;
 
+  let fitAddon = null;
+  let ro = null;
+
   const cleanup = () => {
     disposed = true;
+    try { ro?.disconnect(); } catch (_) { /* noop */ }
     try { ws?.close(); } catch (_) { /* noop */ }
     try { term?.dispose(); } catch (_) { /* noop */ }
     ws = null;
     term = null;
+    ro = null;
   };
 
   const doMount = async () => {
     hostEl.innerHTML = '<div style="padding:20px;color:#9aa1ae;font-size:12px;">Spawning claude session…</div>';
-    let Terminal;
+    let Terminal, FitAddon;
     try {
-      Terminal = await loadXterm();
+      ({ Terminal, FitAddon } = await loadXterm());
     } catch (err) {
       renderBanner(hostEl, 'load-error', 'xterm.js failed to load', doMount);
       return;
@@ -155,6 +172,25 @@ export async function mountTerminalSurface(hostEl, tab, { bu } = {}) {
       scrollback: 5000,
     });
     term.open(termContainer);
+    // Fit to container + observe resize (fixes cramped rendering + expand-panel).
+    if (FitAddon) {
+      try {
+        fitAddon = new FitAddon();
+        term.loadAddon(fitAddon);
+        // Initial fit — deferred a tick so layout has real dimensions.
+        setTimeout(() => { try { fitAddon.fit(); } catch (_) {} }, 0);
+        ro = new ResizeObserver(() => {
+          try {
+            fitAddon.fit();
+            // Notify server so pty dimensions match. Server ignores if unsupported.
+            if (ws && ws.readyState === WebSocket.OPEN && term) {
+              ws.send(JSON.stringify({ __resize: { cols: term.cols, rows: term.rows } }));
+            }
+          } catch (_) {}
+        });
+        ro.observe(termContainer);
+      } catch (_) { /* degrade */ }
+    }
     term.focus();
 
     // WS
