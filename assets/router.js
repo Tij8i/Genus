@@ -7,6 +7,8 @@ const VALID_ROUTES = [
   'modules', 'agents', 'people', 'roster', 'agent-detail', 'archetype', 'settings',
   // i65 central task pool + i107 meetings + i47 A/B + i40 onboarding
   'tasks', 'meetings', 'ab-runs', 'onboarding',
+  // terminal-embed — embedded xterm.js pty via local meeting-server
+  'terminal',
   // Product module content items
   'products', 'vision', 'roadmap', 'backlog', 'releases', 'release-detail',
   'design-system', 'decisions', 'decision-detail', 'workshop',
