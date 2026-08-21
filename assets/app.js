@@ -31,7 +31,6 @@ import { renderLayers as renderLayersView } from './views/layers.js';
 import { renderModules as renderModulesView } from './views/modules.js';
 import { renderPeople as renderPeopleView } from './views/people.js';
 import { renderTasksCentral as renderTasksCentralView } from './views/tasks-central.js';
-import { renderTerminal as renderTerminalView } from './views/terminal.js';
 import { mountChatDock } from './chat-dock.js';
 import { mountScheduledNudger } from './scheduled-nudger.js';
 import { renderLearningOverview } from './views/learning-module.js';
@@ -616,7 +615,6 @@ function renderRoute(route) {
   else if (route === 'agents') safeRender('agents', renderAgents);
   else if (route === 'people') safeRender('people', renderPeople);
   else if (route === 'tasks') safeRender('tasks', renderTasksCentralView);
-  else if (route === 'terminal') safeRender('terminal', renderTerminalView);
   else if (route === 'learning-overview') safeRender('learning-overview', renderLearningOverview);
   else if (route === 'hr-overview')        safeRender('hr-overview',        renderHrOverview);
   else if (route === 'hr-catalog')         safeRender('hr-catalog',         renderHrCatalog);
